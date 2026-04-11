@@ -1,0 +1,49 @@
+AI-Involved Non-Commercial & Responsible Public License (AI-NCRL) v1.1
+With Time-Delayed Apache 2.0 Conversion
+
+LICENSE NOTICE
+This Software is initially licensed under the AI-NCRL v1.1.
+AUTOMATIC CONVERSION: Pursuant to Section 7, each specific version, commit, or release of this Software will automatically transition to the Apache License, Version 2.0 exactly six (6) months after its initial public release date.
+
+1. DEFINITIONS
+"Software" refers to the AI models, AI-integrated applications, frameworks, tools, algorithms, source code, and any associated documentation made available under this License.
+"Licensor" refers to the copyright owner(s) or the entity holding the rights to distribute the Software.
+"Commercial Use" means any use or distribution of the Software or its outputs for direct or indirect financial gain, commercial advantage, or monetary compensation.
+"Derivative Work" means any work, software, or service that modifies, integrates, or is based upon the Software.
+
+2. GRANT OF LICENSE (PRIOR TO CHANGE DATE)
+Subject to your strict compliance with all terms and conditions of this License, the Licensor hereby grants you a worldwide, royalty-free, non-exclusive, revocable license to:
+(a) Use, copy, study, and modify the Software for Non-Commercial purposes.
+(b) Distribute copies of the Software or Derivative Works, strictly under the terms of this exact License.
+
+3. STRICT NON-COMMERCIAL RESTRICTION
+Without a separate, explicitly written commercial agreement from the Licensor, you shall NOT exercise any of the rights granted above for Commercial Use. Prohibited Commercial Use includes, but is not limited to:
+(a) Selling, leasing, or licensing the Software or any Derivative Work.
+(b) Providing the Software as a managed service, Software-as-a-Service (SaaS), Platform-as-a-Service (PaaS), or API access to third parties for financial gain.
+(c) Utilizing the Software, its generated content, or generated data to train, fine-tune, or develop commercial closed-source AI models or products.
+
+4. NETWORK COPYLEFT & SHARE-ALIKE
+If you modify the Software, or if you make the Software (whether modified or unmodified) available to users to interact with it remotely through a computer network (e.g., via a web interface, API, or bot), you must:
+(a) Prominently offer all users interacting with the Software an opportunity to receive the Corresponding Source Code of your version at no charge, through a standard network copy mechanism.
+(b) License your entire Derivative Work and Corresponding Source Code strictly under this exact License (AI-NCRL v1.1), without any additional restrictions or alterations to these terms.
+
+5. RESPONSIBLE AI & ACCEPTABLE USE
+The Software involves artificial intelligence capabilities that can generate content, automate workflows, or process data. You expressly agree NOT to use the Software, or allow others to use the Software, to:
+(a) Violate any applicable local, national, or international laws or regulations.
+(b) Generate, promote, or distribute defamatory, fraudulent, deceptive (e.g., deepfakes), or harassing content.
+(c) Automate malicious cyberattacks, generate malware, or conduct unauthorized web scraping or surveillance.
+(d) Make automated decisions that result in unlawful discrimination, algorithmic bias, or the deprivation of human rights in critical sectors (e.g., employment, healthcare, justice).
+
+6. COMMERCIAL LICENSE EXCEPTION
+Entities or individuals seeking to use the Software for Commercial Use, or seeking exemption from the restrictions herein prior to the Change Date, must obtain a separate Commercial License from the Licensor prior to any such use.
+
+7. TIME-DELAYED OPEN SOURCE (CHANGE OF LICENSE)
+Upon the expiration of six (6) months from the exact publication date of any specific version, commit, or tag of the Software (the "Change Date"), the terms of this AI-NCRL v1.1 shall automatically and irrevocably terminate for that specific version.
+Thereafter, that specific version of the Software shall be licensed strictly and exclusively under the Apache License, Version 2.0. For the avoidance of doubt, the Responsible AI & Acceptable Use restrictions (Section 5) shall survive and be appended as an acceptable use policy to the Apache License, Version 2.0 for this Software.
+
+8. TRADEMARKS & BRAND
+The project name, logos, and related brand assets are the exclusive trademarks of the Project Owner (the original creator and underlying entity of this repository).
+While the software's source code is available under the specified licenses, this does NOT grant you any right, license, or permission to use our trademarks, logos, or brand identities. If you fork, distribute, or host this project, you must strictly remove all original logos, branding, and name references that may imply endorsement or cause confusion.
+
+9. DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

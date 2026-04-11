@@ -1,0 +1,2084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>Zuver OS Framework | Open Source AI Platform</title>
+	<link rel="icon" type="image/x-icon" href="https://zuver.oi.ms/6x6logo.png">
+	<!-- UI Framework & Utilities -->
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script>
+		tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } } }
+	</script>
+	<script src="https://unpkg.com/lucide@latest"></script>
+	
+	<!-- Vendor Libraries -->
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+	
+	<!-- Fonts -->
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+	
+	<style>
+		.hide-scrollbar::-webkit-scrollbar {
+		    display: none;
+		}
+		.hide-scrollbar {
+		    -ms-overflow-style: none;
+		    scrollbar-width: none;
+		}
+
+		/* --- Sidebar Component --- */
+		.nav-section-title {
+		    font-size: 0.65rem;
+		    font-weight: 700;
+		    letter-spacing: 0.05em;
+		    color: #9ca3af;
+		    text-transform: uppercase;
+		    margin: 1.5rem 0 0.5rem 0.5rem;
+		    opacity: 0;
+		    transition: opacity 0.3s;
+		    white-space: nowrap;
+		}
+		.group:hover .nav-section-title {
+		    opacity: 1;
+		}
+		.nav-item {
+		    display: flex;
+		    align-items: center;
+		    width: 100%;
+		    padding: 0.5rem 0.6rem;
+		    margin: 0.2rem 0;
+		    border-radius: 0.5rem;
+		    font-size: 0.875rem;
+		    font-weight: 500;
+		    transition: all 0.2s ease;
+		    white-space: nowrap;
+		    cursor: pointer;
+		    color: #4b5563;
+		    overflow: hidden;
+		}
+		.dark .nav-item {
+		    color: #9ca3af;
+		}
+		.nav-item:hover {
+		    background-color: #f3f4f6;
+		    color: #111827;
+		}
+		.dark .nav-item:hover {
+		    background-color: #1f2937;
+		    color: #f9fafb;
+		}
+		.nav-item.active {
+		    background-color: #e5e7eb;
+		    color: #111827;
+		    font-weight: 600;
+		}
+		.dark .nav-item.active {
+		    background-color: #27272a;
+		    color: #ffffff;
+		}
+		.nav-icon-box {
+		    display: flex;
+		    align-items: center;
+		    justify-content: center;
+		    min-width: 24px;
+		    height: 24px;
+		    margin-right: 0.75rem;
+		    flex-shrink: 0;
+		    transition: all 0.2s ease;
+		}
+		.nav-text {
+		    opacity: 0;
+		    transition: opacity 0.2s;
+		    pointer-events: none;
+		}
+		.group:hover .nav-text {
+		    opacity: 1;
+		    pointer-events: auto;
+		}
+		@media (max-width: 767px) {
+		    .nav-section-title,
+		    .nav-text {
+		        opacity: 1 !important;
+		        pointer-events: auto !important;
+		    }
+		}
+		@media (min-width: 768px) {
+		    aside:not(:hover) .nav-item.active {
+		        background-color: transparent;
+		        color: #111827;
+		    }
+		    .dark aside:not(:hover) .nav-item.active {
+		        color: #ffffff;
+		    }
+		    aside:not(:hover) .nav-item.active .nav-icon-box {
+		        background-color: #ffffff;
+		        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		        border: 1px solid #e5e7eb;
+		        border-radius: 0.375rem;
+		    }
+		    .dark aside:not(:hover) .nav-item.active .nav-icon-box {
+		        background-color: #18181b;
+		        border: 1px solid #27272a;
+		    }
+		}
+
+		/* --- Node Graph Editor UI --- */
+		.wf-node {
+		    position: absolute;
+		    width: 160px;
+		    background: white;
+		    border: 2px solid #e5e7eb;
+		    border-radius: 12px;
+		    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+		    user-select: none;
+		    cursor: grab;
+		    z-index: 10;
+		    transition: border-color 0.2s;
+		}
+		.dark .wf-node {
+		    background: #1a1a1a;
+		    border-color: #333;
+		    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.8);
+		}
+		.wf-node:active {
+		    cursor: grabbing;
+		}
+		.wf-node.selected {
+		    border-color: #3b82f6;
+		}
+		.wf-port {
+		    width: 12px;
+		    height: 12px;
+		    background: #fff;
+		    border: 2px solid #3b82f6;
+		    border-radius: 50%;
+		    position: absolute;
+		    cursor: crosshair;
+		    z-index: 20;
+		}
+		.wf-port-in {
+		    left: -7px;
+		    top: 50%;
+		    transform: translateY(-50%);
+		}
+		.wf-port-out {
+		    right: -7px;
+		    top: 50%;
+		    transform: translateY(-50%);
+		}
+		.wf-port:hover {
+		    background: #3b82f6;
+		    transform: translateY(-50%) scale(1.2);
+		    transition: transform 0.1s;
+		}
+		#canvas-lines {
+		    pointer-events: none;
+		    z-index: 0;
+		}
+		.edge-path {
+		    pointer-events: visibleStroke;
+		    cursor: pointer;
+		    transition: stroke-width 0.2s, stroke 0.2s;
+		}
+		.edge-path:hover {
+		    stroke: #ef4444 !important;
+		    stroke-width: 4px !important;
+		}
+
+		/* --- Chat Console UI --- */
+		.chat-bubble-user {
+		    background: #f3f4f6;
+		    color: #111827;
+		    padding: 0.75rem 1rem;
+		    border-radius: 0.75rem 0.75rem 0 0.75rem;
+		    align-self: flex-end;
+		    max-width: 80%;
+		    border: 1px solid #e5e7eb;
+		}
+		.dark .chat-bubble-user {
+		    background: #1f2937;
+		    color: #f9fafb;
+		    border-color: #374151;
+		}
+		.chat-bubble-ai {
+		    background: white;
+		    color: #111827;
+		    padding: 1rem;
+		    border-radius: 0.75rem 0.75rem 0.75rem 0;
+		    align-self: flex-start;
+		    max-width: 90%;
+		    border: 1px solid #e5e7eb;
+		    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+		}
+		.dark .chat-bubble-ai {
+		    background: #111;
+		    color: #f9fafb;
+		    border-color: #27272a;
+		}
+		.chat-bubble-sys {
+		    background: transparent;
+		    color: #9ca3af;
+		    padding: 0.5rem 1rem;
+		    align-self: center;
+		    font-size: 0.7rem;
+		    font-family: monospace;
+		    border: 1px dashed #e5e7eb;
+		    border-radius: 0.5rem;
+		    width: 100%;
+		    white-space: pre-wrap;
+		}
+		.dark .chat-bubble-sys {
+		    border-color: #333;
+		}
+		details>summary {
+		    list-style: none;
+		    outline: none;
+		}
+		details>summary::-webkit-details-marker {
+		    display: none;
+		}
+
+		/* --- Markdown Rendering Overrides --- */
+		.markdown-body {
+		    font-size: 0.875rem;
+		    line-height: 1.6;
+		    word-wrap: break-word;
+		}
+		.markdown-body p {
+		    margin-bottom: 0.75rem;
+		}
+		.markdown-body p:last-child {
+		    margin-bottom: 0;
+		}
+		.markdown-body pre {
+		    background: #1e1e1e;
+		    color: #e5e5e5;
+		    padding: 0.75rem;
+		    border-radius: 0.5rem;
+		    overflow-x: auto;
+		    margin: 0.75rem 0;
+		    font-size: 0.75rem;
+		    border: 1px solid #333;
+		}
+		.dark .markdown-body pre {
+		    background: #000;
+		    border-color: #222;
+		}
+		.markdown-body code {
+		    font-family: monospace;
+		    background: rgba(175, 184, 193, 0.2);
+		    padding: 0.15em 0.3em;
+		    border-radius: 4px;
+		    color: #d946ef;
+		    font-size: 85%;
+		}
+		.markdown-body pre code {
+		    background: transparent;
+		    padding: 0;
+		    color: inherit;
+		}
+		.markdown-body ul {
+		    list-style-type: disc;
+		    padding-left: 1.5rem;
+		    margin-bottom: 0.75rem;
+		}
+		.markdown-body ol {
+		    list-style-type: decimal;
+		    padding-left: 1.5rem;
+		    margin-bottom: 0.75rem;
+		}
+		.markdown-body a {
+		    color: #3b82f6;
+		    text-decoration: hover;
+		}
+		.markdown-body strong {
+		    font-weight: 700;
+		    color: #111827;
+		}
+		.dark .markdown-body strong {
+		    color: #f9fafb;
+		}
+		body {
+		    font-family: "Open Sans", sans-serif;
+		    font-optical-sizing: auto;
+		    font-style: normal;
+		    font-variation-settings: "wdth" 100;
+		}
+	</style>
+</head>
+<body class="bg-[#f6f9fc] dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100 flex h-screen w-full overflow-hidden transition-colors duration-300">
+	
+	<!-- Mobile Overlay -->
+	<div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden transition-opacity" onclick="toggleMobileMenu()"></div>
+	<div class="hidden md:block w-[72px] shrink-0 h-full"></div>
+	
+	<!-- Main Sidebar -->
+	<aside id="main-sidebar" class="group flex flex-col h-full border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111] transition-all duration-300 z-50 fixed left-0 top-0 w-64 md:w-[72px] hover:md:w-64 -translate-x-full md:translate-x-0 overflow-hidden shadow-md border border-gray-200/60 md:shadow-none hover:md:shadow-md">
+		<div class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-800 shrink-0 justify-between md:justify-start">
+			<div class="flex items-center">
+				<div class="bg-black dark:bg-white text-white dark:text-black p-1.5 rounded-lg shrink-0">
+					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver OS Logo" class="w-5 h-5 object-cover">
+				</div>
+				<span class="ml-3 font-bold text-lg overflow-hidden whitespace-nowrap nav-text">Zuver</span>
+				<span id="sidebar-version" class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-gray-200 dark:bg-gray-800 text-gray-500 hidden md:block group-hover:block transition-all">v-.--</span>
+			</div>
+			<button onclick="toggleMobileMenu()" class="md:hidden text-gray-500 p-2"><i data-lucide="x" class="w-5 h-5"></i></button>
+		</div>
+		
+		<nav class="flex-1 overflow-y-auto p-3 hide-scrollbar">
+			<div class="nav-section-title">Overview</div>
+			<div data-target="home" class="nav-item active">
+				<div class="nav-icon-box"><i data-lucide="layout-dashboard" class="w-5 h-5"></i></div>
+				<span class="nav-text">Home</span>
+			</div>
+			<div data-target="statistics" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="bar-chart-3" class="w-5 h-5"></i></div>
+				<span class="nav-text">Statistics</span>
+			</div>
+			<div data-target="projects" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="workflow" class="w-5 h-5"></i></div>
+				<span class="nav-text">Applications</span>
+			</div>
+			
+			<div class="nav-section-title">Armory</div>
+			<div data-target="agents" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="bot" class="w-5 h-5"></i></div>
+				<span class="nav-text">Agents</span>
+			</div>
+			<div data-target="sources" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="database" class="w-5 h-5"></i></div>
+				<span class="nav-text">Sources</span>
+			</div>
+			<div data-target="outputs" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
+				<span class="nav-text">Outputs</span>
+			</div>
+			
+			<div class="nav-section-title">Studio</div>
+			<div data-target="skills" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="zap" class="w-5 h-5"></i></div>
+				<span class="nav-text">Skills</span>
+			</div>
+			<div data-target="rags" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="brain-circuit" class="w-5 h-5"></i></div>
+				<span class="nav-text">Vector RAGs</span>
+			</div>
+			<div data-target="preferences" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="brain" class="w-5 h-5"></i></div>
+				<span class="nav-text">Preferences</span>
+			</div>
+			
+			<div class="nav-section-title">Config</div>
+			<div data-target="mcp" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="blocks" class="w-5 h-5"></i></div>
+				<span class="nav-text">MCP Servers</span>
+			</div>
+			<div data-target="providers" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="server" class="w-5 h-5"></i></div>
+				<span class="nav-text">Providers</span>
+			</div>
+			<div data-target="apikeys" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="key" class="w-5 h-5"></i></div>
+				<span class="nav-text" data-i18n="API Keys">API Keys</span>
+			</div>
+			<div data-target="settings" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="settings" class="w-5 h-5"></i></div>
+				<span class="nav-text">Settings</span>
+			</div>
+		</nav>
+		<div class="p-3 border-t border-gray-200 dark:border-gray-800">
+			<div data-target="chat" class="nav-item w-full hidden md:flex">
+				<div class="nav-icon-box"><i data-lucide="terminal" class="w-5 h-5"></i></div>
+				<span class="nav-text">Console</span>
+			</div>
+			<div onclick="toggleTheme()" class="nav-item w-full flex md:hidden">
+				<div class="nav-icon-box"><i data-lucide="moon" class="w-5 h-5 theme-icon"></i></div>
+				<span class="nav-text">Theme</span>
+			</div>
+		</div>
+	</aside>
+
+	<!-- Main Workspace -->
+	<main class="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
+		<header class="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111] shrink-0 z-10 relative">
+			<div class="flex items-center gap-3">
+				<button onclick="toggleMobileMenu()" class="p-2 -ml-2 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white md:hidden"><i data-lucide="menu"></i></button>
+				<h1 id="page-title" class="text-lg font-bold">Home</h1>
+			</div>
+			<div class="flex items-center gap-4">
+				<a href="https://github.com/synasties/zuver" target="_blank" class="hidden md:block p-2 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white transition-colors">
+					<i data-lucide="git-branch" class="w-5 h-5"></i>
+				</a>
+				<button onclick="toggleTheme()" class="hidden md:block p-2 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white transition-colors"><i data-lucide="moon" class="theme-icon"></i></button>
+				<button data-target="chat" class="md:hidden bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 rounded-lg text-sm font-medium">Console</button>
+			</div>
+		</header>
+		
+		<div class="flex-1 overflow-y-auto p-6 md:p-8">
+			<div class="max-w-7xl mx-auto h-full relative">
+				<!-- View: Home -->
+				<div id="view-home" class="page-view space-y-6">
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+						<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-xs font-bold text-gray-400 uppercase">Agents</p>
+							<h3 id="stat-agents" class="text-3xl font-black mt-1">0</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-xs font-bold text-gray-400 uppercase">Skills</p>
+							<h3 id="stat-skills" class="text-3xl font-black mt-1">0</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-xs font-bold text-gray-400 uppercase">Preferences</p>
+							<h3 id="stat-RAGs" class="text-3xl font-black mt-1">0</h3>
+						</div>
+						<div class="bg-black dark:bg-white p-6 rounded-lg text-white dark:text-black">
+							<p class="text-xs font-bold text-gray-400 uppercase">Tokens</p>
+							<h3 id="home-24h-tokens" class="text-3xl font-black mt-2">0</h3>
+						</div>
+					</div>
+				</div>
+				
+				<!-- View: Statistics -->
+				<div id="view-statistics" class="page-view hidden space-y-6">
+					<div>
+						<h2 class="text-xl font-bold">System Analytics</h2>
+						<p class="text-sm text-gray-500 mt-1">Monitor comprehensive token consumption and API invocations.</p>
+					</div>
+					<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm w-full">
+						<div class="flex justify-between items-center mb-6">
+							<h3 class="font-bold flex items-center gap-2 text-lg"><i data-lucide="bar-chart-2" class="w-5 h-5 text-indigo-500"></i> Usage Trends (7 Days)</h3>
+							<select id="chart-filter" onchange="window.loadChartData(this.value)"
+								class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none font-bold text-gray-700 dark:text-gray-300 shadow-sm focus:ring-2 focus:ring-indigo-500/20 transition-all">
+								<option value="global">🌍 Global Analytics</option>
+								<optgroup label="Filter by Agent" id="chart-filter-agents"></optgroup>
+								<optgroup label="Filter by Provider" id="chart-filter-providers"></optgroup>
+							</select>
+						</div>
+						<div class="relative h-[400px] w-full">
+							<canvas id="mainChart"></canvas>
+						</div>
+					</div>
+				</div>
+				
+				<!-- View: Projects / Workflows -->
+				<div id="view-projects" class="page-view hidden h-[calc(100vh-140px)] flex flex-col">
+					<div id="view-projects-list" class="space-y-6">
+						<div class="flex justify-between items-center">
+							<p class="text-sm text-gray-500 mt-1">Manage, create, import applications via visualized interface, so the router can be easily defined.</p>
+							<button onclick="openEditor(null)" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-bold shadow-sm">New Application</button>
+						</div>
+						<div id="projects-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
+					</div>
+					<div id="view-projects-editor" class="hidden flex-col h-full space-y-4">
+						<div class="flex justify-between items-center shrink-0">
+							<h2 class="text-xl font-bold flex items-center gap-2">
+								<i data-lucide="git-branch" class="text-blue-500"></i> Application Editor
+							</h2>
+							<div class="flex gap-2">
+								<button onclick="closeEditor()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm">Back</button>
+								<button onclick="exportProjectJSON()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm hidden md:block">Export</button>
+								<button onclick="importProjectJSON()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm hidden md:block">Import</button>
+								<button onclick="saveProject()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm">Save Flow</button>
+							</div>
+						</div>
+						<div class="flex-1 flex gap-4 overflow-hidden">
+							<div id="canvas-container" class="flex-1 bg-white dark:bg-[#111] border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-lg relative overflow-hidden" style="background-image: radial-gradient(#d1d5db 1px, transparent 1px); background-size: 20px 20px;">
+								<svg id="canvas-lines" class="absolute inset-0 w-full h-full z-0 pointer-events-none"></svg>
+								<div id="canvas-nodes" class="absolute inset-0 w-full h-full z-10"></div>
+							</div>
+							<div class="w-64 flex flex-col gap-4 shrink-0 hidden md:flex">
+								<div class="bg-white dark:bg-[#111] p-4 border border-gray-200 dark:border-gray-800 rounded-md space-y-2 shadow-sm">
+									<p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Palette</p>
+									<button onclick="addNode('Agent')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">🤖 Agent</button>
+									<button onclick="addNode('Skill')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">⚡ Skill</button>
+									<button onclick="addNode('Code')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">💻 Go Code</button>
+									<button onclick="addNode('Project')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">📦 Sub-Project</button>
+								</div>
+								<div id="node-props" class="flex-1 bg-white dark:bg-[#111] p-4 border border-gray-200 dark:border-gray-800 rounded-md overflow-y-auto shadow-sm">
+									<p class="text-xs text-gray-400 text-center mt-8">Select a node</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				
+				<!-- View: Agents -->
+				<div id="view-agents" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Manage, edit and control your agents and what they can do, so they don't create chaotic messes.</p>
+						<button onclick="openAgentModal()" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Agent</button>
+					</div>
+					<div id="agents-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+				</div>
+				<div id="view-agent-editor" class="page-view hidden h-[calc(100vh-140px)] flex-col space-y-4">
+					<div class="flex justify-between items-center shrink-0 border-b dark:border-gray-800 pb-4">
+						<div class="flex items-center gap-4">
+							<button onclick="document.querySelector('[data-target=agents]').click()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
+							<h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="bot" class="text-blue-500"></i> Agent Studio</h2>
+							<p class="text-sm text-gray-500 mt-1">Edit your agents' preferences.</p>
+						</div>
+						<button onclick="submitAgent()" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm">Save Agent</button>
+					</div>
+					<input type="hidden" id="agent-id-input">
+					<div class="flex-1 overflow-y-auto flex flex-col lg:flex-row gap-6">
+						<div class="flex-1 space-y-4 bg-white dark:bg-[#111] p-6 rounded-md border border-gray-200 dark:border-gray-800">
+							<p class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b dark:border-gray-800 pb-2">Brain Core</p>
+							<input type="text" id="agent-name-input" placeholder="Agent Name" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-2 font-bold text-lg">
+							<select id="agent-provider-input" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-2 text-sm"></select>
+							<input type="text" id="agent-model-input" placeholder="Model (e.g. gpt-4o)" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-2 text-sm font-mono">
+							<textarea id="agent-system-prompt" rows="8" placeholder="System Prompt / Persona" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-3 text-sm font-mono"></textarea>
+							<label class="flex items-center gap-2 p-2 mt-2 border dark:border-gray-700 rounded-lg text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/10"><input type="checkbox" id="agent-can-create-skills" class="accent-orange-500"> 🪄 Allow Agent to Create Native Go Skills</label>
+						</div>
+						<div class="flex-1 space-y-4 bg-white dark:bg-[#111] p-6 rounded-md border border-gray-200 dark:border-gray-800">
+							<p class="text-xs font-bold text-purple-500 uppercase tracking-widest border-b dark:border-gray-800 pb-2">I/O Modalities</p>
+							<label class="text-[10px] text-gray-500 font-bold uppercase block">Accepted Inputs (Triggers UI Filter)</label>
+							<div class="grid grid-cols-2 gap-2" id="agent-input-methods">
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Text" class="in-cb accent-purple-500" checked onchange="renderAgentSources()"> Text</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Image" class="in-cb accent-purple-500" onchange="renderAgentSources()"> Image</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Video" class="in-cb accent-purple-500" onchange="renderAgentSources()"> Video</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Audio" class="in-cb accent-purple-500" onchange="renderAgentSources()"> Audio</label>
+							</div>
+							<label class="text-[10px] text-gray-500 font-bold uppercase block mt-4">Expected Outputs</label>
+							<div class="grid grid-cols-2 gap-2" id="agent-output-methods">
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Text" class="outm-cb accent-pink-500" checked> Text/MD</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Image" class="outm-cb accent-pink-500"> Image</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Video" class="outm-cb accent-pink-500"> Video</label>
+								<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="Audio" class="outm-cb accent-pink-500"> Audio</label>
+							</div>
+							<div class="mt-6 pt-6 border-t dark:border-gray-800 space-y-4">
+								<div><label class="text-xs text-gray-500">Temperature (<span id="val-temp">0.7</span>)</label><input type="range" id="agent-temp" min="0" max="2" step="0.1" value="0.7" class="w-full" oninput="document.getElementById('val-temp').innerText=this.value"></div>
+								<div><label class="text-xs text-gray-500">Max Tokens (<span id="val-max">4096</span>)</label><input type="range" id="agent-max-tokens" min="256" max="128000" step="256" value="4096" class="w-full" oninput="document.getElementById('val-max').innerText=this.value">
+								</div>
+							</div>
+						</div>
+						<div class="flex-1 space-y-4 bg-white dark:bg-[#111] p-6 rounded-md border border-gray-200 dark:border-gray-800 flex flex-col h-[500px]">
+							<p class="text-xs font-bold text-orange-500 uppercase tracking-widest border-b dark:border-gray-800 pb-2">Mount Tools & Sources</p>
+							<div id="agent-mounts-container" class="flex-1 overflow-y-auto space-y-3 pr-2"></div>
+						</div>
+					</div>
+				</div>
+				
+				<!-- View: Configs and other integrations -->
+				<div id="view-sources" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Manage what your agents can access and share.</p>
+						<button onclick="window.openSourceModal()" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Source</button>
+					</div>
+					<div id="sources-list" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+				</div>
+				<div id="view-outputs" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Manage what your agents can access and control.</p>
+						<button onclick="openModal('modal-output')" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Output</button>
+					</div>
+					<div id="outputs-list" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+				</div>
+				<div id="view-skills" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Create, manage and edit the Skills, so your agents can do something beyond MCP and Markdown files.</p>
+						<button onclick="openSkillModal()" class="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New Skill</button>
+					</div>
+					<div id="skills-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+				</div>
+				<div id="view-rags" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Create Vector-based RAG databases for your agents with embeddings.</p>
+						<button onclick="openRAGModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New RAG</button>
+					</div>
+					<div id="rags-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+				</div>
+				<div id="view-preferences" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Create databases for your agents, so they can manage your preferences while not forgetting them.</p>
+						<button onclick="openPreferencesModal()" class="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New Memory</button>
+					</div>
+					<div id="preferences-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+				</div>
+				<div id="view-mcp" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Connect and manage your MCP servers.</p>
+						<button onclick="openModal('modal-mcp')" class="bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">Add MCP</button>
+					</div>
+					<div id="mcp-grid" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+				</div>
+				<div id="view-providers" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Manage, edit and overview your API providers.</p>
+						<button onclick="openModal('modal-provider')" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Provider</button>
+					</div>
+					<div id="providers-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+				</div>
+				<div id="view-apikeys" class="page-view hidden space-y-6">
+					<div class="flex justify-between items-center">
+						<p class="text-sm text-gray-500 mt-1">Manage API Keys for 3rd-party applications with universal access control.</p>
+						<button onclick="openModal('modal-apikey')" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New API Key</button>
+					</div>
+					<div id="apikeys-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+				</div>
+				
+				<!-- View: Chat Console -->
+				<div id="view-chat" class="page-view hidden h-[calc(100vh-140px)] flex flex-col bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shadow-md border border-gray-200/60">
+					<div class="p-4 border-b dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-black/20">
+						<div class="flex items-center gap-2">
+							<span class="text-sm font-medium text-gray-500">Session:</span>
+							<select id="chat-agent-select" class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md p-1.5 text-sm outline-none w-40 md:w-48 shadow-sm"></select>
+						</div>
+						<button onclick="clearMemory()" class="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/10 px-3 py-1.5 rounded border border-red-100 dark:border-red-900/30 transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> <span class="hidden md:inline">Wipe Memory</span></button>
+					</div>
+					<div id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 bg-[#fbfbfb] dark:bg-[#050505]">
+					</div>
+					<div class="p-3 md:p-4 border-t dark:border-gray-800 flex flex-col md:flex-row gap-2 md:gap-3 bg-white dark:bg-[#111] items-center">
+						<div class="relative flex items-center shrink-0">
+							<input type="file" id="chat-file-input" class="hidden" onchange="handleFileUpload(this.files[0])">
+							<button onclick="toggleModalityMenu()" id="upload-btn" class="p-3 text-gray-500 hover:text-blue-500 transition-colors">
+								<i data-lucide="paperclip" class="w-5 h-5"></i>
+							</button>
+							<select id="chat-input-type" onchange="handleTypeChange(this.value)"
+								class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 outline-none text-sm font-bold shadow-md border border-gray-200/60 focus:border-blue-500 transition-all z-50">
+								<option value="Text">📝 Text</option>
+								<option value="Image">🖼️ Image</option>
+								<option value="Video">🎬 Video</option>
+								<option value="Audio">🎵 Audio</option>
+								<option value="File">📄 File</option>
+							</select>
+						</div>
+						<input id="chat-input" type="text" placeholder="Type /help for tools, or just chat..." class="flex-1 w-full bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md px-4 py-3 outline-none font-mono text-sm focus:border-blue-500 transition-colors"
+							onkeypress="if(event.key === 'Enter') sendMessage()">
+						<button onclick="sendMessage()" id="send-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 md:px-8 py-3 rounded-md font-bold shadow-sm w-full md:w-auto">Send</button>
+					</div>
+				</div>
+				
+				<!-- View: Settings -->
+				<div id="view-settings" class="page-view hidden space-y-6">
+					<div>
+						<p class="text-sm text-gray-500 mt-1">Manage system-wide configurations.</p>
+					</div>
+					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg divide-y dark:divide-gray-800 shadow-sm">
+						<div class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
+							<div>
+								<span class="font-bold flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4 text-yellow-500"></i> Cache Hit Optimization</span>
+								<p class="text-xs text-gray-500 mt-1">Enable zero-latency memory cache to save API tokens.</p>
+							</div>
+							<input type="checkbox" id="toggle-cache" checked class="w-4 h-4 cursor-pointer accent-blue-500">
+						</div>
+						<div class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
+							<div>
+								<span class="font-bold flex items-center gap-2"><i data-lucide="globe" class="w-4 h-4 text-blue-500"></i> Interface Language</span>
+								<p class="text-xs text-gray-500 mt-1">Change OS display language (EN/ZH/DE).</p>
+							</div>
+							<select id="lang-select" onchange="switchLanguage(this.value)" class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-sm outline-none font-bold shadow-sm">
+								<option value="en">English</option>
+								<option value="zh">简体中文</option>
+								<option value="de">Deutsch</option>
+							</select>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-green-600"><i data-lucide="shield-check" class="w-4 h-4"></i> Microsoft Presidio Shield</span>
+									<p class="text-xs text-gray-500 mt-1">Master switch for PII scrubbing engine.</p>
+								</div>
+								<input type="checkbox" id="toggle-presidio" onchange="updatePresidioUI(); saveSettings()" class="w-4 h-4 cursor-pointer accent-green-500">
+							</div>
+							<div id="presidio-config-area" class="transition-all duration-300 space-y-4 border-t dark:border-gray-800 pt-4">
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div>
+										<label class="text-[10px] text-gray-500 font-bold uppercase">Analyzer URL</label>
+										<input type="text" id="presidio-analyzer-url" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono mt-1">
+									</div>
+									<div>
+										<label class="text-[10px] text-gray-500 font-bold uppercase">Anonymizer URL</label>
+										<input type="text" id="presidio-anonymizer-url" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono mt-1">
+									</div>
+								</div>
+								<div>
+									<label class="text-[10px] text-gray-500 font-bold uppercase mb-2 block">Enabled Agents</label>
+									<div id="settings-privacy-agents" class="grid grid-cols-2 md:grid-cols-3 gap-2">
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
+						<div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-lg border border-gray-200 dark:border-gray-800 text-center space-y-4 shadow-sm">
+							<div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-black dark:bg-white text-white dark:text-black mb-2 shadow-lg">
+								<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver OS Logo" class="w-6 h-6 object-cover">
+							</div>
+							<div>
+								<h3 id="about-name" class="font-black text-lg">Zuver</h3>
+								<p id="about-version" class="text-xs font-mono text-gray-500 mt-1">v-.--</p>
+							</div>
+							<p id="about-desc" class="text-sm text-gray-500 max-w-md mx-auto" data-i18n="About Desc">Open Source AI Platform</p>
+							<div class="flex items-center justify-center gap-3 pt-2">
+								<a href="https://github.com/synasties/zuver" target="_blank" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4"></i> GitHub</a>
+								<a href="https://wiki.zuver.oi.ms" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> Docs</a>
+							</div>
+						</div>
+						<div class="mt-6 p-4 border border-red-200 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/10 rounded-lg flex items-center justify-between">
+							<div>
+								<h4 class="font-bold text-sm text-red-600 dark:text-red-500 flex items-center gap-1"><i data-lucide="alert-triangle" class="w-4 h-4"></i> Danger Zone</h4>
+								<p class="text-xs text-red-500/70 mt-1">Wipe all databases. This action is irreversible.</p>
+							</div>
+							<button onclick="wipeDatabase()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors">Delete Database</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</main>
+
+	<!-- Modals -->
+	<div id="modal-apikey" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-2xl space-y-4">
+			<h3 class="font-bold flex items-center gap-2"><i data-lucide="key" class="text-indigo-500 w-5 h-5"></i> Universal API Permissions</h3>
+			<input type="hidden" id="apikey-id-input">
+			<div class="grid grid-cols-2 gap-2">
+				<input type="text" id="apikey-name-input" placeholder="App Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+				<input type="text" id="apikey-desc-input" placeholder="Description" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+			</div>
+			<div class="mt-4 p-4 border border-gray-200 dark:border-gray-800 rounded-md bg-gray-50 dark:bg-[#1a1a1a] max-h-80 overflow-y-auto relative">
+				<p class="text-xs font-bold text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 dark:bg-[#1a1a1a] pb-2 z-10 border-b dark:border-gray-800">Resource Access Rights</p>
+				<div class="space-y-4 mt-3">
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🤖 Allowed Agents</label>
+						<div id="apikey-agents-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">⚡ Allowed Skills</label>
+						<div id="apikey-skills-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🌐 Allowed Sources</label>
+						<div id="apikey-sources-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">📤 Allowed Outputs</label>
+						<div id="apikey-outputs-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🔌 Allowed MCP Servers</label>
+						<div id="apikey-mcps-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">📦 Allowed Projects (Routers)</label>
+						<div id="apikey-projects-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
+					</div>
+					<div class="pt-2 border-t dark:border-gray-800">
+						<label class="text-[10px] text-gray-400 font-bold mb-1 block">🧠 Allowed Preferences Databases (Read / Write)</label>
+						<div id="apikey-preferences-list" class="space-y-2"></div>
+					</div>
+				</div>
+			</div>
+			<div class="flex justify-end gap-2 pt-2">
+				<button onclick="closeModal('modal-apikey')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button>
+				<button onclick="submitAPIKey()" class="p-2 px-4 bg-indigo-600 text-white rounded text-sm font-bold shadow-sm">Save Security Key</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-skill" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-2xl space-y-4">
+			<h3 class="font-bold text-lg flex items-center gap-2"><i data-lucide="zap" class="text-orange-500"></i> Omni Skill</h3>
+			<input type="hidden" id="skill-id-input">
+			<div class="grid grid-cols-2 gap-2">
+				<input type="text" id="skill-name-input" placeholder="Name (No Spaces)" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+				<select id="skill-type-input" onchange="toggleSkillUI()" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-bold text-orange-600">
+					<option value="Bash">Bash Script</option>
+					<option value="Go">Go Native Code</option>
+					<option value="API">API Request</option>
+					<option value="MD">Markdown Docs</option>
+				</select>
+			</div>
+			<input type="text" id="skill-inst-input" placeholder="Instruction to Agent" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+			<textarea id="skill-content-input" rows="6" placeholder="Code / Template. Use <placeholders> here." class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
+			<div id="skill-api-ui" class="hidden flex-col gap-2">
+				<div class="grid grid-cols-3 gap-2">
+					<select id="skill-api-method" class="border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+						<option>GET</option>
+						<option>POST</option>
+						<option>PUT</option>
+						<option>DELETE</option>
+					</select>
+					<input type="text" id="skill-api-url" placeholder="https://api.example.com/<param>" class="border dark:border-gray-700 bg-transparent p-2 rounded col-span-2 text-sm font-mono">
+				</div>
+				<textarea id="skill-api-headers" rows="2" placeholder='Headers (JSON)' class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
+				<textarea id="skill-api-body" rows="3" placeholder='Body Payload (JSON or Text)' class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
+			</div>
+			<div class="flex justify-end gap-2 pt-2 border-t dark:border-gray-800">
+				<button onclick="closeModal('modal-skill')" class="p-2 px-4 border dark:border-gray-700 rounded-lg text-sm">Cancel</button><button onclick="submitSkill()" class="p-2 px-4 bg-orange-500 text-white rounded-lg text-sm font-bold shadow-sm">Save Skill</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-provider" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-md space-y-4 shadow-md border border-gray-200/60">
+			<h3 class="font-bold text-lg">Edit AI Provider</h3>
+			<input type="hidden" id="provider-id-input">
+			<div class="grid grid-cols-2 gap-2">
+				<input type="text" id="provider-name-input" placeholder="Name (e.g. SF-OpenAI)" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+				<select id="provider-type-input" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-bold text-blue-500">
+					<option value="OpenAI">OpenAI / SF</option>
+					<option value="Claude">Claude (Anthropic)</option>
+					<option value="Ollama">Ollama (Local)</option>
+				</select>
+			</div>
+			<input type="text" id="provider-endpoint-input" placeholder="Base URL (Endpoint)" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-mono">
+			<input type="password" id="provider-key-input" placeholder="API Key / Token" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+			<div class="space-y-1">
+				<label class="text-[10px] text-gray-500 font-bold uppercase">Extra Params (JSON)</label>
+				<textarea id="provider-config-input" rows="3" placeholder='{"max_tokens": 8192, "top_k": 50}' class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black p-2 rounded font-mono text-xs"></textarea>
+			</div>
+			<div class="flex justify-end gap-2 pt-2">
+				<button onclick="closeModal('modal-provider')" class="p-2 px-4 border dark:border-gray-700 rounded-lg text-sm">Cancel</button>
+				<button onclick="submitProvider()" class="p-2 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold">Save Provider</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-mcp" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-sm space-y-4">
+			<h3 class="font-bold text-yellow-500">MCP Server</h3>
+			<input type="hidden" id="mcp-id-input"><input type="text" id="mcp-name-input" placeholder="Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="mcp-url-input" placeholder="SSE URL"
+				class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="mcp-cmd-input" placeholder="Command (Optional)" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded">
+			<div class="flex justify-end gap-2">
+				<button onclick="closeModal('modal-mcp')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button><button onclick="submitMCP()" class="p-2 bg-yellow-500 text-white rounded text-sm">Save</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-rag" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-sm space-y-4">
+			<h3 class="font-bold text-indigo-500">Vector RAG</h3>
+			<input type="hidden" id="rag-id-input"><input type="text" id="rag-name-input" placeholder="Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="rag-desc-input" placeholder="Description" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded">
+			<div class="flex justify-end gap-2">
+				<button onclick="closeModal('modal-rag')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button><button onclick="submitRAG()" class="p-2 bg-indigo-500 text-white rounded text-sm">Save</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-preferences" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-sm space-y-4">
+			<h3 class="font-bold text-teal-500">Preferences Memory</h3>
+			<input type="hidden" id="preferences-id-input"><input type="text" id="preferences-name-input" placeholder="Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="preferences-desc-input" placeholder="Description"
+				class="w-full border dark:border-gray-700 bg-transparent p-2 rounded">
+			<div class="flex justify-end gap-2">
+				<button onclick="closeModal('modal-preferences')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button><button onclick="submitPreferences()" class="p-2 bg-teal-500 text-white rounded text-sm">Save</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-source" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-sm space-y-4">
+			<h3 class="font-bold">Source Mount</h3>
+			<input type="hidden" id="source-id-input">
+			<input type="text" id="source-name-input" placeholder="Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded">
+			<select id="source-type-input" onchange="toggleSourceUI()" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-bold text-blue-500">
+				<option>Text</option>
+				<option>JSON</option>
+				<option>Image</option>
+				<option>Video</option>
+				<option>Audio</option>
+				<option>Local File</option>
+			</select>
+			<div id="source-api-box" class="space-y-1">
+				<label class="text-[10px] text-gray-500 font-bold uppercase">Auth / API Key</label>
+				<input type="text" id="source-key-input" placeholder="Leave blank to auto-generate" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-mono text-green-600">
+			</div>
+			<div id="source-file-box" class="space-y-1 hidden">
+				<label class="text-[10px] text-gray-500 font-bold uppercase">Absolute Path</label>
+				<input type="text" id="source-file-input" placeholder="e.g. C:\data\live.txt" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-mono text-orange-500">
+			</div>
+			<div class="flex justify-end gap-2 pt-2 border-t dark:border-gray-800">
+				<button onclick="closeModal('modal-source')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button>
+				<button onclick="submitSource()" class="p-2 bg-black text-white rounded text-sm font-bold shadow-sm">Save Source</button>
+			</div>
+		</div>
+	</div>
+	
+	<div id="modal-output" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-sm space-y-4">
+			<h3 class="font-bold">Output Tool</h3>
+			<input type="hidden" id="output-id-input"><input type="text" id="output-name-input" placeholder="Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="output-inst-input" placeholder="Instruction"
+				class="w-full border dark:border-gray-700 bg-transparent p-2 rounded"><input type="text" id="output-cmd-input" placeholder="Command Template" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono">
+			<div class="flex justify-end gap-2">
+				<button onclick="closeModal('modal-output')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button><button onclick="submitOutput()" class="p-2 bg-black text-white rounded text-sm">Save</button>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		// Dictionary for UI internationalization
+		const i18nDict = {
+		    "Home": { zh: "主页", de: "Startseite" },
+		    "Statistics": { zh: "数据统计", de: "Statistiken" },
+		    "Applications": { zh: "应用", de: "Anwendungen" },
+		    "Agents": { zh: "Agents", de: "Agenten" },
+		    "Sources": { zh: "数据源", de: "Quellen" },
+		    "Outputs": { zh: "输出", de: "Ausgaben" },
+		    "Skills": { zh: "技能", de: "Fähigkeiten" },
+		    "Preferences": { zh: "生成式Preferences", de: "Speicher" },
+		    "MCP Servers": { zh: "MCP 服务器", de: "MCP-Server" },
+		    "Providers": { zh: "模型供应商", de: "Anbieter" },
+		    "Settings": { zh: "系统设置", de: "Einstellungen" },
+		    "Console": { zh: "控制台", de: "Konsole" },
+		    "Theme": { zh: "主题", de: "Thema" },
+		    "Overview": { zh: "概览", de: "Übersicht" },
+		    "Armory": { zh: "通用", de: "Rüstkammer" },
+		    "Studio": { zh: "工坊", de: "Studio" },
+		    "Config": { zh: "配置", de: "Konfiguration" },
+		    "System Locked": { zh: "系统已锁定", de: "System gesperrt" },
+		    "Unlock OS": { zh: "解锁系统", de: "System entsperren" },
+		    "Auth Desc": { 
+		        zh: "请输入密码以解锁系统。若是首次登录，输入的密码将作为最高管理员密码永久保存。", 
+		        de: "Geben Sie das Passwort ein, um zu entsperren. Beim ersten Login wird dies als Admin-Passwort festgelegt." 
+		    }
+		};
+		let currentLang = localStorage.getItem('zuver_lang') || 'en';
+
+		/** Core i18n DOM replacement engine (protects inner SVGs) */
+		function switchLanguage(lang) {
+		    currentLang = lang;
+		    localStorage.setItem('zuver_lang', lang);
+		    document.getElementById('lang-select').value = lang;
+		    
+		    // Scan all navigational text and designated i18n targets
+		    document.querySelectorAll('.nav-text, .nav-section-title, [data-i18n]').forEach(el => {
+		        
+		        // Retrieve explicitly bound data-i18n keys
+		        let key = el.getAttribute('data-i18n');
+		        
+		        // Fallback: extract inner text content to use as the translation key
+		        if (!key) {
+		            let textNode = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+		            key = textNode ? textNode.textContent.trim() : el.innerText.trim();
+		            if(!el.getAttribute('data-i18n')) el.setAttribute('data-i18n', key);
+		        }
+		        
+		        if (key && i18nDict[key]) {
+		            const targetText = lang === 'en' ? key : (i18nDict[key][lang] || key);
+		            
+		            // Strictly replace text nodes to prevent destroying embedded Lucide icons
+		            let textNode = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+		            if(textNode) {
+		                textNode.textContent = targetText;
+		            } else if (el.children.length === 0) {
+		                el.innerText = targetText;
+		            }
+		        }
+		    });
+		}
+		
+		// Trigger translation initialization upon DOM readiness
+		document.addEventListener("DOMContentLoaded", () => {
+		    document.getElementById('lang-select').value = currentLang;
+		    if(currentLang !== 'en') {
+		        setTimeout(() => switchLanguage(currentLang), 100);
+		    }
+		});
+
+		/* ==========================================
+		 * UTILITIES & GLOBAL UI STATE
+		 * ========================================== */
+		lucide.createIcons();
+		
+		function escapeHTML(str) { 
+		    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); 
+		}
+		
+		function toggleMobileMenu() { 
+		    document.getElementById('main-sidebar').classList.toggle('-translate-x-full'); 
+		    document.getElementById('sidebar-overlay').classList.toggle('hidden'); 
+		}
+		
+		function toggleTheme() { 
+		    document.documentElement.classList.toggle('dark'); 
+		    const isDark = document.documentElement.classList.contains('dark'); 
+		    document.querySelectorAll('.theme-icon').forEach(i => i.setAttribute('data-lucide', isDark ? 'sun' : 'moon')); 
+		    lucide.createIcons(); 
+		}
+		
+		function openModal(id) { 
+		    document.getElementById(id).classList.remove('hidden'); 
+		}
+		
+		function closeModal(id) { 
+		    document.getElementById(id).classList.add('hidden'); 
+		    // Clear all transient form states upon modal closure to prevent data leakage across sessions
+		    document.querySelectorAll(`#${id} input[type="hidden"], #${id} input[type="text"], #${id} input[type="password"], #${id} textarea`).forEach(el => el.value = '');
+		}
+		
+		function toggleSkillUI() { 
+		    const t = document.getElementById('skill-type-input').value; 
+		    document.getElementById('skill-api-ui').style.display = (t==='API') ? 'flex' : 'none'; 
+		    const contentInput = document.getElementById('skill-content-input');
+		    contentInput.style.display = (t==='API') ? 'none' : 'block'; 
+		    
+		    // Dynamic UI adjustments for different skill types
+		    if (t === 'MD') {
+		        contentInput.placeholder = "Markdown Content (No <placeholders> needed)";
+		    } else {
+		        contentInput.placeholder = "Code / Template. Use <placeholders> here.";
+		    }
+		}
+
+		/* ==========================================
+		 * API CLIENT & DATA STATE MANAGEMENT
+		 * ========================================== */
+		let dataStore = { agents: [], projects: [], skills: [], rags: [], preferences: [], sources: [], providers: [], mcp: [], outputs: [] };
+		
+		async function api(path, method='GET', body=null) {
+		    const opt = { method, headers: {} };
+		    
+		    // Attach system authorization token if present
+		    const token = localStorage.getItem('zuver_token');
+		    if(token) opt.headers['Authorization'] = 'Bearer ' + token;
+		    if(body) { opt.headers['Content-Type']='application/json'; opt.body = JSON.stringify(body); }
+		    
+		    const r = await fetch(`/api${path}`, opt);
+		    
+		    // Intercept 401 Unauthorized errors to trigger the authentication modal
+		    if(r.status === 401 && path !== '/login') {
+		        document.getElementById('modal-login').classList.remove('hidden');
+		        throw new Error("Unauthorized Session");
+		    }
+		    return r.json();
+		}
+		
+		async function loadAllData() {
+		    try {
+		        api('/sysinfo').then(info => {
+		            document.getElementById('sidebar-version').innerText = info.version;
+		            document.getElementById('about-version').innerText = info.version;
+		            document.getElementById('about-name').innerText = info.name;
+		            document.getElementById('about-desc').innerText = info.description;
+		        }).catch(()=>{});
+		        
+		        // Fetch core resources and application state in parallel
+		        const [ag, pr, sk, ra, pf, so, pv, mp, ou, ak, an, s] = await Promise.all([
+		            api('/agents'), api('/projects'), api('/skills'), api('/rags'), api('/preferences'), api('/sources'), api('/providers'), api('/mcp').catch(()=>[]), api('/outputs').catch(()=>[]), api('/apikeys').catch(()=>[]),
+		            api('/analytics/summary').catch(()=>({entities: {}, global_tokens_24h: 0})), 
+		            api('/stats').catch(()=>({agents:0, skills:0, preferences:0, tokens:0})) 
+		        ]);
+		        
+		        dataStore = { agents: ag||[], projects: pr||[], skills: sk||[], rags: ra||[], preferences: pf||[], sources: so||[], providers: pv||[], mcp: mp||[], outputs: ou||[], apiKeys: ak||[] };
+		        window.analyticsStats = an; 
+		        
+		        // Defensively update statistical DOM nodes
+		        if (document.getElementById('stat-agents')) document.getElementById('stat-agents').innerText = s.agents;
+		        if (document.getElementById('stat-skills')) document.getElementById('stat-skills').innerText = s.skills;
+		        if (document.getElementById('stat-preferences')) document.getElementById('stat-preferences').innerText = s.preferences;
+		        const tokenEl = document.getElementById('home-24h-tokens') || document.getElementById('stat-tokens');
+		        if (tokenEl) tokenEl.innerText = (an.global_tokens_24h || 0).toLocaleString();
+		        
+		        // Populate analytical chart filters
+		        if (document.getElementById('chart-filter-agents')) {
+		            safeHtml('chart-filter-agents', dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join(''));
+		            safeHtml('chart-filter-providers', dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join(''));
+		            if (window.loadChartData) window.loadChartData(document.getElementById('chart-filter').value);
+		        }
+		        
+		        // Initialize Presidio privacy controls from remote settings
+		        const set = await api('/settings');
+		        if (set.presidio_enabled) {
+		            document.getElementById('toggle-presidio').checked = (set.presidio_enabled === 'true');
+		            document.getElementById('presidio-analyzer-url').value = set.presidio_analyzer;
+		            document.getElementById('presidio-anonymizer-url').value = set.presidio_anonymizer;
+		        }
+		        updatePresidioUI(); 
+		        
+		        const sel = document.getElementById('chat-agent-select'); const old = sel.value;
+		        sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">🤖 ${a.name}</option>`).join('');
+		        if(old && dataStore.agents.find(a=>a.id===old)) sel.value = old;
+		        renderLists();
+		    } catch(e) { console.error("API Error:", e); }
+		}
+		
+		/** Toggles the attachment menu and syncs supported modalities */
+		function toggleModalityMenu() {
+		    const menu = document.getElementById('chat-input-type');
+		    menu.classList.toggle('hidden');
+		    if (!menu.classList.contains('hidden')) {
+		        syncInputModality(); 
+		    }
+		}
+		
+		/** Disables unsupported input modalities based on current agent configuration */
+		function syncInputModality() {
+		    const agentId = document.getElementById('chat-agent-select').value;
+		    const agent = dataStore.agents.find(a => a.id === agentId); 
+		    if (!agent) return;
+		    
+		    // Parse accepted modalities array
+		    const accepted = JSON.parse(agent.input_methods || '["Text"]');
+		    const typeSelect = document.getElementById('chat-input-type');
+		    Array.from(typeSelect.options).forEach(opt => {
+		        const isSupported = accepted.includes(opt.value);
+		        opt.disabled = !isSupported;
+		        // Apply visual disabled state
+		        opt.style.color = isSupported ? '' : '#9ca3af'; 
+		        
+		        // Fallback to text mode if unsupported type was previously selected
+		        if (!isSupported && typeSelect.value === opt.value) {
+		            typeSelect.value = "Text"; 
+		        }
+		    });
+		}
+		
+		/** Intercepts modality selection to trigger file upload if non-text is chosen */
+		function handleTypeChange(val) {
+		    if (val !== 'Text') {
+		        document.getElementById('chat-file-input').click();
+		    }
+		    // Auto-collapse menu upon selection
+		    document.getElementById('chat-input-type').classList.add('hidden');
+		}
+		
+		// Handle outside clicks for modality menu
+		document.addEventListener('click', (e) => {
+		    const btn = document.getElementById('upload-btn');
+		    const menu = document.getElementById('chat-input-type');
+		    if (!btn.contains(e.target) && !menu.contains(e.target)) {
+		        menu.classList.add('hidden');
+		    }
+		});
+
+		/** Safely injects HTML into target element to prevent null reference crashes */
+		function safeHtml(id, html) { 
+		    const el = document.getElementById(id); 
+		    if (el) el.innerHTML = html; 
+		}
+		
+		function renderLists() {
+		    safeHtml('projects-grid', dataStore.projects.map(p => `<div onclick="openEditor('${p.id}')" class="p-6 bg-white dark:bg-[#111] border dark:border-gray-800 rounded-lg hover:border-blue-500 cursor-pointer transition-all shadow-sm"><h4 class="font-bold text-lg text-blue-600">${p.name}</h4><p class="text-xs text-gray-500 mt-2">${p.description}</p></div>`).join(''));
+		    safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} onchange="window.togglePrivacy('${a.id}', this.checked)" class="accent-green-500"> 🤖 ${a.name}</label>`).join(''));
+		    safeHtml('agents-list', dataStore.agents.map(a => `<div class="p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold">${a.name}</h3><p class="text-xs text-gray-500 mt-1">${a.model}</p></div><div class="flex gap-2"><i onclick="window.editAgent('${a.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('skills-list', dataStore.skills.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}</p></div><div class="flex gap-2"><i onclick="window.editSkill('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSkill('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editPreferences('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deletePreferences('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editRAG('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteRAG('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${p.name}</h3><p class="text-[10px] text-gray-400 mt-1">${p.endpoint}</p></div><div class="flex gap-2"><i onclick="window.editProvider('${p.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteProvider('${p.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('mcp-grid', dataStore.mcp.map(m => `<div class="p-4 border border-yellow-200 dark:border-yellow-900 bg-yellow-50/50 dark:bg-yellow-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-yellow-600">${m.name}</h3><p class="text-[10px] text-gray-400 mt-1 font-mono">${m.url || m.command}</p></div><div class="flex gap-2"><i onclick="window.editMCP('${m.id}')" data-lucide="edit-2" class="w-4 h-4 text-yellow-600 hover:text-yellow-700 cursor-pointer"></i><i onclick="window.deleteMCP('${m.id}')" data-lucide="trash-2" class="w-4 h-4 text-yellow-600 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('apikeys-list', dataStore.apiKeys.map(k => `
+		        <div class="p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md flex flex-col justify-between">
+		            <div>
+		                <div class="flex justify-between items-start">
+		                    <h3 class="font-bold text-indigo-600 dark:text-indigo-400">${k.name}</h3>
+		                    <div class="flex gap-2">
+		                        <i onclick="window.editAPIKey('${k.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-indigo-500 cursor-pointer"></i>
+		                        <i onclick="window.deleteAPIKey('${k.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                    </div>
+		                </div>
+		                <p class="text-[10px] text-gray-400 mt-1">${k.description}</p>
+		            </div>
+		            <div class="mt-4 pt-3 border-t dark:border-gray-800 flex justify-between items-center">
+		                <code class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${k.token}</code>
+		                <i onclick="navigator.clipboard.writeText('${k.token}'); alert('Copied!')" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
+		            </div>
+		        </div>
+		    `).join(''));
+		    
+		    // Render Agent cards with embedded 24h telemetry data
+		    safeHtml('agents-list', dataStore.agents.map(a => {
+		        const st = (window.analyticsStats && window.analyticsStats.entities[a.id]) || {tokens_24h: 0, calls_24h: 0};
+		        return `
+		        <div class="agent-card p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg cursor-pointer shadow-sm relative group overflow-hidden flex flex-col justify-between h-40">
+		            <div class="absolute inset-0 bg-gradient-to-br from-transparent to-blue-50/50 dark:to-blue-900/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+		            <div class="flex justify-between items-start relative z-10">
+		                <div class="flex gap-3 items-center">
+		                    <div class="w-10 h-10 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg text-white font-bold">${a.name.substring(0, 1).toUpperCase()}</div>
+		                    <div>
+		                        <h3 class="font-bold text-sm">${a.name}</h3>
+		                        <p class="text-[10px] font-mono text-gray-500">${a.model}</p>
+		                    </div>
+		                </div>
+		                <i onclick="event.stopPropagation(); window.editAgent('${a.id}')" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white transition-colors z-20"></i>
+		            </div>
+		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 relative z-10 pt-4 border-t dark:border-gray-800/50">
+		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
+		                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> ${st.calls_24h} Calls (24h)</span>
+		            </div>
+		        </div>
+		    `}).join(''));
+		    
+		    // Render Provider configurations with success rate metrics
+		    safeHtml('providers-list', dataStore.providers.map(p => {
+		        const st = (window.analyticsStats && window.analyticsStats.entities[p.id]) || {tokens_24h: 0, success_rate: 100.0};
+		        const color = st.success_rate >= 90 ? 'green' : (st.success_rate >= 50 ? 'orange' : 'red');
+		        return `
+		        <div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md flex justify-between items-center shadow-sm">
+		            <div class="flex items-center gap-3">
+		                <div class="p-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-lg"><i data-lucide="server" class="w-4 h-4 text-gray-600 dark:text-gray-400"></i></div>
+		                <div>
+		                    <p class="font-bold text-sm">${p.name}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${p.type} • ${p.endpoint}</p>
+		                </div>
+		            </div>
+		            <div class="flex flex-col items-end gap-1">
+		                <div class="flex gap-2">
+		                    <i onclick="window.editProvider('${p.id}')" data-lucide="edit-3" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
+		                    <i onclick="window.deleteProvider('${p.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                </div>
+		                <span class="text-[10px] px-1.5 py-0.5 rounded bg-${color}-50 dark:bg-${color}-900/20 text-${color}-500 font-bold mt-1 border border-${color}-200 dark:border-${color}-800/50">${st.success_rate.toFixed(1)}% Success | ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
+		            </div>
+		        </div>
+		    `}).join(''));
+		    
+		    // Render Data Sources with last-call timestamps
+		    safeHtml('sources-list', dataStore.sources.map(s => {
+		        const st = (window.analyticsStats && window.analyticsStats.entities[s.id]) || {calls_24h: 0, last_call: ''};
+		        const timeStr = st.last_call ? new Date(st.last_call).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Never';
+		        return `
+		        <div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md flex justify-between items-center shadow-sm">
+		            <div class="flex items-center gap-3">
+		                <div class="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg"><i data-lucide="database" class="w-4 h-4"></i></div>
+		                <div>
+		                    <p class="font-bold text-sm">${s.name}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${s.type} • ${timeStr}</p>
+		                </div>
+		            </div>
+		            <div class="flex flex-col items-end gap-1">
+		                <i onclick="window.deleteSource('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <span class="text-[10px] font-bold text-gray-400 mt-1">${st.calls_24h} Calls (24h)</span>
+		            </div>
+		        </div>
+		    `}).join(''));
+		    
+		    // Render MCP Server statuses
+		    safeHtml('mcp-list', dataStore.mcp.map(m => {
+		        const st = (window.analyticsStats && window.analyticsStats.entities[m.id]) || {calls_24h: 0};
+		        return `
+		        <div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md flex justify-between items-center shadow-sm">
+		            <div class="flex items-center gap-3">
+		                <div class="relative">
+		                    <div class="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg"><i data-lucide="plug" class="w-4 h-4"></i></div>
+		                    <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-[#111] rounded-full animate-pulse"></span>
+		                </div>
+		                <div>
+		                    <p class="font-bold text-sm flex items-center gap-2">${m.name}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${m.cmd} ${m.args.substring(0,10)}...</p>
+		                </div>
+		            </div>
+		            <div class="flex flex-col items-end gap-1">
+		                <i onclick="window.deleteMCP('${m.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <span class="text-[10px] font-bold text-emerald-500 mt-1">${st.calls_24h} Calls (24h)</span>
+		            </div>
+		        </div>
+		    `}).join(''));
+		    
+		    const combinedSources = [
+		        ...dataStore.sources.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type} | ${s.mode}</p></div><div class="flex gap-2"><i onclick="window.editSource('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSource('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
+		        ...dataStore.preferences.map(r => `<div class="p-4 border border-teal-200 dark:border-teal-900/50 bg-teal-50/30 dark:bg-teal-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-teal-600">${r.name}</h3><p class="text-[10px] text-teal-500/70 mt-1">Preferences Memory | ${r.table_name}</p></div><i onclick="document.querySelector('[data-target=preferences]').click()" data-lucide="arrow-right" class="w-4 h-4 text-teal-400 hover:text-teal-600 cursor-pointer"></i></div></div>`)
+		    ].join('');
+		    safeHtml('sources-list', combinedSources);
+		    
+		    // Render unified outputs interface (combining Base Outputs and Omni Skills)
+		    const combinedOutputs = [
+		        ...dataStore.outputs.map(o => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><h3 class="font-bold text-sm">${o.name}</h3><div class="flex gap-2"><i onclick="window.editOutput('${o.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteOutput('${o.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
+		        ...dataStore.skills.map(s => `<div class="p-4 border border-orange-200 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-orange-600">${s.name}</h3><p class="text-[10px] text-orange-500/70 mt-1">Skill | ${s.type}</p></div><i onclick="document.querySelector('[data-target=skills]').click()" data-lucide="arrow-right" class="w-4 h-4 text-orange-400 hover:text-orange-600 cursor-pointer"></i></div></div>`)
+		    ].join('');
+		    safeHtml('outputs-list', combinedOutputs);
+		    lucide.createIcons();
+		}
+
+		/* ==========================================
+		 * PERSISTENT CHAT & CONSOLE ENGINE
+		 * ========================================== */
+		document.getElementById('chat-agent-select').addEventListener('change', loadChatHistory);
+		
+		async function loadChatHistory() {
+		    const agentId = document.getElementById('chat-agent-select').value;
+		    const chatBox = document.getElementById('chat-messages');
+		    if(!agentId) return;
+		    
+		    chatBox.innerHTML = '<div class="text-center text-xs text-gray-400 p-4">Loading persistent memory...</div>';
+		    try {
+		        const history = await api(`/history/${agentId}`);
+		        chatBox.innerHTML = '';
+		        if(history.length === 0) { 
+		            chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 my-10">Memory clean. Start chatting!</div>`; 
+		            return; 
+		        }
+		        
+		        history.forEach(msg => {
+		            if(msg.role === 'user') {
+		                chatBox.innerHTML += `<div class="chat-bubble-user whitespace-pre-wrap">${escapeHTML(msg.content)}</div>`;
+		            } else if(msg.role === 'assistant') {
+		                // Parse AI responses with Markdown safely
+		                chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(msg.content)}</div>`;
+		            } else if(msg.role === 'system') {
+		                // Wrap system/tool interactions in collapsible detail blocks for cleanliness
+		                chatBox.innerHTML += `
+		                <details class="chat-bubble-sys cursor-pointer group">
+		                    <summary class="font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors list-none flex items-center gap-2">
+		                        <i data-lucide="chevron-right" class="w-3 h-3 group-open:rotate-90 transition-transform"></i>
+		                        🛠️ System & Tool Interactions
+		                    </summary>
+		                    <div class="mt-2 text-[10px] text-gray-400 border-l-2 border-gray-200 dark:border-gray-700 pl-3 ml-1">
+		                        ${escapeHTML(msg.content)}
+		                    </div>
+		                </details>`;
+		            }
+		        });
+		        lucide.createIcons();
+		        chatBox.scrollTop = chatBox.scrollHeight;
+		    } catch(e) { chatBox.innerHTML = '<div class="text-center text-red-500">Failed to load.</div>'; }
+		}
+
+		/** Handles multi-part file uploads and stores references globally */
+		async function handleFileUpload(file) {
+		    if (!file) return;
+		    const formData = new FormData();
+		    formData.append('file', file);
+		    const btn = document.getElementById('upload-btn');
+		    btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>`;
+		    
+		    try {
+		        const r = await fetch('/api/upload', {
+		            method: 'POST',
+		            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') },
+		            body: formData
+		        });
+		        const data = await r.json();
+		        if(r.ok) {
+		            window.lastUploadedFile = data.path; 
+		            alert(`File uploaded: ${file.name}`);
+		        }
+		    } catch(e) { alert("Upload failed"); }
+		    btn.innerHTML = `<i data-lucide="paperclip" class="w-5 h-5"></i>`;
+		    lucide.createIcons();
+		}
+		
+		// Bind event listeners for agent swapping
+		document.getElementById('chat-agent-select').addEventListener('change', () => {
+		    loadChatHistory();
+		    syncInputModality();
+		});
+		
+		window.clearMemory = async () => {
+		    const agentId = document.getElementById('chat-agent-select').value;
+		    if(confirm("Wipe this Agent's memory permanently?")) { 
+		        await api(`/history/${agentId}`, 'DELETE'); 
+		        loadChatHistory(); 
+		    }
+		};
+		
+		window.sendMessage = async () => {
+		    const input = document.getElementById('chat-input'); 
+		    const typeSelect = document.getElementById('chat-input-type'); 
+		    const agentId = document.getElementById('chat-agent-select').value;
+		    
+		    // Input sanitization and payload construction
+		    let msg = input.value.trim();
+		    // Append file metadata if an upload occurred and modality is strictly non-text
+		    const isFileUpload = window.lastUploadedFile && typeSelect.value !== 'Text';
+		    const filePath = isFileUpload ? window.lastUploadedFile : "";
+		    
+		    // Abort if the transaction lacks both textual and file payloads
+		    if (!msg && !filePath) return;
+		    if (!agentId) return;
+		    
+		    const chatBox = document.getElementById('chat-messages');
+		    if(chatBox.innerHTML.includes('Memory clean')) chatBox.innerHTML = '';
+		    
+		    // Construct UI preview integrating both file attachments and text
+            let displayMsg = msg;
+            if (isFileUpload && filePath) {
+                const safeFileName = filePath.split(/[/\\]/).pop();
+                displayMsg = msg ? `📂 [File: ${safeFileName}]\n${msg}` : `📂 [File: ${safeFileName}]`;
+            }
+            chatBox.innerHTML += `<div class="chat-bubble-user whitespace-pre-wrap">${escapeHTML(displayMsg)}</div>`;
+		    input.value = ''; 
+		    chatBox.scrollTop = chatBox.scrollHeight;
+		    
+		    const btn = document.getElementById('send-btn'); 
+		    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i>`; 
+		    lucide.createIcons();
+		    
+		    if (msg.startsWith('/createTasks')) {
+		        chatBox.innerHTML += `<div class="chat-bubble-sys text-green-500 border-green-500/30">🕵️ Shadow Task Deployed. Monitoring system logs for pattern...</div>`;
+		    }
+		    
+		    try {
+		        const reqPayload = { 
+		            agent_id: agentId, 
+		            message: msg, 
+		            file_path: filePath,
+		            use_cache: document.getElementById('toggle-cache').checked,
+		            presidio_enabled: document.getElementById('toggle-presidio').checked,
+		            presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
+		            presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
+		            input_type: typeSelect.value 
+		        };
+		        const data = await api('/chat', 'POST', reqPayload);
+		        
+		        // Reset state post-submission
+		        window.lastUploadedFile = null;
+		        typeSelect.value = "Text"; 
+		        
+		        if (data.logs) {
+		            data.logs.forEach(log => {
+		                let cls = 'chat-bubble-sys';
+		                if(log.includes('[Privacy') || log.includes('[Session]')) cls += ' border-green-500 text-green-600';
+		                if(!log.includes('[Agent Output]')) chatBox.innerHTML += `<div class="${cls}">${escapeHTML(log)}</div>`;
+		            });
+		        }
+		        chatBox.innerHTML += `<div class="chat-bubble-ai">${marked.parse(data.reply)}</div>`;
+		    } catch (err) { 
+		        chatBox.innerHTML += `<div class="chat-bubble-sys text-red-500">Network Error.</div>`; 
+		    }
+		    btn.innerHTML = `Send`; 
+		    chatBox.scrollTop = chatBox.scrollHeight; 
+		    loadAllData(); 
+		};
+
+		/* ==========================================
+		 * VISUAL ROUTER / WORKFLOW EDITOR ENGINE
+		 * ========================================== */
+		let nodes = [], edges = [], activeId = null, selectedNode = null, tempLineStart = null, tempMouseX = 0, tempMouseY = 0;
+		
+		window.openEditor = (id) => {
+		    document.getElementById('view-projects-list').classList.add('hidden'); document.getElementById('view-projects-editor').classList.remove('hidden'); document.getElementById('view-projects-editor').classList.add('flex');
+		    if(id) {
+		        activeId = id; const p = dataStore.projects.find(x => x.id === id);
+		        try { const flow = JSON.parse(p.flow_json); nodes = flow.nodes||[]; edges = flow.edges||[]; } catch(e){}
+		    } else { activeId = 'proj_' + Date.now(); nodes = [{id:'start', type:'Start', x:50, y:150}, {id:'end', type:'End', x:400, y:150}]; edges = []; }
+		    renderCanvas(); renderProps();
+		};
+		
+		window.closeEditor = () => { document.getElementById('view-projects-editor').classList.add('hidden'); document.getElementById('view-projects-editor').classList.remove('flex'); document.getElementById('view-projects-list').classList.remove('hidden'); loadAllData(); };
+		window.addNode = (type) => { nodes.push({ id: 'n'+Date.now(), type, x: 200, y: 200 }); renderCanvas(); };
+		
+		function renderCanvas() {
+		    const c = document.getElementById('canvas-nodes'); c.innerHTML = '';
+		    nodes.forEach(n => {
+		        const d = document.createElement('div');
+		        d.className = `wf-node ${selectedNode?.id === n.id ? 'selected' : ''}`;
+		        d.style.left = n.x + 'px'; d.style.top = n.y + 'px';
+		        let btn = n.type==='Start'||n.type==='End' ? '' : `<i onclick="delNode('${n.id}')" data-lucide="x" class="w-3 h-3 text-gray-400 hover:text-red-500 cursor-pointer"></i>`;
+		        d.innerHTML = `<div class="p-2 text-xs font-bold border-b dark:border-gray-800 flex justify-between"><span>${n.type}</span>${btn}</div><div class="p-2 text-[9px] text-gray-400">ID: ${n.id.substring(0,6)}...</div>${n.type !== 'Start' ? '<div class="wf-port wf-port-in"></div>' : ''}${n.type !== 'End' ? '<div class="wf-port wf-port-out" onmousedown="startLine(event, \''+n.id+'\')"></div>' : ''}`;
+		        
+		        d.onmousedown = (e) => {
+		            if(e.target.classList.contains('wf-port') || e.target.closest('i')) return;
+		            selectedNode = n; renderProps(); 
+		            document.querySelectorAll('.wf-node').forEach(el=>el.classList.remove('selected')); d.classList.add('selected');
+		            const sx = e.clientX, sy = e.clientY, nx = n.x, ny = n.y;
+		            document.onmousemove = (me) => { n.x = nx + (me.clientX - sx); n.y = ny + (me.clientY - sy); d.style.left = n.x + 'px'; d.style.top = n.y + 'px'; drawLines(); }
+		            document.onmouseup = () => { document.onmousemove = null; document.onmouseup=null; }
+		        }
+		        
+		        d.onmouseup = () => { if(tempLineStart && tempLineStart !== n.id && n.type !== 'Start') { if(!edges.some(edge => edge.from === tempLineStart && edge.to === n.id)) { edges.push({from: tempLineStart, to: n.id}); } tempLineStart = null; renderCanvas(); } }
+		        c.appendChild(d);
+		    });
+		    lucide.createIcons(); drawLines();
+		}
+		
+		window.startLine = (e, id) => { 
+            e.stopPropagation(); tempLineStart = id; 
+            const canvas = document.getElementById('canvas-container'); 
+            if(canvas) { 
+                // Calculate bounding rect offset
+                const rect = canvas.getBoundingClientRect(); 
+                tempMouseX = e.clientX - rect.left; 
+                tempMouseY = e.clientY - rect.top; 
+            }
+            drawLines();
+        };
+        
+		document.addEventListener('mousemove', (e) => { 
+            if(tempLineStart) { 
+                const canvas = document.getElementById('canvas-container'); 
+                if(!canvas) return; 
+                const rect = canvas.getBoundingClientRect(); 
+                tempMouseX = e.clientX - rect.left; 
+                tempMouseY = e.clientY - rect.top; 
+                drawLines(); 
+            }
+        });
+        
+        // Clear temporary connection line if the drop target is not a valid input port
+        document.addEventListener('mouseup', (e) => { 
+            if(tempLineStart) { 
+                if (!e.target.classList.contains('wf-port-in')) {
+                    tempLineStart = null; 
+                }
+                drawLines(); 
+            } 
+        });
+        
+		window.delNode = (id) => { nodes = nodes.filter(n=>n.id!==id); edges = edges.filter(e=>e.from!==id && e.to!==id); if(selectedNode?.id===id) selectedNode=null; renderProps(); renderCanvas(); };
+		
+		function drawLines() {
+		    const svg = document.getElementById('canvas-lines'); svg.innerHTML = '<defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker></defs>';
+		    edges.forEach(e => {
+		        const n1 = nodes.find(x => x.id === e.from), n2 = nodes.find(x => x.id === e.to);
+		        if(n1 && n2) {
+		            const x1 = n1.x + 160, y1 = n1.y + 25, x2 = n2.x, y2 = n2.y + 25;
+		            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		            path.setAttribute('d', `M${x1},${y1} C${x1+40},${y1} ${x2-40},${y2} ${x2},${y2}`);
+		            path.setAttribute('stroke', '#3b82f6'); path.setAttribute('stroke-width', '2'); path.setAttribute('fill', 'none'); path.setAttribute('marker-end', 'url(#arrow)'); path.setAttribute('class', 'edge-path');
+		            path.onclick = (event) => { event.stopPropagation(); edges = edges.filter(ed => !(ed.from === e.from && ed.to === e.to)); drawLines(); };
+		            svg.appendChild(path);
+		        }
+		    });
+		    if(tempLineStart) {
+		        const n1 = nodes.find(x => x.id === tempLineStart);
+		        if(n1) {
+		            const x1 = n1.x + 160, y1 = n1.y + 25;
+		            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		            path.setAttribute('d', `M${x1},${y1} C${x1+40},${y1} ${tempMouseX-40},${tempMouseY} ${tempMouseX},${tempMouseY}`);
+		            path.setAttribute('stroke', '#9ca3af'); path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-dasharray', '5,5'); path.setAttribute('fill', 'none');
+		            svg.appendChild(path);
+		        }
+		    }
+		}
+		
+		function renderProps() {
+		    const p = document.getElementById('node-props');
+		    if(!selectedNode) { p.innerHTML = '<p class="text-xs text-gray-400 text-center mt-8">Select node</p>'; return; }
+		    let h = `<h4 class="font-bold text-xs uppercase mb-3 text-blue-500">${selectedNode.type} Config</h4>`;
+		    if(selectedNode.type === 'Start') {
+		        h += `<label class="block text-[10px] text-gray-500 mb-1">Trigger Event</label>
+		              <select onchange="updateNode('trigger', this.value); renderProps()" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">
+		                  <option value="Manual" ${selectedNode.trigger==='Manual'?'selected':''}>Manual / Console Exec</option>
+		                  <option value="Command" ${selectedNode.trigger==='Command'?'selected':''}>Agent Command</option>
+		                  <option value="Source" ${selectedNode.trigger==='Source'?'selected':''}>Source Data Event</option>
+		                  <option value="Regex" ${selectedNode.trigger==='Regex'?'selected':''}>System Regex</option>
+		              </select>`;
+		        if(selectedNode.trigger === 'Command') h += `<input type="text" oninput="updateNode('param', this.value)" value="${selectedNode.param||''}" placeholder="e.g. /run_proj" class="w-full mt-2 p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
+		    if(selectedNode.trigger === 'Regex' || selectedNode.trigger === 'Source') h += `<input type="text" oninput="updateNode('param', this.value)" value="${selectedNode.param||''}" placeholder="Condition / Target ID" class="w-full mt-2 p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
+		    }
+		    if(selectedNode.type === 'Agent') {
+		        h += `<label class="block text-[10px] text-gray-500 mb-1">Target Agent</label>
+		              <select onchange="updateNode('agentId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">
+		                  <option value="">-- Select Agent --</option>
+		                  ${dataStore.agents.map(a => `<option value="${a.id}" ${selectedNode.agentId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
+		              </select>
+		              <label class="block text-[10px] text-gray-500 mt-3 mb-1">Custom System Prompt (Optional)</label>
+		              <textarea oninput="updateNode('sysPrompt', this.value)" placeholder="Leave blank to use agent's default setting" rows="3" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">${selectedNode.sysPrompt || ''}</textarea>
+		              <label class="block text-[10px] text-gray-500 mt-2 mb-1">Custom User Prefix (Optional)</label>
+		              <input type="text" oninput="updateNode('userPrefix', this.value)" value="${selectedNode.userPrefix || ''}" placeholder="Leave blank to use agent's default setting" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
+		    }
+		    else if(selectedNode.type === 'Skill') h += `<label class="block text-[10px] text-gray-500 mb-1">Target Skill</label><select onchange="updateNode('skillId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent"><option value="">-- Choose Skill --</option>${dataStore.skills.map(s => `<option value="${s.id}" ${selectedNode.skillId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}</select>`;
+		    else if(selectedNode.type === 'Project') h += `<label class="block text-[10px] text-gray-500 mb-1">Nested Project</label><select onchange="updateNode('projectId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent"><option value="">-- Sub-Project --</option>${dataStore.projects.filter(x=>x.id!==activeId).map(pr => `<option value="${pr.id}" ${selectedNode.projectId === pr.id ? 'selected' : ''}>${pr.name}</option>`).join('')}</select>`;
+		    else if(selectedNode.type === 'Code') {
+		        const defCode = `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Logic Executed")\n}`;
+		        h += `<label class="block text-[10px] text-gray-500 mb-1">Native Go Source Code</label><textarea oninput="updateNode('code', this.value)" rows="12" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-gray-50 dark:bg-[#1a1a1a] font-mono outline-none" spellcheck="false">${selectedNode.code || defCode}</textarea>`;
+		    }
+		    else h += `<p class="text-[10px] text-gray-400">No configs needed.</p>`;
+		    p.innerHTML = h;
+		}
+		
+		window.updateNode = (key, val) => { selectedNode[key] = val; };
+		window.saveProject = async () => { 
+		    const validNodes = nodes.filter(n => n.type === 'Start' || n.type === 'End' || edges.some(e => e.from === n.id || e.to === n.id));
+		    nodes = validNodes; renderCanvas(); 
+		    await api(`/projects/${activeId}`, 'PUT', { id: activeId, name: "Flow_" + activeId.slice(-4), description: "Visual Pipeline", flow_json: JSON.stringify({nodes, edges}) }); 
+		    alert('Workflow Saved!'); 
+		};
+		window.exportProjectJSON = () => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges }, null, 2)); const a = document.createElement('a'); a.setAttribute("href", dataStr); a.setAttribute("download", "zuver_router.json"); a.click(); };
+		window.importProjectJSON = () => { const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'; input.onchange = e => { const reader = new FileReader(); reader.readAsText(e.target.files[0], "UTF-8"); reader.onload = readerEvent => { try { const parsed = JSON.parse(readerEvent.target.result); if(parsed.nodes && parsed.edges) { nodes = parsed.nodes; edges = parsed.edges; renderCanvas(); } else alert("Invalid Router JSON"); } catch(err) { alert("Parse Error"); } } }; input.click(); };
+		
+		/* ==========================================
+		 * CRUD OPERATIONS & MODAL CONTROLLERS
+		 * ========================================== */
+		window.togglePrivacy = async (id, enabled) => { const a = dataStore.agents.find(x=>x.id===id); if(a){ a.privacy_enabled = enabled; await api(`/agents/${id}`, 'PUT', a); loadAllData(); } };
+		window.submitMCP = async () => { const id = document.getElementById('mcp-id-input').value || 'mcp_'+Date.now(); await api(document.getElementById('mcp-id-input').value?`/mcp/${id}`:'/mcp', document.getElementById('mcp-id-input').value?'PUT':'POST', {id, name: document.getElementById('mcp-name-input').value, url: document.getElementById('mcp-url-input').value, command: document.getElementById('mcp-cmd-input').value}); closeModal('modal-mcp'); loadAllData(); };
+		
+		window.submitSource = async () => { 
+		    const id = document.getElementById('source-id-input').value || 'src_'+Date.now(); 
+		    await api(document.getElementById('source-id-input').value?`/sources/${id}`:'/sources', document.getElementById('source-id-input').value?'PUT':'POST', {
+		        id, 
+		        name: document.getElementById('source-name-input').value, 
+		        type: document.getElementById('source-type-input').value, 
+		        mode: document.getElementById('source-mode-input').value,
+		        api_key: document.getElementById('source-key-input').value
+		    }); 
+		    closeModal('modal-source'); loadAllData(); 
+		};
+		
+		window.submitOutput = async () => { const id = document.getElementById('output-id-input').value || 'out_'+Date.now(); await api(document.getElementById('output-id-input').value?`/outputs/${id}`:'/outputs', document.getElementById('output-id-input').value?'PUT':'POST', {id, name: document.getElementById('output-name-input').value, instruction: document.getElementById('output-inst-input').value, command_tpl: document.getElementById('output-cmd-input').value}); closeModal('modal-output'); loadAllData(); };
+		window.submitPreferences = async () => { const id = document.getElementById('preferences-id-input').value || 'preferences_'+Date.now(); await api(document.getElementById('preferences-id-input').value?`/preferences/${id}`:'/preferences', document.getElementById('preferences-id-input').value?'PUT':'POST', {id, name: document.getElementById('preferences-name-input').value, description: document.getElementById('preferences-desc-input').value}); closeModal('modal-preferences'); loadAllData(); };
+		
+		// Standardized resource modification and deletion bindings
+		window.deleteProvider = async (id) => { if(confirm('Delete Provider?')) { await api(`/providers/${id}`, 'DELETE'); loadAllData(); } };
+		window.editMCP = (id) => { const x = dataStore.mcp.find(i=>i.id===id); if(x){ document.getElementById('mcp-id-input').value=x.id; document.getElementById('mcp-name-input').value=x.name; document.getElementById('mcp-url-input').value=x.url; document.getElementById('mcp-cmd-input').value=x.command||''; openModal('modal-mcp'); } };
+		window.deleteMCP = async (id) => { if(confirm('Delete MCP?')) { await api(`/mcp/${id}`, 'DELETE'); loadAllData(); } };
+		
+		window.openSourceModal = (id=null) => {
+		    openModal('modal-source');
+		    if(id){
+		        const x = dataStore.sources.find(i=>i.id===id);
+		        if(x){
+		            document.getElementById('source-id-input').value = x.id;
+		            document.getElementById('source-name-input').value = x.name;
+		            document.getElementById('source-type-input').value = x.type || 'Text';
+		            document.getElementById('source-key-input').value = x.api_key || '';
+		            document.getElementById('source-file-input').value = x.file_path || '';
+		            // Trigger UI mode toggle to reflect correct fields based on type
+		            toggleSourceUI(); 
+		        }
+		    } else {
+		        document.getElementById('source-id-input').value = '';
+		        document.getElementById('source-name-input').value = '';
+		        document.getElementById('source-type-input').value = 'Text';
+		        document.getElementById('source-key-input').value = '';
+		        document.getElementById('source-file-input').value = '';
+		        // Reset to default configuration
+		        toggleSourceUI(); 
+		    }
+		};
+		window.editSource = window.openSourceModal;
+		window.deleteSource = async (id) => { if(confirm('Delete Source?')) { await api(`/sources/${id}`, 'DELETE'); loadAllData(); } };
+		window.editOutput = (id) => { const x = dataStore.outputs.find(i=>i.id===id); if(x){ document.getElementById('output-id-input').value=x.id; document.getElementById('output-name-input').value=x.name; document.getElementById('output-inst-input').value=x.instruction; document.getElementById('output-cmd-input').value=x.command_tpl; openModal('modal-output'); } };
+		window.deleteOutput = async (id) => { if(confirm('Delete Output?')) { await api(`/outputs/${id}`, 'DELETE'); loadAllData(); } };
+		
+		// Edit handler for Providers
+		window.editProvider = (id) => { 
+		    const x = dataStore.providers.find(i=>i.id===id); 
+		    if(x){ 
+		        document.getElementById('provider-id-input').value=x.id; 
+		        document.getElementById('provider-name-input').value=x.name; 
+		        document.getElementById('provider-type-input').value=x.type || 'OpenAI'; 
+		        document.getElementById('provider-endpoint-input').value=x.endpoint; 
+		        document.getElementById('provider-key-input').value=x.api_key; 
+		        document.getElementById('provider-config-input').value=x.extra_config || ''; 
+		        openModal('modal-provider'); 
+		    } 
+		};
+		
+		// Submission handler for Providers
+		window.submitProvider = async () => { 
+		    const id = document.getElementById('provider-id-input').value || 'prov_'+Date.now(); 
+		    await api(document.getElementById('provider-id-input').value?`/providers/${id}`:'/providers', document.getElementById('provider-id-input').value?'PUT':'POST', {
+		        id, 
+		        name: document.getElementById('provider-name-input').value, 
+		        type: document.getElementById('provider-type-input').value, 
+		        endpoint: document.getElementById('provider-endpoint-input').value, 
+		        api_key: document.getElementById('provider-key-input').value,
+		        extra_config: document.getElementById('provider-config-input').value 
+		    }); 
+		    closeModal('modal-provider'); loadAllData(); 
+		};
+		window.openPreferencesModal = (id=null) => { openModal('modal-preferences'); if(id){ const x = dataStore.preferences.find(i=>i.id===id); if(x){ document.getElementById('preferences-id-input').value=x.id; document.getElementById('preferences-name-input').value=x.name; document.getElementById('preferences-desc-input').value=x.description; } } else { document.getElementById('preferences-id-input').value=''; document.getElementById('preferences-name-input').value=''; document.getElementById('preferences-desc-input').value=''; } };
+		window.editPreferences = window.openPreferencesModal;
+		window.deletePreferences = async (id) => { if(confirm('Delete Preferences DB?')) { await api(`/preferences/${id}`, 'DELETE'); loadAllData(); } };
+		window.openRAGModal = (id=null) => { openModal('modal-rag'); if(id){ const x = dataStore.rags.find(i=>i.id===id); if(x){ document.getElementById('rag-id-input').value=x.id; document.getElementById('rag-name-input').value=x.name; document.getElementById('rag-desc-input').value=x.description; } } else { document.getElementById('rag-id-input').value=''; document.getElementById('rag-name-input').value=''; document.getElementById('rag-desc-input').value=''; } };
+		window.editRAG = window.openRAGModal;
+		window.deleteRAG = async (id) => { if(confirm('Delete Vector RAG?')) { await api(`/rags/${id}`, 'DELETE'); loadAllData(); } };
+		window.submitRAG = async () => { const id = document.getElementById('rag-id-input').value || 'rag_'+Date.now(); await api(document.getElementById('rag-id-input').value?`/rags/${id}`:'/rags', document.getElementById('rag-id-input').value?'PUT':'POST', {id, name: document.getElementById('rag-name-input').value, description: document.getElementById('rag-desc-input').value}); closeModal('modal-rag'); loadAllData(); };
+		
+		// Skill entity controllers
+		window.openSkillModal = (id=null) => {
+		    openModal('modal-skill');
+		    if(id) {
+		        const sk = dataStore.skills.find(x => x.id === id);
+		        if(sk) {
+		            document.getElementById('skill-id-input').value = sk.id; document.getElementById('skill-name-input').value = sk.name; document.getElementById('skill-type-input').value = sk.type; document.getElementById('skill-inst-input').value = sk.instruction; document.getElementById('skill-content-input').value = sk.content; document.getElementById('skill-api-method').value = sk.api_method || 'GET'; document.getElementById('skill-api-url').value = sk.api_url || ''; document.getElementById('skill-api-headers').value = sk.api_headers || ''; document.getElementById('skill-api-body').value = sk.api_body || ''; toggleSkillUI();
+		        }
+		    } else {
+		        document.getElementById('skill-id-input').value = ''; document.getElementById('skill-name-input').value = ''; document.getElementById('skill-type-input').value = 'Bash'; document.getElementById('skill-inst-input').value = ''; document.getElementById('skill-content-input').value = ''; document.getElementById('skill-api-method').value = 'GET'; document.getElementById('skill-api-url').value = ''; document.getElementById('skill-api-headers').value = ''; document.getElementById('skill-api-body').value = ''; toggleSkillUI();
+		    }
+		};
+		window.editSkill = window.openSkillModal;
+		window.deleteSkill = async (id) => { if(confirm('Delete Skill?')) { await api(`/skills/${id}`, 'DELETE'); loadAllData(); } };
+		window.submitSkill = async () => {
+		    const id = document.getElementById('skill-id-input').value || 'sk_'+Date.now();
+		    await api(document.getElementById('skill-id-input').value ? `/skills/${id}` : '/skills', document.getElementById('skill-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('skill-name-input').value, type: document.getElementById('skill-type-input').value, instruction: document.getElementById('skill-inst-input').value, content: document.getElementById('skill-content-input').value, api_method: document.getElementById('skill-api-method').value, api_url: document.getElementById('skill-api-url').value, api_headers: document.getElementById('skill-api-headers').value, api_body: document.getElementById('skill-api-body').value });
+		    closeModal('modal-skill'); loadAllData();
+		};
+		
+		window.openAgentModal = (id=null) => {
+		    openModal('modal-agent');
+		    document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+		    document.getElementById('agent-mounts-container').innerHTML = 
+		        [...dataStore.sources, ...dataStore.preferences].map(s => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="${s.id}" class="src-cb">${s.name}</label>`).join('') + 
+		        dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb">${sk.name} [Skill]</label>`).join('') + 
+		        dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb">${o.name} [Output]</label>`).join('') +
+		        dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb">${m.name} [MCP]</label>`).join('');
+		        dataStore.projects.map(p => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-indigo-500"><input type="checkbox" value="${p.id}" class="proj-cb accent-indigo-500"> 📦 ${p.name} [Project]</label>`).join('');
+		    
+		    if(id) {
+		        const a = dataStore.agents.find(x=>x.id===id); 
+		        document.getElementById('agent-id-input').value = a.id; document.getElementById('agent-name-input').value = a.name; document.getElementById('agent-model-input').value = a.model; document.getElementById('agent-system-prompt').value = a.system_prompt;
+		        document.getElementById('agent-model-type').value = a.model_type || 'LLM'; document.getElementById('agent-output-type').value = a.output_type || 'Markdown';
+		        document.getElementById('agent-prefix-input').value = a.user_prompt_prefix || ''; document.getElementById('agent-temp').value = a.temperature || 0.7; document.getElementById('val-temp').innerText = a.temperature || 0.7; document.getElementById('agent-max-tokens').value = a.max_tokens || 4096; document.getElementById('val-max').innerText = a.max_tokens || 4096;
+		        document.getElementById('agent-can-create-skills').checked = a.can_create_skills || false;
+		        const srcs = JSON.parse(a.sources||'[]'); document.querySelectorAll('.src-cb').forEach(cb => cb.checked = srcs.some(x=>x.id===cb.value));
+		        const sks = JSON.parse(a.skills||'[]'); document.querySelectorAll('.sk-cb').forEach(cb => cb.checked = sks.includes(cb.value));
+		        const outs = JSON.parse(a.outputs||'[]'); document.querySelectorAll('.out-cb').forEach(cb => cb.checked = outs.includes(cb.value));
+		        // Parse existing MCP associations
+		        const mcps = JSON.parse(a.mcps||'[]'); document.querySelectorAll('.mcp-cb').forEach(cb => cb.checked = mcps.includes(cb.value)); 
+		    } else { 
+		        document.getElementById('agent-id-input').value = ''; document.getElementById('agent-name-input').value = ''; document.getElementById('agent-model-input').value = ''; document.getElementById('agent-system-prompt').value = ''; document.getElementById('agent-model-type').value = 'LLM'; document.getElementById('agent-output-type').value = 'Markdown'; document.getElementById('agent-prefix-input').value = ''; document.getElementById('agent-temp').value = 0.7; document.getElementById('val-temp').innerText = 0.7; document.getElementById('agent-max-tokens').value = 4096; document.getElementById('val-max').innerText = 4096; document.querySelectorAll('.src-cb, .sk-cb, .out-cb, .mcp-cb').forEach(cb=>cb.checked=false); 
+		    }
+		};
+		window.editAgent = window.openAgentModal;
+		window.deleteAgent = async (id) => { if(confirm('Delete Agent?')) { await api(`/agents/${id}`, 'DELETE'); loadAllData(); } };
+		
+		window.submitAgent = async () => {
+		    const id = document.getElementById('agent-id-input').value || 'ag_'+Date.now();
+		    const sources = Array.from(document.querySelectorAll('.src-cb:checked')).map(cb=>({id:cb.value, mode:'auto'}));
+		    const skills = Array.from(document.querySelectorAll('.sk-cb:checked')).map(cb=>cb.value);
+		    const outputs = Array.from(document.querySelectorAll('.out-cb:checked')).map(cb=>cb.value);
+		    const mcps = Array.from(document.querySelectorAll('.mcp-cb:checked')).map(cb=>cb.value); 
+		    const existing = dataStore.agents.find(a => a.id === id);
+		    
+		    // Transmit unified agent payload to remote endpoint
+		    await api(document.getElementById('agent-id-input').value?`/agents/${id}`:'/agents', document.getElementById('agent-id-input').value?'PUT':'POST', {
+		        id, name: document.getElementById('agent-name-input').value, provider_id: document.getElementById('agent-provider-input').value, model: document.getElementById('agent-model-input').value, system_prompt: document.getElementById('agent-system-prompt').value, 
+		        model_type: document.getElementById('agent-model-type').value, output_type: document.getElementById('agent-output-type').value, user_prompt_prefix: document.getElementById('agent-prefix-input').value, 
+		        temperature: parseFloat(document.getElementById('agent-temp').value), max_tokens: parseInt(document.getElementById('agent-max-tokens').value), privacy_enabled: existing ? existing.privacy_enabled : false,
+		        sources: JSON.stringify(sources), skills: JSON.stringify(skills), outputs: JSON.stringify(outputs), mcps: JSON.stringify(mcps) 
+		    });
+		    closeModal('modal-agent'); loadAllData();
+		};
+
+		// Central Application Router / Navigation Switcher
+		document.querySelectorAll('[data-target]').forEach(btn => {
+		    btn.onclick = () => {
+		        const t = btn.getAttribute('data-target');
+		        document.querySelectorAll('.page-view').forEach(v => v.classList.add('hidden')); 
+		        if(document.getElementById(`view-${t}`)) document.getElementById(`view-${t}`).classList.remove('hidden');
+		        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); btn.classList.add('active');
+		        
+		        // Dynamically update view header based on sidebar selection
+		        const navText = btn.querySelector('.nav-text');
+		        if (navText) document.getElementById('page-title').innerText = navText.innerText;
+		        
+		        if (window.innerWidth < 768) toggleMobileMenu();
+		        if(t === 'chat') loadChatHistory();
+		    }
+		});
+		
+		window.onload = () => { loadAllData(); if(window.innerWidth < 768) document.querySelector('[data-target="chat"]').click(); };
+		
+		/** Handles UI disabling transitions for the Presidio privacy configuration block */
+		function updatePresidioUI() {
+		    const isEnabled = document.getElementById('toggle-presidio').checked;
+		    const area = document.getElementById('presidio-config-area');
+		    if (isEnabled) {
+		        area.classList.remove('opacity-40', 'pointer-events-none', 'grayscale');
+		    } else {
+		        area.classList.add('opacity-40', 'pointer-events-none', 'grayscale');
+		    }
+		}
+		
+		/** Persists core settings configurations implicitly */
+		async function saveSettings() {
+		    await api('/settings', 'POST', {
+		        presidio_enabled: document.getElementById('toggle-presidio').checked.toString(),
+		        presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
+		        presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value
+		    });
+		}
+		
+		/** Modifies visible fields based on selected Data Source integration type */
+		function toggleSourceUI() {
+		    const t = document.getElementById('source-type-input').value;
+		    if(t === 'Local File') {
+		        document.getElementById('source-api-box').classList.add('hidden');
+		        document.getElementById('source-file-box').classList.remove('hidden');
+		    } else {
+		        document.getElementById('source-api-box').classList.remove('hidden');
+		        document.getElementById('source-file-box').classList.add('hidden');
+		    }
+		}
+		
+		window.submitSource = async () => { 
+		    const id = document.getElementById('source-id-input').value || 'src_'+Date.now(); 
+		    await api(document.getElementById('source-id-input').value?`/sources/${id}`:'/sources', document.getElementById('source-id-input').value?'PUT':'POST', {
+		        id, name: document.getElementById('source-name-input').value, type: document.getElementById('source-type-input').value, 
+		        api_key: document.getElementById('source-key-input').value, file_path: document.getElementById('source-file-input').value
+		    }); 
+		    closeModal('modal-source'); loadAllData(); 
+		};
+
+		/** Dynamically updates resource mounts available to the currently selected agent */
+		window.renderAgentSources = () => {
+		    const ins = Array.from(document.querySelectorAll('.in-cb:checked')).map(cb=>cb.value);
+		    const container = document.getElementById('agent-mounts-container');
+		    
+		    // Filter data sources strictly by accepted input modality
+		    const filteredSources = dataStore.sources.filter(s => {
+		        if (s.type === 'Text' || s.type === 'JSON' || s.type === 'Local File') return ins.includes('Text');
+		        return ins.includes(s.type); 
+		    });
+		    
+		    container.innerHTML = 
+		        filteredSources.map(s => `
+		            <div class="border border-blue-200 dark:border-blue-900/30 rounded-lg p-2 bg-blue-50/20 dark:bg-blue-900/10">
+		                <label class="flex items-center gap-2 text-xs font-bold"><input type="checkbox" value="${s.id}" class="src-cb accent-blue-600"> 🌐 ${s.name} [${s.type}]</label>
+		                <div class="ml-5 mt-1 space-y-1">
+		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="push_${s.id}"> Prompt when received POST update</label>
+		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="fetch_${s.id}"> Fetch & Contain on User Prompt</label>
+		                </div>
+		            </div>
+		        `).join('') +
+		        dataStore.rags.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-indigo-500"> 📚 ${r.name} [Vector RAG]</label>`).join('') +
+		        dataStore.preferences.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-teal-500"> 🧠 ${r.name} [Preferences]</label>`).join('') +
+		        dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb accent-orange-500"> ⚡ ${sk.name} [Skill]</label>`).join('') + 
+		        dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb accent-purple-500"> 📤 ${o.name} [Output]</label>`).join('') +
+		        dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb accent-yellow-500"> 🔌 ${m.name} [MCP]</label>`).join('');
+		        
+		    // Restore previously checked states if operating in edit mode
+		    if (window.activeAgentEditing) restoreAgentCheckboxes(window.activeAgentEditing);
+		};
+		
+		window.editAgent = (id) => {
+		    document.querySelectorAll('.page-view').forEach(v => v.classList.add('hidden')); 
+		    document.getElementById('view-agent-editor').classList.remove('hidden'); document.getElementById('view-agent-editor').classList.add('flex');
+		    document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+		    
+		    const a = dataStore.agents.find(x=>x.id===id);
+		    window.activeAgentEditing = a; 
+		    
+		    if(a) {
+		        document.getElementById('agent-id-input').value = a.id; document.getElementById('agent-name-input').value = a.name; document.getElementById('agent-model-input').value = a.model; document.getElementById('agent-system-prompt').value = a.system_prompt;
+		        document.getElementById('agent-temp').value = a.temperature || 0.7; document.getElementById('val-temp').innerText = a.temperature || 0.7; document.getElementById('agent-max-tokens').value = a.max_tokens || 4096; document.getElementById('val-max').innerText = a.max_tokens || 4096;
+		        const ins = JSON.parse(a.input_methods||'["Text"]'); document.querySelectorAll('.in-cb').forEach(cb => cb.checked = ins.includes(cb.value));
+		        const outs = JSON.parse(a.output_methods||'["Text"]'); document.querySelectorAll('.outm-cb').forEach(cb => cb.checked = outs.includes(cb.value));
+		    } else {
+		        window.activeAgentEditing = null;
+		        document.getElementById('agent-id-input').value = ''; document.getElementById('agent-name-input').value = ''; document.getElementById('agent-model-input').value = ''; document.getElementById('agent-system-prompt').value = '';
+		        // Default to Text input modality
+		        document.querySelectorAll('.in-cb, .outm-cb').forEach(cb => cb.checked = (cb.value === 'Text')); 
+		        document.getElementById('agent-can-create-skills').checked = false;
+		    }
+		    renderAgentSources();
+		};
+
+		/* --- Fine-Grained API Key Management --- */
+		window.deleteAPIKey = async (id) => { if(confirm('Revoke this API Key?')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); } };
+		
+		window.openModal = (id) => { 
+		    document.getElementById(id).classList.remove('hidden'); 
+		    if(id === 'modal-apikey') {
+		        const lists = ['apikey-agents-list', 'apikey-skills-list', 'apikey-sources-list', 'apikey-outputs-list', 'apikey-mcps-list', 'apikey-projects-list', 'apikey-preferences-list'];
+		        lists.forEach(l => {
+		            const el = document.getElementById(l);
+		            if(el) el.innerHTML = '';
+		        });
+		        
+		        // Generic checkbox DOM generator helper
+		        const makeCb = (arr, cls, icon) => arr.map(x => `<label class="flex items-center gap-1.5 p-1 text-[11px] truncate"><input type="checkbox" value="${x.id}" class="${cls} accent-indigo-500"> ${icon} ${x.name}</label>`).join('');
+		        
+		        safeHtml('apikey-agents-list', makeCb(dataStore.agents, 'ak-agent-cb', '🤖'));
+		        safeHtml('apikey-skills-list', makeCb(dataStore.skills, 'ak-skill-cb', '⚡'));
+		        safeHtml('apikey-sources-list', makeCb(dataStore.sources, 'ak-source-cb', '🌐'));
+		        safeHtml('apikey-outputs-list', makeCb(dataStore.outputs, 'ak-output-cb', '📤'));
+		        safeHtml('apikey-mcps-list', makeCb(dataStore.mcp, 'ak-mcp-cb', '🔌'));
+		        safeHtml('apikey-projects-list', makeCb(dataStore.projects, 'ak-project-cb', '📦'));
+		        safeHtml('apikey-preferences-list', dataStore.preferences.map(r => `
+		            <div class="flex items-center justify-between text-xs p-2 bg-gray-100 dark:bg-black rounded-lg">
+		                <span class="font-bold">🧠 ${r.name}</span>
+		                <div class="flex gap-4">
+		                    <label class="flex items-center gap-1"><input type="checkbox" data-preferences="${r.id}" value="read" class="ak-preferences-cb accent-green-500"> Read</label>
+		                    <label class="flex items-center gap-1"><input type="checkbox" data-preferences="${r.id}" value="write" class="ak-preferences-cb accent-red-500"> Write</label>
+		                </div>
+		            </div>
+		        `).join(''));
+		    }
+		};
+		
+		window.editAPIKey = (id) => {
+		    openModal('modal-apikey');
+		    const k = dataStore.apiKeys.find(x => x.id === id);
+		    if(k) {
+		        document.getElementById('apikey-id-input').value = k.id;
+		        document.getElementById('apikey-name-input').value = k.name;
+		        document.getElementById('apikey-desc-input').value = k.description;
+		        try {
+		            const p = JSON.parse(k.permissions || '{}');
+		            const setCb = (cls, arr) => document.querySelectorAll('.' + cls).forEach(cb => cb.checked = (arr || []).includes(cb.value));
+		            setCb('ak-agent-cb', p.agents);
+		            setCb('ak-skill-cb', p.skills);
+		            setCb('ak-source-cb', p.sources);
+		            setCb('ak-output-cb', p.outputs);
+		            setCb('ak-mcp-cb', p.mcps);
+		            setCb('ak-project-cb', p.projects);
+		            document.querySelectorAll('.ak-preferences-cb').forEach(cb => {
+		                const rId = cb.getAttribute('data-preferences');
+		                if(p.preferences && p.preferences[rId] && p.preferences[rId].includes(cb.value)) cb.checked = true;
+		            });
+		        } catch(e) {}
+		    }
+		};
+		
+		window.submitAPIKey = async () => {
+		    const id = document.getElementById('apikey-id-input').value;
+		    const getCb = (cls) => Array.from(document.querySelectorAll('.' + cls + ':checked')).map(cb => cb.value);
+		    const perms = {
+		        agents: getCb('ak-agent-cb'),
+		        skills: getCb('ak-skill-cb'),
+		        sources: getCb('ak-source-cb'),
+		        outputs: getCb('ak-output-cb'),
+		        mcps: getCb('ak-mcp-cb'),
+		        projects: getCb('ak-project-cb'),
+		        preferences: {}
+		    };
+		    document.querySelectorAll('.ak-preferences-cb:checked').forEach(cb => {
+		        const rId = cb.getAttribute('data-preferences');
+		        if(!perms.preferences[rId]) perms.preferences[rId] = [];
+		        perms.preferences[rId].push(cb.value);
+		    });
+		    await api(id ? `/apikeys/${id}` : '/apikeys', id ? 'PUT' : 'POST', {
+		        name: document.getElementById('apikey-name-input').value,
+		        description: document.getElementById('apikey-desc-input').value,
+		        permissions: JSON.stringify(perms)
+		    });
+		    closeModal('modal-apikey');
+		    loadAllData();
+		};
+		
+		function restoreAgentCheckboxes(a) {
+		    const srcs = JSON.parse(a.sources||'[]'); 
+		    document.querySelectorAll('.src-cb').forEach(cb => {
+		        const sObj = srcs.find(x=>x.id===cb.value);
+		        if (sObj) {
+		            cb.checked = true;
+		            if(document.getElementById(`push_${cb.value}`)) document.getElementById(`push_${cb.value}`).checked = sObj.push_update;
+		            if(document.getElementById(`fetch_${cb.value}`)) document.getElementById(`fetch_${cb.value}`).checked = sObj.fetch_prompt;
+		        }
+		    });
+		    const sks = JSON.parse(a.skills||'[]'); document.querySelectorAll('.sk-cb').forEach(cb => cb.checked = sks.includes(cb.value));
+		    const outs = JSON.parse(a.outputs||'[]'); document.querySelectorAll('.out-cb').forEach(cb => cb.checked = outs.includes(cb.value));
+		    const mcps = JSON.parse(a.mcps||'[]'); document.querySelectorAll('.mcp-cb').forEach(cb => cb.checked = mcps.includes(cb.value));
+		    const projs = JSON.parse(a.projects||'[]'); document.querySelectorAll('.proj-cb').forEach(cb => cb.checked = projs.includes(cb.value));
+		}
+		
+		// Bind explicit creation handler
+		window.openAgentModal = () => window.editAgent(null);
+		
+		window.submitAgent = async () => {
+		    const id = document.getElementById('agent-id-input').value || 'ag_'+Date.now();
+		    
+		    // Aggregate complex source mount configurations
+		    const sources = Array.from(document.querySelectorAll('.src-cb:checked')).map(cb => {
+		        return {
+		            id: cb.value, 
+		            push_update: document.getElementById(`push_${cb.value}`) ? document.getElementById(`push_${cb.value}`).checked : false,
+		            fetch_prompt: document.getElementById(`fetch_${cb.value}`) ? document.getElementById(`fetch_${cb.value}`).checked : false
+		        };
+		    });
+		    const skills = Array.from(document.querySelectorAll('.sk-cb:checked')).map(cb=>cb.value);
+		    const outputs = Array.from(document.querySelectorAll('.out-cb:checked')).map(cb=>cb.value);
+		    const mcps = Array.from(document.querySelectorAll('.mcp-cb:checked')).map(cb=>cb.value);
+		    const ins = Array.from(document.querySelectorAll('.in-cb:checked')).map(cb=>cb.value);
+		    const outs = Array.from(document.querySelectorAll('.outm-cb:checked')).map(cb=>cb.value);
+		    const projs = Array.from(document.querySelectorAll('.proj-cb:checked')).map(cb=>cb.value);
+		    const existing = dataStore.agents.find(a => a.id === id);
+		    
+		    await api(document.getElementById('agent-id-input').value?`/agents/${id}`:'/agents', document.getElementById('agent-id-input').value?'PUT':'POST', {
+		        id, name: document.getElementById('agent-name-input').value, provider_id: document.getElementById('agent-provider-input').value, model: document.getElementById('agent-model-input').value, system_prompt: document.getElementById('agent-system-prompt').value, 
+		        input_methods: JSON.stringify(ins), output_methods: JSON.stringify(outs), 
+		        temperature: parseFloat(document.getElementById('agent-temp').value), max_tokens: parseInt(document.getElementById('agent-max-tokens').value), privacy_enabled: existing ? existing.privacy_enabled : false, can_create_skills: document.getElementById('agent-can-create-skills').checked,
+		        sources: JSON.stringify(sources), skills: JSON.stringify(skills), outputs: JSON.stringify(outputs), mcps: JSON.stringify(mcps),
+		        projects: JSON.stringify(projs)
+		    });
+		    document.querySelector('[data-target="agents"]').click(); 
+		    loadAllData();
+		};
+		
+		async function wipeDatabase() {
+		    if(confirm("⚠️ WARNING: This will permanently delete ALL Agents, Skills, Preferences, and Projects.\n\nAre you absolutely sure you want to proceed?")) {
+		        try {
+		            const r = await fetch('/api/wipe-database', { 
+		                method: 'POST', 
+		                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') }
+		            });
+		            if(r.ok) {
+		                alert("Database has been completely wiped. Reloading UI...");
+		                window.location.reload();
+		            } else {
+		                alert("Failed to wipe database.");
+		            }
+		        } catch(e) {
+		            alert("Network Error.");
+		        }
+		    }
+		}
+		
+		let mainChartObj = null;
+		window.loadChartData = async (filterId = 'global') => {
+		    try {
+		        const chartData = await api(`/analytics/chart?id=${filterId}`);
+		        const ctx = document.getElementById('mainChart').getContext('2d');
+		        if (mainChartObj) mainChartObj.destroy();
+		        
+		        mainChartObj = new Chart(ctx, {
+		            type: 'line',
+		            data: {
+		                labels: chartData.labels.map(l => l.split('-').slice(1).join('/')), 
+		                datasets: [{
+		                    label: 'Tokens Processed',
+		                    data: chartData.tokens,
+		                    borderColor: '#6366f1', 
+		                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+		                    borderWidth: 2,
+		                    tension: 0.4,
+		                    fill: true,
+		                    yAxisID: 'y'
+		                }, {
+		                    label: 'API Invocations',
+		                    data: chartData.calls,
+		                    borderColor: '#3b82f6', 
+		                    borderDash: [5, 5],
+		                    borderWidth: 2,
+		                    tension: 0.4,
+		                    yAxisID: 'y1'
+		                }]
+		            },
+		            options: {
+		                responsive: true,
+		                maintainAspectRatio: false,
+		                interaction: { mode: 'index', intersect: false },
+		                plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 6 } } },
+		                scales: {
+		                    x: { grid: { display: false } },
+		                    y: { type: 'linear', display: true, position: 'left', title: {display: true, text: 'Tokens'} },
+		                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Calls'} }
+		                }
+		            }
+		        });
+		    } catch(e) { console.error('Failed to load chart', e); }
+		};
+	</script>
+
+	<!-- Authentication Flow Modal -->
+	<div id="modal-login" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+		<div class="bg-white dark:bg-[#111] p-8 rounded-lg w-full max-w-sm space-y-6 shadow-md border border-gray-200/60 border border-gray-200 dark:border-gray-800">
+			<div class="text-center">
+				<div class="bg-black dark:bg-white text-white dark:text-black p-3 rounded-md inline-block mb-4 shadow-lg">
+					<i data-lucide="lock" class="w-8 h-8"></i>
+				</div>
+				<h3 class="font-bold text-xl" data-i18n="System Locked">System Locked</h3>
+				<p class="text-xs text-gray-500 mt-2" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
+			</div>
+			<input type="password" id="login-pwd" placeholder="••••••••" class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-md text-center font-mono focus:border-blue-500 outline-none transition-colors" onkeypress="if(event.key === 'Enter') doLogin()">
+			<button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-md font-bold shadow-lg transition-colors flex justify-center items-center gap-2">
+				<i data-lucide="unlock" class="w-4 h-4"></i> <span data-i18n="Unlock OS">Unlock OS</span>
+			</button>
+			<p id="login-err" class="text-xs text-red-500 text-center hidden"></p>
+		</div>
+	</div>
+
+	<script>
+		/** Validates authentication payloads and issues session tokens */
+		async function doLogin() {
+		    const p = document.getElementById('login-pwd').value;
+		    if(!p) return;
+		    try {
+		        const r = await fetch('/api/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: p})});
+		        const data = await r.json();
+		        if(r.ok) {
+		            localStorage.setItem('zuver_token', data.token);
+		            document.getElementById('modal-login').classList.add('hidden');
+		            document.getElementById('login-err').classList.add('hidden');
+		            document.getElementById('login-pwd').value = '';
+		            loadAllData(); 
+		        } else {
+		            document.getElementById('login-err').innerText = data.error || 'Access Denied';
+		            document.getElementById('login-err').classList.remove('hidden');
+		        }
+		    } catch(e) {}
+		}
+	</script>
+</body>
+</html>
