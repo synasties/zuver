@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-	<title>Zuver OS Framework | Open Source AI Platform</title>
+	<title>Zuver Framework Console</title>
 	<link rel="icon" type="image/x-icon" href="https://zuver.oi.ms/6x6logo.png">
 	<!-- UI Framework & Utilities -->
 	<script src="https://cdn.tailwindcss.com"></script>
@@ -1085,22 +1085,20 @@
 		    }
 		}
 		
-		/** Disables unsupported input modalities based on current agent configuration */
 		function syncInputModality() {
 		    const agentId = document.getElementById('chat-agent-select').value;
-		    const agent = dataStore.agents.find(a => a.id === agentId); 
+		    const agent = dataStore.agents.find(a => a.id === agentId);
 		    if (!agent) return;
-		    
-		    // Parse accepted modalities array
+		
 		    const accepted = JSON.parse(agent.input_methods || '["Text"]');
 		    const typeSelect = document.getElementById('chat-input-type');
+		
 		    Array.from(typeSelect.options).forEach(opt => {
-		        const isSupported = accepted.includes(opt.value);
+		        const isSupported = accepted.includes(opt.value) || (opt.value === 'File' && accepted.includes('Text'));
+		        
 		        opt.disabled = !isSupported;
-		        // Apply visual disabled state
 		        opt.style.color = isSupported ? '' : '#9ca3af'; 
 		        
-		        // Fallback to text mode if unsupported type was previously selected
 		        if (!isSupported && typeSelect.value === opt.value) {
 		            typeSelect.value = "Text"; 
 		        }
@@ -1828,7 +1826,7 @@
 		    }
 		    renderAgentSources();
 		};
-
+		
 		window.uploadAgentFile = async (file) => {
 		    if (!file) return;
 		    
@@ -1875,7 +1873,7 @@
 		        lucide.createIcons();
 		    }
 		};
-
+		
 		/* --- Fine-Grained API Key Management --- */
 		window.deleteAPIKey = async (id) => { if(confirm('Revoke this API Key?')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); } };
 		
