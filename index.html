@@ -19,6 +19,90 @@
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
 	<style>
+		/* ===================================================
+		 * PAGE TRANSITION — fade + slight lift on view enter
+		 * =================================================== */
+		@keyframes page-enter {
+		    from { opacity: 0; transform: translateY(5px); }
+		    to   { opacity: 1; transform: translateY(0); }
+		}
+		/* Trigger animation whenever a .page-view becomes visible (hidden removed) */
+		.page-view:not(.hidden) {
+		    animation: page-enter 0.18s ease-out forwards;
+		}
+
+		/* ===================================================
+		 * STREAMING TEXT — fade-in each incoming delta chunk
+		 * =================================================== */
+		@keyframes chunk-in {
+		    from { opacity: 0; }
+		    to   { opacity: 1; }
+		}
+		.stream-chunk {
+		    animation: chunk-in 0.25s ease forwards;
+		    display: inline;
+		}
+
+		/* ===================================================
+		 * TOOL-STEP INDICATOR (Claude Code–style)
+		 * =================================================== */
+		@keyframes tool-pulse {
+		    0%, 100% { opacity: 1; }
+		    50%       { opacity: 0.45; }
+		}
+		.tool-step-card {
+		    display: flex; align-items: center; gap: 8px;
+		    padding: 6px 10px; border-radius: 6px;
+		    font-size: 11px; font-family: monospace;
+		    border: 1px solid #e5e7eb;
+		    background: #f9fafb;
+		    color: #374151;
+		    margin: 4px 0;
+		    transition: border-color 0.2s, background 0.2s;
+		}
+		.dark .tool-step-card {
+		    background: #0f0f0f; border-color: #2a2a2a; color: #9ca3af;
+		}
+		.tool-step-card.running {
+		    border-color: #3b82f6;
+		    background: #eff6ff;
+		    animation: tool-pulse 1.4s ease-in-out infinite;
+		}
+		.dark .tool-step-card.running {
+		    background: #0d1929;
+		}
+		.tool-step-card.done    { border-color: #22c55e; background: #f0fdf4; }
+		.dark .tool-step-card.done { background: #071a0f; }
+		.tool-step-card.error   { border-color: #ef4444; background: #fef2f2; }
+		.dark .tool-step-card.error { background: #1a0505; }
+		.tool-step-dot {
+		    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+		    background: #9ca3af;
+		}
+		.tool-step-card.running .tool-step-dot { background: #3b82f6; }
+		.tool-step-card.done    .tool-step-dot { background: #22c55e; }
+		.tool-step-card.error   .tool-step-dot { background: #ef4444; }
+
+		/* Toast notifications */
+		@keyframes toast-in  { from { opacity:0; transform:translateX(110%); } to { opacity:1; transform:translateX(0); } }
+		@keyframes toast-out { from { opacity:1; transform:translateX(0); } to { opacity:0; transform:translateX(110%); } }
+		.toast {
+		    pointer-events: all;
+		    animation: toast-in 0.28s cubic-bezier(.2,.8,.4,1) forwards;
+		    display: flex; align-items: flex-start; gap: 10px;
+		    padding: 11px 14px; border-radius: 10px;
+		    font-size: 13px; font-weight: 500; line-height: 1.4;
+		    box-shadow: 0 4px 20px rgba(0,0,0,0.13);
+		    background: #fff; color: #111;
+		    border: 1px solid #e5e7eb;
+		}
+		.dark .toast { background: #1a1a1a; color: #f3f4f6; border-color: #333; }
+		.toast.success { border-left: 3px solid #22c55e; }
+		.toast.error   { border-left: 3px solid #ef4444; }
+		.toast.info    { border-left: 3px solid #3b82f6; }
+		.toast.warn    { border-left: 3px solid #f59e0b; }
+		.toast.leaving { animation: toast-out 0.25s ease forwards; }
+
 		.hide-scrollbar::-webkit-scrollbar {
 		    display: none;
 		}
@@ -123,7 +207,31 @@
 		    }
 		}
 		
+		/* --- Node Palette Buttons --- */
+		.node-palette-btn {
+		    display: flex;
+		    align-items: center;
+		    gap: 0.4rem;
+		    width: 100%;
+		    padding: 0.35rem 0.6rem;
+		    border-radius: 0.375rem;
+		    border: 1px solid;
+		    font-size: 0.7rem;
+		    font-weight: 600;
+		    cursor: pointer;
+		    transition: filter 0.15s, transform 0.1s;
+		    white-space: nowrap;
+		}
+		.node-palette-btn:hover {
+		    filter: brightness(0.95);
+		    transform: translateX(2px);
+		}
 		/* --- Node Graph Editor UI --- */
+		/* Canvas SVG: hit paths use pointer-events:stroke for edge click-to-delete */
+		#canvas-lines path.edge-hit {
+		    pointer-events: stroke;
+		    cursor: pointer;
+		}
 		.wf-node {
 		    position: absolute;
 		    width: 160px;
@@ -343,19 +451,15 @@
 				<div class="nav-icon-box"><i data-lucide="bot" class="w-5 h-5"></i></div>
 				<span class="nav-text">Agents</span>
 			</div>
-			<div data-target="sources" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="database" class="w-5 h-5"></i></div>
-				<span class="nav-text">Sources</span>
-			</div>
-			<div data-target="outputs" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="arrow-up-right" class="w-5 h-5"></i></div>
-				<span class="nav-text">Outputs</span>
-			</div>
-			<div class="nav-section-title">Studio</div>
 			<div data-target="skills" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="zap" class="w-5 h-5"></i></div>
 				<span class="nav-text">Skills</span>
 			</div>
+			<div data-target="sources" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="database" class="w-5 h-5"></i></div>
+				<span class="nav-text">Sources</span>
+			</div>
+			<div class="nav-section-title">Studio</div>
 			<div data-target="rags" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="brain-circuit" class="w-5 h-5"></i></div>
 				<span class="nav-text">Vector RAGs</span>
@@ -454,40 +558,81 @@
 				</div>
 				<!-- View: Projects / Workflows -->
 				<div id="view-projects" class="page-view hidden h-[calc(100vh-140px)] flex flex-col">
-					<div id="view-projects-list" class="space-y-6">
-						<div class="flex justify-between items-center">
-							<p class="text-sm text-gray-500 mt-1">Manage, create, import applications via visualized interface, so the router can be easily defined.</p>
-							<button onclick="openEditor(null)" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-bold shadow-sm">New Application</button>
-						</div>
-						<div id="projects-grid" class="grid grid-cols-1 md:grid-cols-3 gap-6"></div>
-					</div>
-					<div id="view-projects-editor" class="hidden flex-col h-full space-y-4">
-						<div class="flex justify-between items-center shrink-0">
-							<h2 class="text-xl font-bold flex items-center gap-2">
-								<i data-lucide="git-branch" class="text-blue-500"></i> Application Editor
-							</h2>
-							<div class="flex gap-2">
-								<button onclick="closeEditor()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm">Back</button>
-								<button onclick="exportProjectJSON()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm hidden md:block">Export</button>
-								<button onclick="importProjectJSON()" class="px-4 py-2 border dark:border-gray-800 rounded-lg text-sm hidden md:block">Import</button>
-								<button onclick="saveProject()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm">Save Flow</button>
+					<div id="view-projects-list" class="space-y-6 overflow-y-auto">
+						<div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+							<p class="text-sm text-gray-500">Design and run visual AI pipelines — connect Agents, Skills, HTTP calls, conditionals and more.</p>
+							<div class="flex gap-2 shrink-0">
+								<input id="proj-search" type="text" placeholder="Search..." class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-1.5 text-sm outline-none w-36 focus:border-blue-500 transition-colors">
+								<button onclick="openEditor(null)" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-colors">
+									<i data-lucide="plus" class="w-4 h-4"></i> New Application
+								</button>
 							</div>
 						</div>
-						<div class="flex-1 flex gap-4 overflow-hidden">
-							<div id="canvas-container" class="flex-1 bg-white dark:bg-[#111] border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-lg relative overflow-hidden" style="background-image: radial-gradient(#d1d5db 1px, transparent 1px); background-size: 20px 20px;">
-								<svg id="canvas-lines" class="absolute inset-0 w-full h-full z-0 pointer-events-none"></svg>
+						<div id="projects-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+					</div>
+					<div id="view-projects-editor" class="hidden flex-col h-full space-y-3">
+						<!-- Editor header -->
+						<div class="flex justify-between items-center shrink-0 border-b dark:border-gray-800 pb-3">
+							<div class="flex items-center gap-3 min-w-0">
+								<button onclick="closeEditor()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg shrink-0"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+								<div class="min-w-0">
+									<input id="proj-name-input" type="text" placeholder="Application Name" class="font-bold text-base bg-transparent border-b border-transparent focus:border-blue-500 outline-none w-56 truncate transition-colors">
+									<input id="proj-desc-input" type="text" placeholder="Description (optional)" class="text-xs text-gray-500 bg-transparent outline-none w-56 block mt-0.5">
+								</div>
+							</div>
+							<div class="flex items-center gap-2 shrink-0">
+								<div id="proj-run-status" class="hidden text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 font-bold flex items-center gap-1">
+									<span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-pulse"></span> Running
+								</div>
+								<button onclick="undoEdge()" title="Undo last deleted edge (Ctrl+Z)" class="px-3 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1.5 transition-colors">
+									<i data-lucide="undo-2" class="w-3.5 h-3.5"></i> Undo
+								</button>
+								<button onclick="runProject()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-colors">
+									<i data-lucide="play" class="w-4 h-4"></i> Run
+								</button>
+								<button onclick="exportProjectJSON()" class="px-3 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 hidden md:flex items-center gap-1.5 transition-colors"><i data-lucide="download" class="w-3.5 h-3.5"></i> Export</button>
+								<button onclick="importProjectJSON()" class="px-3 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 hidden md:flex items-center gap-1.5 transition-colors"><i data-lucide="upload" class="w-3.5 h-3.5"></i> Import</button>
+								<button onclick="saveProject()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-colors">
+									<i data-lucide="save" class="w-4 h-4"></i> Save
+								</button>
+							</div>
+						</div>
+						<!-- Editor workspace: canvas takes full width, controls in bottom bar -->
+						<div class="flex-1 flex flex-col gap-2 overflow-hidden min-h-0">
+							<!-- Canvas (full width) -->
+							<div id="canvas-container" class="flex-1 bg-white dark:bg-[#0d0d0d] border border-gray-200 dark:border-gray-800 rounded-lg relative overflow-hidden cursor-default min-h-0" style="background-image: radial-gradient(circle, #d1d5db 1px, transparent 1px); background-size: 24px 24px;">
+								<svg id="canvas-lines" class="absolute inset-0 w-full h-full z-0"></svg>
 								<div id="canvas-nodes" class="absolute inset-0 w-full h-full z-10"></div>
 							</div>
-							<div class="w-64 flex flex-col gap-4 shrink-0 hidden md:flex">
-								<div class="bg-white dark:bg-[#111] p-4 border border-gray-200 dark:border-gray-800 rounded-md space-y-2 shadow-sm">
-									<p class="text-[10px] font-bold text-gray-400 uppercase mb-2">Palette</p>
-									<button onclick="addNode('Agent')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">🤖 Agent</button>
-									<button onclick="addNode('Skill')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">⚡ Skill</button>
-									<button onclick="addNode('Code')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">💻 Go Code</button>
-									<button onclick="addNode('Project')" class="w-full text-left p-2 text-xs bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border dark:border-gray-800 hover:border-blue-500 transition-colors">📦 Sub-Project</button>
+							<!-- Bottom bar: palette left | run output centre | props right -->
+							<div class="shrink-0 flex gap-2 overflow-hidden" style="height:200px">
+								<!-- Node palette (horizontal scroll) -->
+								<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm p-2 flex flex-col gap-1 overflow-y-auto hide-scrollbar shrink-0" style="width:220px">
+									<p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-0.5">AI</p>
+									<button onclick="addNode('Agent')" class="node-palette-btn text-blue-600 border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-900/10"><i data-lucide="bot" class="w-3.5 h-3.5"></i> Agent</button>
+									<button onclick="addNode('Skill')" class="node-palette-btn text-orange-600 border-orange-200 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-900/10"><i data-lucide="zap" class="w-3.5 h-3.5"></i> Skill</button>
+									<button onclick="addNode('Code')" class="node-palette-btn text-purple-600 border-purple-200 dark:border-purple-900/40 bg-purple-50/50 dark:bg-purple-900/10"><i data-lucide="code-2" class="w-3.5 h-3.5"></i> Go Code</button>
+									<p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-0.5 pt-1">Logic</p>
+									<button onclick="addNode('If')" class="node-palette-btn text-yellow-600 border-yellow-200 dark:border-yellow-900/40 bg-yellow-50/50 dark:bg-yellow-900/10"><i data-lucide="git-branch" class="w-3.5 h-3.5"></i> If / Branch</button>
+									<button onclick="addNode('Transform')" class="node-palette-btn text-teal-600 border-teal-200 dark:border-teal-900/40 bg-teal-50/50 dark:bg-teal-900/10"><i data-lucide="wand-2" class="w-3.5 h-3.5"></i> Transform</button>
+									<button onclick="addNode('SetVariable')" class="node-palette-btn text-indigo-600 border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-900/10"><i data-lucide="variable" class="w-3.5 h-3.5"></i> Set Var</button>
+									<button onclick="addNode('GetVariable')" class="node-palette-btn text-indigo-500 border-indigo-200 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-900/10"><i data-lucide="arrow-right-to-line" class="w-3.5 h-3.5"></i> Get Var</button>
+									<p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest px-1 pb-0.5 pt-1">Integration</p>
+									<button onclick="addNode('HTTP')" class="node-palette-btn text-green-600 border-green-200 dark:border-green-900/40 bg-green-50/50 dark:bg-green-900/10"><i data-lucide="globe" class="w-3.5 h-3.5"></i> HTTP Request</button>
+									<button onclick="addNode('Wait')" class="node-palette-btn text-gray-500 border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/10"><i data-lucide="timer" class="w-3.5 h-3.5"></i> Wait / Delay</button>
+									<button onclick="addNode('Project')" class="node-palette-btn text-pink-600 border-pink-200 dark:border-pink-900/40 bg-pink-50/50 dark:bg-pink-900/10"><i data-lucide="layers" class="w-3.5 h-3.5"></i> Sub-Pipeline</button>
 								</div>
-								<div id="node-props" class="flex-1 bg-white dark:bg-[#111] p-4 border border-gray-200 dark:border-gray-800 rounded-md overflow-y-auto shadow-sm">
-									<p class="text-xs text-gray-400 text-center mt-8">Select a node</p>
+								<!-- Run output log (middle) -->
+								<div id="run-output-panel" class="flex-1 bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm hidden flex-col overflow-hidden">
+									<div class="p-3 border-b dark:border-gray-800 flex items-center justify-between shrink-0">
+										<p class="text-[10px] font-bold text-gray-400 uppercase">Run Output</p>
+										<button onclick="document.getElementById('run-output-panel').classList.add('hidden');document.getElementById('run-output-panel').classList.remove('flex')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+									</div>
+									<div id="run-output-log" class="p-3 overflow-y-auto text-[11px] font-mono text-gray-600 dark:text-gray-400 flex-1"></div>
+								</div>
+								<!-- Node props (right) -->
+								<div id="node-props" class="bg-white dark:bg-[#111] p-3 border border-gray-200 dark:border-gray-800 rounded-lg overflow-y-auto shadow-sm shrink-0" style="width:260px">
+									<p class="text-xs text-gray-400 text-center mt-6">Select a node to configure</p>
 								</div>
 							</div>
 						</div>
@@ -504,7 +649,7 @@
 				<div id="view-agent-editor" class="page-view hidden h-[calc(100vh-140px)] flex-col space-y-4">
 					<div class="flex justify-between items-center shrink-0 border-b dark:border-gray-800 pb-4">
 						<div class="flex items-center gap-4">
-							<button onclick="document.querySelector('[data-target=agents]').click()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
+							<button onclick="window.showViewGuarded ? window.showViewGuarded('agents') : window.showView('agents')" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"><i data-lucide="arrow-left" class="w-5 h-5"></i></button>
 							<h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="bot" class="text-blue-500"></i> Agent Studio</h2>
 							<p class="text-sm text-gray-500 mt-1">Edit your agents' preferences.</p>
 						</div>
@@ -518,8 +663,8 @@
 							<select id="agent-provider-input" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-2 text-sm"></select>
 							<input type="text" id="agent-model-input" placeholder="Model (e.g. gpt-4o)" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-2 text-sm font-mono">
 							<textarea id="agent-system-prompt" rows="8" placeholder="System Prompt / Persona" class="w-full border dark:border-gray-700 bg-transparent rounded-lg p-3 text-sm font-mono"></textarea>
-							<label class="flex items-center gap-2 p-2 mt-2 border dark:border-gray-700 rounded-lg text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/10"><input type="checkbox" id="agent-can-create-skills" class="accent-orange-500"> 🪄 Allow Agent to Create Native Go
-								Skills</label>
+							<label class="flex items-center gap-2 p-2 mt-2 border dark:border-gray-700 rounded-lg text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-900/10"><input type="checkbox" id="agent-can-create-skills" class="accent-orange-500"> <span data-i18n="Allow Go Skills">Allow Agent to Create Native Go Skills</span></label>
+							<label class="flex items-center gap-2 p-2 mt-2 border dark:border-gray-700 rounded-lg text-xs font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/10"><input type="checkbox" id="agent-stream-enabled" class="accent-blue-500" checked> <span data-i18n="Enable Streaming">Enable Streaming Responses (SSE)</span></label>
 						</div>
 						<div class="flex-1 space-y-4 bg-white dark:bg-[#111] p-6 rounded-md border border-gray-200 dark:border-gray-800">
 							<p class="text-xs font-bold text-purple-500 uppercase tracking-widest border-b dark:border-gray-800 pb-2">I/O Modalities</p>
@@ -624,20 +769,38 @@
 					</div>
 					<div id="chat-messages" class="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 bg-[#fbfbfb] dark:bg-[#050505]">
 					</div>
+					<!-- File preview strip -->
+					<div id="file-preview-strip" class="hidden px-3 pt-2 pb-0 border-t dark:border-gray-800 bg-white dark:bg-[#111] flex gap-2 flex-wrap"></div>
 					<div class="p-3 md:p-4 border-t dark:border-gray-800 flex flex-col md:flex-row gap-2 md:gap-3 bg-white dark:bg-[#111] items-center">
 						<div class="relative flex items-center shrink-0">
-							<input type="file" id="chat-file-input" class="hidden" onchange="handleFileUpload(this.files[0])">
-							<button onclick="toggleModalityMenu()" id="upload-btn" class="p-3 text-gray-500 hover:text-blue-500 transition-colors">
+							<input type="file" id="chat-file-input" class="hidden" multiple onchange="handleFileUpload(this.files)">
+							<button onclick="toggleModalityMenu()" id="upload-btn" class="p-3 text-gray-500 hover:text-blue-500 transition-colors relative">
 								<i data-lucide="paperclip" class="w-5 h-5"></i>
+								<span id="file-count-badge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center"></span>
 							</button>
-							<select id="chat-input-type" onchange="handleTypeChange(this.value)"
-								class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2 outline-none text-sm font-bold shadow-md border border-gray-200/60 focus:border-blue-500 transition-all z-50">
-								<option value="Text">📝 Text</option>
-								<option value="Image">🖼️ Image</option>
-								<option value="Video">🎬 Video</option>
-								<option value="Audio">🎵 Audio</option>
-								<option value="File">📄 File</option>
-							</select>
+							<!-- Popup modality menu (replaces <select>) -->
+							<div id="modality-menu" class="hidden absolute bottom-full left-0 mb-2 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden min-w-[140px]">
+								<div class="p-1 flex flex-col gap-0.5">
+									<button data-modality="Text" onclick="handleTypeChange('Text')" class="modality-btn flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+										<i data-lucide="type" class="w-4 h-4 text-gray-500 shrink-0"></i> Text
+									</button>
+									<button data-modality="Image" onclick="handleTypeChange('Image')" class="modality-btn flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+										<i data-lucide="image" class="w-4 h-4 text-blue-500 shrink-0"></i> Image
+									</button>
+									<button data-modality="Video" onclick="handleTypeChange('Video')" class="modality-btn flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+										<i data-lucide="video" class="w-4 h-4 text-purple-500 shrink-0"></i> Video
+									</button>
+									<button data-modality="Audio" onclick="handleTypeChange('Audio')" class="modality-btn flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+										<i data-lucide="mic" class="w-4 h-4 text-green-500 shrink-0"></i> Audio
+									</button>
+									<div class="border-t dark:border-gray-700 my-0.5"></div>
+									<button data-modality="File" onclick="handleTypeChange('File')" class="modality-btn flex items-center gap-2 w-full px-3 py-2 rounded-md text-sm font-medium text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+										<i data-lucide="paperclip" class="w-4 h-4 text-orange-500 shrink-0"></i> Any File
+									</button>
+								</div>
+							</div>
+							<!-- Hidden active type tracker -->
+							<input type="hidden" id="chat-input-type" value="Text">
 						</div>
 						<input id="chat-input" type="text" placeholder="Type /help for tools, or just chat..." class="flex-1 w-full bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md px-4 py-3 outline-none font-mono text-sm focus:border-blue-500 transition-colors"
 							onkeypress="if(event.key === 'Enter') sendMessage()">
@@ -726,42 +889,37 @@
 	<!-- Modals -->
 	<div id="modal-apikey" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
 		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-2xl space-y-4">
-			<h3 class="font-bold flex items-center gap-2"><i data-lucide="key" class="text-indigo-500 w-5 h-5"></i> Universal API Permissions</h3>
+			<h3 class="font-bold flex items-center gap-2"><i data-lucide="key" class="text-indigo-500 w-5 h-5"></i> API Key Permissions</h3>
 			<input type="hidden" id="apikey-id-input">
 			<div class="grid grid-cols-2 gap-2">
 				<input type="text" id="apikey-name-input" placeholder="App Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
 				<input type="text" id="apikey-desc-input" placeholder="Description" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
 			</div>
-			<div class="mt-4 p-4 border border-gray-200 dark:border-gray-800 rounded-md bg-gray-50 dark:bg-[#1a1a1a] max-h-80 overflow-y-auto relative">
-				<p class="text-xs font-bold text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 dark:bg-[#1a1a1a] pb-2 z-10 border-b dark:border-gray-800">Resource Access Rights</p>
-				<div class="space-y-4 mt-3">
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🤖 Allowed Agents</label>
-						<div id="apikey-agents-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">⚡ Allowed Skills</label>
-						<div id="apikey-skills-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🌐 Allowed Sources</label>
-						<div id="apikey-sources-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">📤 Allowed Outputs</label>
-						<div id="apikey-outputs-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">🔌 Allowed MCP Servers</label>
-						<div id="apikey-mcps-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div><label class="text-[10px] text-gray-400 font-bold mb-1 block">📦 Allowed Projects (Routers)</label>
-						<div id="apikey-projects-list" class="grid grid-cols-2 lg:grid-cols-3 gap-2"></div>
-					</div>
-					<div class="pt-2 border-t dark:border-gray-800">
-						<label class="text-[10px] text-gray-400 font-bold mb-1 block">🧠 Allowed Preferences Databases (Read / Write)</label>
-						<div id="apikey-preferences-list" class="space-y-2"></div>
-					</div>
-				</div>
+			<!-- Action-level permission matrix: each resource row has read/write/delete/execute toggles -->
+			<div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+				<table class="w-full text-xs">
+					<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+						<tr>
+							<th class="text-left px-3 py-2 font-bold text-gray-500 uppercase tracking-wider">Resource</th>
+							<th class="px-3 py-2 text-center font-bold text-green-600 uppercase tracking-wider">Read</th>
+							<th class="px-3 py-2 text-center font-bold text-blue-600 uppercase tracking-wider">Write</th>
+							<th class="px-3 py-2 text-center font-bold text-red-500 uppercase tracking-wider">Delete</th>
+							<th class="px-3 py-2 text-center font-bold text-orange-500 uppercase tracking-wider">Execute</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y dark:divide-gray-800" id="apikey-permission-rows">
+						<!-- Populated by JS -->
+					</tbody>
+				</table>
+			</div>
+			<!-- Preferences section: per-database read/write -->
+			<div id="apikey-preferences-section" class="space-y-2">
+				<p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preferences Databases (per-DB access)</p>
+				<div id="apikey-preferences-list" class="space-y-1 max-h-36 overflow-y-auto"></div>
 			</div>
 			<div class="flex justify-end gap-2 pt-2">
 				<button onclick="closeModal('modal-apikey')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button>
-				<button onclick="submitAPIKey()" class="p-2 px-4 bg-indigo-600 text-white rounded text-sm font-bold shadow-sm">Save Security Key</button>
+				<button onclick="submitAPIKey()" class="p-2 px-4 bg-indigo-600 text-white rounded text-sm font-bold shadow-sm">Save Key</button>
 			</div>
 		</div>
 	</div>
@@ -892,70 +1050,155 @@
 	<script>
 		// Dictionary for UI internationalization
 		const i18nDict = {
-		    "Home": { zh: "主页", de: "Startseite" },
-		    "Statistics": { zh: "数据统计", de: "Statistiken" },
-		    "Applications": { zh: "应用", de: "Anwendungen" },
-		    "Agents": { zh: "Agents", de: "Agenten" },
-		    "Sources": { zh: "数据源", de: "Quellen" },
-		    "Outputs": { zh: "输出", de: "Ausgaben" },
-		    "Skills": { zh: "技能", de: "Fähigkeiten" },
-		    "Preferences": { zh: "生成式Preferences", de: "Speicher" },
-		    "MCP Servers": { zh: "MCP 服务器", de: "MCP-Server" },
-		    "Providers": { zh: "模型供应商", de: "Anbieter" },
-		    "Settings": { zh: "系统设置", de: "Einstellungen" },
-		    "Console": { zh: "控制台", de: "Konsole" },
-		    "Theme": { zh: "主题", de: "Thema" },
-		    "Overview": { zh: "概览", de: "Übersicht" },
-		    "Armory": { zh: "通用", de: "Rüstkammer" },
-		    "Studio": { zh: "工坊", de: "Studio" },
-		    "Config": { zh: "配置", de: "Konfiguration" },
-		    "System Locked": { zh: "系统已锁定", de: "System gesperrt" },
-		    "Unlock OS": { zh: "解锁系统", de: "System entsperren" },
-		    "Auth Desc": { 
-		        zh: "请输入密码以解锁系统。若是首次登录，输入的密码将作为最高管理员密码永久保存。", 
-		        de: "Geben Sie das Passwort ein, um zu entsperren. Beim ersten Login wird dies als Admin-Passwort festgelegt." 
-		    }
+		    // Sidebar navigation
+		    "Home":            { zh: "主页",          de: "Startseite" },
+		    "Statistics":      { zh: "数据���计",      de: "Statistiken" },
+		    "Applications":    { zh: "应用",          de: "Anwendungen" },
+		    "Agents":          { zh: "Agents",        de: "Agenten" },
+		    "Sources":         { zh: "数据源",        de: "Quellen" },
+		    "Outputs":         { zh: "输出",          de: "Ausgaben" },
+		    "Skills":          { zh: "技能",          de: "Fähigkeiten" },
+		    "Vector RAGs":     { zh: "向量 RAG",      de: "Vektor-RAGs" },
+		    "Preferences":     { zh: "持久记忆",      de: "Speicher" },
+		    "MCP Servers":     { zh: "MCP 服务器",    de: "MCP-Server" },
+		    "Providers":       { zh: "模型供应商",    de: "Anbieter" },
+		    "API Keys":        { zh: "API 密钥",      de: "API-Schlüssel" },
+		    "Settings":        { zh: "系统设置",      de: "Einstellungen" },
+		    "Console":         { zh: "控制台",        de: "Konsole" },
+		    "Theme":           { zh: "主题",          de: "Thema" },
+		    "Overview":        { zh: "概览",          de: "Übersicht" },
+		    "Armory":          { zh: "通用",          de: "Rüstkammer" },
+		    "Studio":          { zh: "工坊",          de: "Studio" },
+		    "Config":          { zh: "配置",          de: "Konfiguration" },
+		    // Auth
+		    "System Locked":   { zh: "系统已锁定",    de: "System gesperrt" },
+		    "Unlock OS":       { zh: "解锁系统",      de: "System entsperren" },
+		    "Auth Desc":       {
+		        zh: "请输入密码以解锁系统。若是首次登录，输入的密码将作为最高管理员密码永久保存。",
+		        de: "Geben Sie das Passwort ein. Beim ersten Login wird es als Admin-Passwort festgelegt."
+		    },
+		    // Buttons & actions
+		    "New Agent":       { zh: "新建 Agent",    de: "Neuer Agent" },
+		    "Save Agent":      { zh: "保存 Agent",    de: "Agent speichern" },
+		    "Send":            { zh: "发送",          de: "Senden" },
+		    "Wipe Memory":     { zh: "清空记忆",      de: "Speicher leeren" },
+		    "New Provider":    { zh: "新建供应商",    de: "Neuer Anbieter" },
+		    "New Source":      { zh: "新建数据源",    de: "Neue Quelle" },
+		    "New Output":      { zh: "新建输出",      de: "Neue Ausgabe" },
+		    "New Skill":       { zh: "新建技能",      de: "Neue Fähigkeit" },
+		    "New RAG":         { zh: "新建 RAG",      de: "Neues RAG" },
+		    "New Memory":      { zh: "新建记忆",      de: "Neuer Speicher" },
+		    "Add MCP":         { zh: "添加 MCP",      de: "MCP hinzufügen" },
+		    "New API Key":     { zh: "新建密钥",      de: "Neuer Schlüssel" },
+		    "New Application": { zh: "新建应用",      de: "Neue Anwendung" },
+		    "Save Flow":       { zh: "保存流程",      de: "Fluss speichern" },
+		    "Back":            { zh: "返回",          de: "Zurück" },
+		    "Export":          { zh: "导出",          de: "Exportieren" },
+		    "Import":          { zh: "Importieren",   de: "Importieren" },
+		    "Cancel":          { zh: "取消",          de: "Abbrechen" },
+		    "Delete Database": { zh: "删除数据库",    de: "Datenbank löschen" },
+		    // Home stats
+		    "Agents":          { zh: "Agents 数量",   de: "Agenten" },
+		    "Skills":          { zh: "技能数量",      de: "Fähigkeiten" },
+		    "Preferences":     { zh: "记忆数量",      de: "Speicher" },
+		    "Tokens":          { zh: "令牌消耗",      de: "Token" },
+		    // Settings panel
+		    "Cache Hit Optimization": { zh: "缓存命中优化",       de: "Cache-Optimierung" },
+		    "Interface Language":     { zh: "界面语言",           de: "Benutzersprache" },
+		    "System Analytics":       { zh: "系统分析",           de: "Systemanalyse" },
+		    "About Desc":             { zh: "开源 AI 平台",       de: "Open-Source KI-Plattform" },
+		    // Agent editor
+		    "Agent Studio":    { zh: "Agent 工作室",  de: "Agent Studio" },
+		    "Brain Core":      { zh: "核心大脑",      de: "Kerngehirn" },
+		    "I/O Modalities":  { zh: "输入输出模式",  de: "I/O-Modalitäten" },
+		    "Mount Tools & Sources": { zh: "挂载工具与数据源", de: "Werkzeuge & Quellen" },
+		    "Allow Go Skills": { zh: "允许 Agent 创建原生 Go 技能", de: "Go-Fähigkeiten erlauben" },
+		    "Enable Streaming": { zh: "启用流式传输响应 (SSE)", de: "Streaming aktivieren (SSE)" },
+		    // Chat
+		    "Type /help for tools, or just chat...": {
+		        zh: "输入 /help 查看工具，或直接聊天...",
+		        de: "Tippe /help für Tools oder beginne einfach zu chatten..."
+		    },
+		    "Memory clean. Start chatting!": {
+		        zh: "记忆为空，开始聊天吧！",
+		        de: "Kein Verlauf. Beginne zu chatten!"
+		    },
+		    "Loading persistent memory...": {
+		        zh: "正在加载持久记忆...",
+		        de: "Lade dauerhaften Speicher..."
+		    },
 		};
 		let currentLang = localStorage.getItem('zuver_lang') || 'en';
 		
-		/** Core i18n DOM replacement engine (protects inner SVGs) */
+		/**
+		 * Core i18n engine — replaces text on all tagged elements and
+		 * also handles placeholder/title attributes on inputs.
+		 * Icon SVGs inside elements are preserved.
+		 */
 		function switchLanguage(lang) {
 		    currentLang = lang;
 		    localStorage.setItem('zuver_lang', lang);
-		    document.getElementById('lang-select').value = lang;
-		    
-		    // Scan all navigational text and designated i18n targets
+		    const sel = document.getElementById('lang-select');
+		    if (sel) sel.value = lang;
+
+		    // --- Tagged elements: .nav-text, .nav-section-title, [data-i18n] ---
 		    document.querySelectorAll('.nav-text, .nav-section-title, [data-i18n]').forEach(el => {
-		        
-		        // Retrieve explicitly bound data-i18n keys
+		        // Resolve translation key.
 		        let key = el.getAttribute('data-i18n');
-		        
-		        // Fallback: extract inner text content to use as the translation key
 		        if (!key) {
-		            let textNode = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
-		            key = textNode ? textNode.textContent.trim() : el.innerText.trim();
-		            if(!el.getAttribute('data-i18n')) el.setAttribute('data-i18n', key);
+		            const tn = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+		            key = tn ? tn.textContent.trim() : el.innerText.trim();
+		            if (key) el.setAttribute('data-i18n', key);
 		        }
-		        
-		        if (key && i18nDict[key]) {
-		            const targetText = lang === 'en' ? key : (i18nDict[key][lang] || key);
-		            
-		            // Strictly replace text nodes to prevent destroying embedded Lucide icons
-		            let textNode = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
-		            if(textNode) {
-		                textNode.textContent = targetText;
-		            } else if (el.children.length === 0) {
-		                el.innerText = targetText;
-		            }
+		        if (!key || !i18nDict[key]) return;
+
+		        const targetText = lang === 'en' ? key : (i18nDict[key][lang] || key);
+
+		        // Safely replace only text nodes, never destroy Lucide <svg> children.
+		        const tn = Array.from(el.childNodes).find(n => n.nodeType === 3 && n.textContent.trim().length > 0);
+		        if (tn) {
+		            tn.textContent = targetText;
+		        } else if (el.children.length === 0) {
+		            el.innerText = targetText;
 		        }
 		    });
+
+		    // --- Placeholder attributes on inputs & textareas ---
+		    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+		        const key = el.getAttribute('data-i18n-placeholder');
+		        if (key && i18nDict[key]) {
+		            el.placeholder = lang === 'en' ? key : (i18nDict[key][lang] || key);
+		        }
+		    });
+
+		    // --- Chat input placeholder (special case without data attr) ---
+		    const chatInput = document.getElementById('chat-input');
+		    if (chatInput) {
+		        const key = 'Type /help for tools, or just chat...';
+		        chatInput.placeholder = lang === 'en' ? key : (i18nDict[key]?.[lang] || key);
+		    }
+
+		    // --- Send button ---
+		    const sendBtn = document.getElementById('send-btn');
+		    if (sendBtn && sendBtn.children.length === 0) {
+		        const key = 'Send';
+		        sendBtn.textContent = lang === 'en' ? key : (i18nDict[key]?.[lang] || key);
+		    }
+
+		    // --- Page title (update current active view label) ---
+		    const activeNav = document.querySelector('.nav-item.active .nav-text');
+		    if (activeNav) {
+		        const pageTitleEl = document.getElementById('page-title');
+		        if (pageTitleEl) pageTitleEl.innerText = activeNav.innerText;
+		    }
 		}
-		
-		// Trigger translation initialization upon DOM readiness
+
+		// Trigger translation initialization upon DOM readiness.
 		document.addEventListener("DOMContentLoaded", () => {
-		    document.getElementById('lang-select').value = currentLang;
-		    if(currentLang !== 'en') {
-		        setTimeout(() => switchLanguage(currentLang), 100);
+		    const sel = document.getElementById('lang-select');
+		    if (sel) sel.value = currentLang;
+		    if (currentLang !== 'en') {
+		        setTimeout(() => switchLanguage(currentLang), 150);
 		    }
 		});
 		
@@ -1017,11 +1260,11 @@
 		    if(token) opt.headers['Authorization'] = 'Bearer ' + token;
 		    if(body) { opt.headers['Content-Type']='application/json'; opt.body = JSON.stringify(body); }
 		    
-		    const r = await fetch(`/api${path}`, opt);
+		    const r = await fetch(`/api/v1${path}`, opt);
 		    
 		    // Intercept 401 Unauthorized errors to trigger the authentication modal
 		    if(r.status === 401 && path !== '/login') {
-		        document.getElementById('modal-login').classList.remove('hidden');
+		        showLoginPage();
 		        throw new Error("Unauthorized Session");
 		    }
 		    return r.json();
@@ -1070,55 +1313,56 @@
 		        updatePresidioUI(); 
 		        
 		        const sel = document.getElementById('chat-agent-select'); const old = sel.value;
-		        sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">🤖 ${a.name}</option>`).join('');
+		        sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
 		        if(old && dataStore.agents.find(a=>a.id===old)) sel.value = old;
 		        renderLists();
 		    } catch(e) { console.error("API Error:", e); }
 		}
 		
-		/** Toggles the attachment menu and syncs supported modalities */
+		/** Toggles the attachment popup menu */
 		function toggleModalityMenu() {
-		    const menu = document.getElementById('chat-input-type');
+		    const menu = document.getElementById('modality-menu');
+		    const isHidden = menu.classList.contains('hidden');
 		    menu.classList.toggle('hidden');
-		    if (!menu.classList.contains('hidden')) {
-		        syncInputModality(); 
+		    if (isHidden) {
+		        syncInputModality();
+		        lucide.createIcons();
 		    }
 		}
-		
+
 		function syncInputModality() {
 		    const agentId = document.getElementById('chat-agent-select').value;
 		    const agent = dataStore.agents.find(a => a.id === agentId);
 		    if (!agent) return;
-		
 		    const accepted = JSON.parse(agent.input_methods || '["Text"]');
-		    const typeSelect = document.getElementById('chat-input-type');
-		
-		    Array.from(typeSelect.options).forEach(opt => {
-		        const isSupported = accepted.includes(opt.value) || (opt.value === 'File' && accepted.includes('Text'));
-		        
-		        opt.disabled = !isSupported;
-		        opt.style.color = isSupported ? '' : '#9ca3af'; 
-		        
-		        if (!isSupported && typeSelect.value === opt.value) {
-		            typeSelect.value = "Text"; 
-		        }
+		    document.querySelectorAll('.modality-btn').forEach(btn => {
+		        const mod = btn.getAttribute('data-modality');
+		        const isSupported = accepted.includes(mod) || (mod === 'File' && accepted.includes('Text'));
+		        btn.disabled = !isSupported;
+		        btn.classList.toggle('opacity-40', !isSupported);
+		        btn.classList.toggle('pointer-events-none', !isSupported);
 		    });
 		}
-		
-		/** Intercepts modality selection to trigger file upload if non-text is chosen */
+
+		/** Intercepts modality selection — triggers file picker for non-text types */
 		function handleTypeChange(val) {
+		    document.getElementById('chat-input-type').value = val;
+		    // Highlight selected button
+		    document.querySelectorAll('.modality-btn').forEach(btn => {
+		        btn.classList.toggle('bg-gray-100', btn.getAttribute('data-modality') === val);
+		        btn.classList.toggle('dark:bg-gray-800', btn.getAttribute('data-modality') === val);
+		    });
 		    if (val !== 'Text') {
 		        document.getElementById('chat-file-input').click();
 		    }
-		    // Auto-collapse menu upon selection
-		    document.getElementById('chat-input-type').classList.add('hidden');
+		    document.getElementById('modality-menu').classList.add('hidden');
 		}
-		
-		// Handle outside clicks for modality menu
+
+		// Handle outside clicks to close the modality popup
 		document.addEventListener('click', (e) => {
 		    const btn = document.getElementById('upload-btn');
-		    const menu = document.getElementById('chat-input-type');
-		    if (!btn.contains(e.target) && !menu.contains(e.target)) {
+		    const menu = document.getElementById('modality-menu');
+		    if (btn && menu && !btn.contains(e.target) && !menu.contains(e.target)) {
 		        menu.classList.add('hidden');
 		    }
 		});
@@ -1130,8 +1374,56 @@
 		}
 		
 		function renderLists() {
-		    safeHtml('projects-grid', dataStore.projects.map(p => `<div onclick="openEditor('${p.id}')" class="p-6 bg-white dark:bg-[#111] border dark:border-gray-800 rounded-lg hover:border-blue-500 cursor-pointer transition-all shadow-sm"><h4 class="font-bold text-lg text-blue-600">${p.name}</h4><p class="text-xs text-gray-500 mt-2">${p.description}</p></div>`).join(''));
-		    safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} onchange="window.togglePrivacy('${a.id}', this.checked)" class="accent-green-500"> 🤖 ${a.name}</label>`).join(''));
+		    const projSearch = (document.getElementById('proj-search')?.value || '').toLowerCase();
+		    const filteredProjects = dataStore.projects.filter(p =>
+		        !projSearch || p.name.toLowerCase().includes(projSearch) || (p.description||'').toLowerCase().includes(projSearch)
+		    );
+		    safeHtml('projects-grid', filteredProjects.length === 0
+		        ? `<div class="col-span-3 py-16 text-center text-sm text-gray-400">No applications yet. Click "New Application" to create one.</div>`
+		        : filteredProjects.map(p => {
+		            const flow = (() => { try { return JSON.parse(p.flow_json || '{}'); } catch(e){ return {}; } })();
+		            const nodeCount = (flow.nodes || []).length;
+		            const edgeCount = (flow.edges || []).length;
+		            const typeSet = new Set((flow.nodes || []).map(n => n.type).filter(t => t !== 'Start' && t !== 'End'));
+		            const tagBadges = (p.tags || '').split(',').filter(Boolean).map(t => `<span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded text-[9px] font-mono">${t.trim()}</span>`).join('');
+		            const typeBadges = [...typeSet].slice(0,4).map(t => {
+		                const colors = {Agent:'text-blue-500 bg-blue-50 dark:bg-blue-900/20', Skill:'text-orange-500 bg-orange-50 dark:bg-orange-900/20', Code:'text-purple-500 bg-purple-50 dark:bg-purple-900/20', HTTP:'text-green-500 bg-green-50 dark:bg-green-900/20', If:'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20', Transform:'text-teal-500 bg-teal-50 dark:bg-teal-900/20'};
+		                const c = colors[t] || 'text-gray-500 bg-gray-50 dark:bg-gray-900/20';
+		                return `<span class="px-1.5 py-0.5 ${c} rounded text-[9px] font-bold">${t}</span>`;
+		            }).join('');
+		            return `
+		            <div class="group bg-white dark:bg-[#111] border dark:border-gray-800 rounded-xl shadow-sm hover:border-blue-400 dark:hover:border-blue-700 hover:shadow-md transition-all flex flex-col overflow-hidden">
+		                <div onclick="openEditor('${p.id}')" class="p-5 flex-1 cursor-pointer">
+		                    <div class="flex items-start justify-between gap-2">
+		                        <div class="flex items-center gap-2.5">
+		                            <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+		                                <i data-lucide="workflow" class="w-4 h-4 text-white"></i>
+		                            </div>
+		                            <div>
+		                                <h4 class="font-bold text-sm leading-tight">${escapeHTML(p.name)}</h4>
+		                                <p class="text-[10px] text-gray-400 mt-0.5 line-clamp-1">${escapeHTML(p.description||'No description')}</p>
+		                            </div>
+		                        </div>
+		                        <div class="flex items-center gap-1 shrink-0">
+		                            ${p.is_active ? '<span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="Active"></span>' : '<span class="w-2 h-2 rounded-full bg-gray-300 inline-block" title="Inactive"></span>'}
+		                        </div>
+		                    </div>
+		                    <div class="mt-3 flex flex-wrap gap-1">${typeBadges}${tagBadges}</div>
+		                </div>
+		                <div class="px-5 py-3 border-t dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
+		                    <div class="flex items-center gap-3 text-[10px] text-gray-400">
+		                        <span class="flex items-center gap-1"><i data-lucide="circle-dot" class="w-3 h-3"></i> ${nodeCount} nodes</span>
+		                        <span class="flex items-center gap-1"><i data-lucide="arrow-right" class="w-3 h-3"></i> ${edgeCount} edges</span>
+		                    </div>
+		                    <div class="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+		                        <button onclick="event.stopPropagation(); runProjectFromCard('${p.id}')" class="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500" title="Run"><i data-lucide="play" class="w-3.5 h-3.5"></i></button>
+		                        <button onclick="event.stopPropagation(); openEditor('${p.id}')" class="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500" title="Edit"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+		                        <button onclick="event.stopPropagation(); deleteProject('${p.id}')" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+		                    </div>
+		                </div>
+		            </div>`;
+		        }).join(''));
+		    safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} onchange="window.togglePrivacy('${a.id}', this.checked)" class="accent-green-500"> ${a.name}</label>`).join(''));
 		    safeHtml('agents-list', dataStore.agents.map(a => {
 		        const st = (window.analyticsStats && window.analyticsStats.entities[a.id]) || {tokens_24h: 0, calls_24h: 0};
 		        return `
@@ -1150,9 +1442,10 @@
 		                    <i onclick="event.stopPropagation(); window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
 		                </div>
 		            </div>
-		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 relative z-10 pt-4 border-t dark:border-gray-800/50">
+		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 flex-wrap relative z-10 pt-4 border-t dark:border-gray-800/50">
 		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
 		                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> ${st.calls_24h} Calls (24h)</span>
+		                ${a.stream_enabled !== false ? '<span class="bg-green-50 dark:bg-green-900/20 text-green-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="radio" class="w-3 h-3"></i> Stream</span>' : '<span class="bg-gray-50 dark:bg-gray-900/20 text-gray-400 px-2 py-1 rounded">Batch</span>'}
 		            </div>
 		        </div>
 		    `}).join(''));
@@ -1270,13 +1563,18 @@
 		    const chatBox = document.getElementById('chat-messages');
 		    if(!agentId) return;
 		    
-		    chatBox.innerHTML = '<div class="text-center text-xs text-gray-400 p-4">Loading persistent memory...</div>';
+		    const loadingKey = 'Loading persistent memory...';
+		    const emptyKey  = 'Memory clean. Start chatting!';
+		    const loadingText = currentLang === 'en' ? loadingKey : (i18nDict[loadingKey]?.[currentLang] || loadingKey);
+		    const emptyText   = currentLang === 'en' ? emptyKey  : (i18nDict[emptyKey ]?.[currentLang] || emptyKey);
+		    chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${emptyText.replace('...','...')}</div>`;
+		    chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${loadingText}</div>`;
 		    try {
 		        const history = await api(`/history/${agentId}`);
 		        chatBox.innerHTML = '';
-		        if(history.length === 0) { 
-		            chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 my-10">Memory clean. Start chatting!</div>`; 
-		            return; 
+		        if(history.length === 0) {
+		            chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 my-10">${emptyText}</div>`;
+		            return;
 		        }
 		        
 		        history.forEach(msg => {
@@ -1289,10 +1587,10 @@
 		                // Wrap system/tool interactions in collapsible detail blocks for cleanliness
 		                chatBox.innerHTML += `
 		                <details class="chat-bubble-sys cursor-pointer group">
-		                    <summary class="font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors list-none flex items-center gap-2">
-		                        <i data-lucide="chevron-right" class="w-3 h-3 group-open:rotate-90 transition-transform"></i>
-		                        🛠️ System & Tool Interactions
-		                    </summary>
+                    <summary class="font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors list-none flex items-center gap-2">
+                        <i data-lucide="chevron-right" class="w-3 h-3 group-open:rotate-90 transition-transform"></i>
+                        <i data-lucide="wrench" class="w-3 h-3"></i> System &amp; Tool Interactions
+                    </summary>
 		                    <div class="mt-2 text-[10px] text-gray-400 border-l-2 border-gray-200 dark:border-gray-700 pl-3 ml-1">
 		                        ${escapeHTML(msg.content)}
 		                    </div>
@@ -1304,32 +1602,70 @@
 		    } catch(e) { chatBox.innerHTML = '<div class="text-center text-red-500">Failed to load.</div>'; }
 		}
 		
-		/** Handles multi-part file uploads and stores references globally */
-		async function handleFileUpload(file) {
-		    if (!file) return;
-		    const formData = new FormData();
-		    formData.append('file', file);
-			const agentId = document.getElementById('chat-agent-select').value;
-		    if (agentId) {
-		        formData.append('agent_id', agentId);
+		// Tracks uploaded file paths (array) and their display names
+		window.uploadedFiles = []; // [{path, name, type}]
+
+		function renderFilePreviewStrip() {
+		    const strip = document.getElementById('file-preview-strip');
+		    const badge = document.getElementById('file-count-badge');
+		    if (!window.uploadedFiles.length) {
+		        strip.classList.add('hidden');
+		        badge.classList.add('hidden');
+		        return;
 		    }
-		    const btn = document.getElementById('upload-btn');
-		    btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>`;
-		    
-		    try {
-		        const r = await fetch('/api/upload', {
-		            method: 'POST',
-		            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') },
-		            body: formData
-		        });
-		        const data = await r.json();
-		        if(r.ok) {
-		            window.lastUploadedFile = data.path; 
-		            alert(`File uploaded: ${file.name}`);
-		        }
-		    } catch(e) { alert("Upload failed"); }
-		    btn.innerHTML = `<i data-lucide="paperclip" class="w-5 h-5"></i>`;
+		    strip.classList.remove('hidden');
+		    badge.classList.remove('hidden');
+		    badge.textContent = window.uploadedFiles.length;
+		    strip.innerHTML = window.uploadedFiles.map((f, i) => {
+		        const isImage = f.type && f.type.startsWith('image/');
+		        const icon = isImage ? 'image' : (f.type === 'application/pdf' ? 'file-text' : 'paperclip');
+		        return `<div class="flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg text-[11px] font-medium max-w-[160px]">
+		            <i data-lucide="${icon}" class="w-3 h-3 text-blue-500 shrink-0"></i>
+		            <span class="truncate">${escapeHTML(f.name)}</span>
+		            <button onclick="removeUploadedFile(${i})" class="text-gray-400 hover:text-red-500 shrink-0 ml-0.5">
+		                <i data-lucide="x" class="w-3 h-3"></i>
+		            </button>
+		        </div>`;
+		    }).join('');
 		    lucide.createIcons();
+		}
+
+		window.removeUploadedFile = (idx) => {
+		    window.uploadedFiles.splice(idx, 1);
+		    renderFilePreviewStrip();
+		};
+
+		/** Handles multi-part file uploads and stores references globally */
+		async function handleFileUpload(files) {
+		    if (!files || !files.length) return;
+		    const agentId = document.getElementById('chat-agent-select').value;
+		    const btn = document.getElementById('upload-btn');
+		    const origInner = btn.innerHTML;
+		    btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span id="file-count-badge" class="hidden"></span>`;
+		    lucide.createIcons();
+		    const token = localStorage.getItem('zuver_token');
+		    for (const file of Array.from(files)) {
+		        try {
+		            const formData = new FormData();
+		            formData.append('file', file);
+		            if (agentId) formData.append('agent_id', agentId);
+		            const r = await fetch('/api/upload', {
+		                method: 'POST',
+		                headers: { 'Authorization': 'Bearer ' + token },
+		                body: formData
+		            });
+		            const data = await r.json();
+		            if (r.ok) {
+		                window.uploadedFiles.push({ path: data.path, name: file.name, type: file.type });
+		            }
+		        } catch(e) { /* silent */ }
+		    }
+		    // Reset the file input so the same files can be re-selected
+		    const fi = document.getElementById('chat-file-input');
+		    fi.value = '';
+		    btn.innerHTML = `<i data-lucide="paperclip" class="w-5 h-5"></i><span id="file-count-badge" class="hidden absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold flex items-center justify-center"></span>`;
+		    lucide.createIcons();
+		    renderFilePreviewStrip();
 		}
 		
 		// Bind event listeners for agent swapping
@@ -1338,229 +1674,818 @@
 		    syncInputModality();
 		});
 		
-		window.clearMemory = async () => {
+		        window.clearMemory = async () => {
 		    const agentId = document.getElementById('chat-agent-select').value;
-		    if(confirm("Wipe this Agent's memory permanently?")) { 
-		        await api(`/history/${agentId}`, 'DELETE'); 
-		        loadChatHistory(); 
-		    }
+		    const ok = await showConfirm("Wipe this Agent's memory permanently?", 'Clear', true);
+		    if(ok) { await api(`/history/${agentId}`, 'DELETE'); loadChatHistory(); }
 		};
 		
 		window.sendMessage = async () => {
-		    const input = document.getElementById('chat-input'); 
-		    const typeSelect = document.getElementById('chat-input-type'); 
-		    const agentId = document.getElementById('chat-agent-select').value;
-		    
-		    // Input sanitization and payload construction
+		    const input       = document.getElementById('chat-input');
+		    const agentId     = document.getElementById('chat-agent-select').value;
+		    const activeType  = document.getElementById('chat-input-type').value || 'Text';
+
 		    let msg = input.value.trim();
-		    // Append file metadata if an upload occurred and modality is strictly non-text
-		    const isFileUpload = window.lastUploadedFile && typeSelect.value !== 'Text';
-		    const filePath = isFileUpload ? window.lastUploadedFile : "";
-		    
-		    // Abort if the transaction lacks both textual and file payloads
-		    if (!msg && !filePath) return;
+		    const files = window.uploadedFiles || [];
+		    const hasFiles = files.length > 0;
+
+		    if (!msg && !hasFiles) return;
 		    if (!agentId) return;
-		    
+
 		    const chatBox = document.getElementById('chat-messages');
-		    if(chatBox.innerHTML.includes('Memory clean')) chatBox.innerHTML = '';
-		    
-		    // Construct UI preview integrating both file attachments and text
-		            let displayMsg = msg;
-		            if (isFileUpload && filePath) {
-		                const safeFileName = filePath.split(/[/\\]/).pop();
-		                displayMsg = msg ? `📂 [File: ${safeFileName}]\n${msg}` : `📂 [File: ${safeFileName}]`;
-		            }
-		            chatBox.innerHTML += `<div class="chat-bubble-user whitespace-pre-wrap">${escapeHTML(displayMsg)}</div>`;
-		    input.value = ''; 
+		    if (chatBox.innerHTML.includes('Memory clean') || chatBox.innerHTML.includes('记忆为空') || chatBox.innerHTML.includes('Kein Verlauf')) {
+		        chatBox.innerHTML = '';
+		    }
+
+		    // User bubble
+		    let displayMsg = msg;
+		    if (hasFiles) {
+		        const fileNames = files.map(f => f.name).join(', ');
+		        displayMsg = msg ? `[Files: ${fileNames}]\n${msg}` : `[Files: ${fileNames}]`;
+		    }
+		    chatBox.innerHTML += `<div class="chat-bubble-user whitespace-pre-wrap">${escapeHTML(displayMsg)}</div>`;
+		    input.value = '';
 		    chatBox.scrollTop = chatBox.scrollHeight;
-		    
-		    const btn = document.getElementById('send-btn'); 
-		    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i>`; 
+
+		    const btn = document.getElementById('send-btn');
+		    btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin mx-auto"></i>`;
+		    btn.disabled = true;
 		    lucide.createIcons();
-		    
+
 		    if (msg.startsWith('/createTasks')) {
-		        chatBox.innerHTML += `<div class="chat-bubble-sys text-green-500 border-green-500/30">🕵️ Shadow Task Deployed. Monitoring system logs for pattern...</div>`;
+		        chatBox.innerHTML += `<div class="chat-bubble-sys text-green-500 border-green-500/30">Shadow Task Deployed. Monitoring system logs for pattern...</div>`;
 		    }
-		    
+
+		    // Determine whether the selected agent has streaming enabled.
+		    const agent = dataStore.agents.find(a => a.id === agentId);
+		    const agentStreamEnabled = agent ? agent.stream_enabled : true;
+
+		    const reqPayload = {
+		        agent_id:           agentId,
+		        message:            msg,
+		        file_path:          hasFiles ? files[0].path : '',
+		        file_paths:         files.map(f => f.path),
+		        use_cache:          document.getElementById('toggle-cache').checked,
+		        presidio_enabled:   document.getElementById('toggle-presidio').checked,
+		        presidio_analyzer:  document.getElementById('presidio-analyzer-url').value,
+		        presidio_anonymizer:document.getElementById('presidio-anonymizer-url').value,
+		        input_type:         hasFiles ? activeType : 'Text',
+		        stream:             agentStreamEnabled
+		    };
+
+		    const token = localStorage.getItem('zuver_token');
+		    const headers = { 'Content-Type': 'application/json' };
+		    if (token) headers['Authorization'] = 'Bearer ' + token;
+
 		    try {
-		        const reqPayload = { 
-		            agent_id: agentId, 
-		            message: msg, 
-		            file_path: filePath,
-		            use_cache: document.getElementById('toggle-cache').checked,
-		            presidio_enabled: document.getElementById('toggle-presidio').checked,
-		            presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
-		            presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
-		            input_type: typeSelect.value 
-		        };
-		        const data = await api('/chat', 'POST', reqPayload);
-		        
-		        // Reset state post-submission
-		        window.lastUploadedFile = null;
-		        typeSelect.value = "Text"; 
-		        
-		        if (data.logs) {
-		            data.logs.forEach(log => {
-		                let cls = 'chat-bubble-sys';
-		                if(log.includes('[Privacy') || log.includes('[Session]')) cls += ' border-green-500 text-green-600';
-		                if(!log.includes('[Agent Output]')) chatBox.innerHTML += `<div class="${cls}">${escapeHTML(log)}</div>`;
+		        if (agentStreamEnabled) {
+		            // ---- STREAMING (SSE) path ----
+		            const resp = await fetch('/api/v1/chat', {
+		                method: 'POST',
+		                headers,
+		                body: JSON.stringify(reqPayload)
 		            });
+
+		            if (resp.status === 401) {
+		                showLoginPage();
+		                throw new Error('Unauthorized');
+		            }
+
+		            const contentType = resp.headers.get('content-type') || '';
+
+		            if (contentType.includes('text/event-stream')) {
+		                // Create the AI reply bubble (initially empty — filled by delta events).
+		                const aiBubble = document.createElement('div');
+		                aiBubble.className = 'chat-bubble-ai markdown-body';
+		                chatBox.appendChild(aiBubble);
+
+		                const reader = resp.body.getReader();
+		                const decoder = new TextDecoder();
+		                let buffer = '';
+		                let fullText = '';
+		                // Map from step index to {card, name, startTime, spinner} for tool tracking.
+		                const toolCards = {};
+
+		                while (true) {
+		                    const { done, value } = await reader.read();
+		                    if (done) break;
+
+		                    buffer += decoder.decode(value, { stream: true });
+		                    const lines = buffer.split('\n');
+		                    buffer = lines.pop();
+
+		                    for (const line of lines) {
+		                        if (!line.startsWith('data: ')) continue;
+		                        const raw = line.slice(6).trim();
+		                        if (!raw) continue;
+
+		                        let parsed;
+		                        try { parsed = JSON.parse(raw); } catch(e) { continue; }
+
+		                        // --- Streaming delta: append with fade-in ---
+		                        if (parsed.delta) {
+		                            fullText += parsed.delta;
+		                            // Render the already-accumulated text as markdown, then append
+		                            // the newest chunk as a span with the fade-in class.
+		                            const prevHtml = marked.parse(fullText.slice(0, fullText.length - parsed.delta.length));
+		                            const chunkSpan = `<span class="stream-chunk">${escapeHTML(parsed.delta)}</span>`;
+		                            // Simple approach: re-render full markdown but animate the last segment.
+		                            aiBubble.innerHTML = marked.parse(fullText);
+		                            // Flash the last text node briefly.
+		                            const walker = document.createTreeWalker(aiBubble, NodeFilter.SHOW_TEXT, null);
+		                            let lastTextNode;
+		                            while(walker.nextNode()) lastTextNode = walker.currentNode;
+		                            if (lastTextNode) {
+		                                const span = document.createElement('span');
+		                                span.className = 'stream-chunk';
+		                                lastTextNode.parentNode.replaceChild(span, lastTextNode);
+		                                span.textContent = lastTextNode.nodeValue;
+		                            }
+		                            chatBox.scrollTop = chatBox.scrollHeight;
+		                        }
+
+		                        // --- Tool start: create a running card above the reply bubble ---
+		                        if (parsed.tool_start != null) {
+		                            const card = document.createElement('div');
+		                            card.className = 'tool-step-card running';
+		                            const cmdLabel = parsed.tool_start.length > 60
+		                                ? parsed.tool_start.slice(0, 60) + '…'
+		                                : parsed.tool_start;
+		                            card.innerHTML = `<span class="tool-step-dot"></span>
+		                                <span class="flex-1 truncate">${escapeHTML(cmdLabel)}</span>
+		                                <span class="tool-step-timer text-gray-400" data-start="${Date.now()}">0ms</span>`;
+		                            chatBox.insertBefore(card, aiBubble);
+
+		                            // Live timer tick — shows elapsed ms while running.
+		                            const timerEl = card.querySelector('.tool-step-timer');
+		                            const startMs = Date.now();
+		                            const ticker = setInterval(() => {
+		                                const elapsedMs = Date.now() - startMs;
+		                                timerEl.textContent = elapsedMs >= 1000
+		                                    ? (elapsedMs / 1000).toFixed(1) + 's'
+		                                    : elapsedMs + 'ms';
+		                                // After 1 second, show a "running in background" indicator.
+		                                if (elapsedMs > 1000 && !card.querySelector('.bg-indicator')) {
+		                                    const bg = document.createElement('span');
+		                                    bg.className = 'bg-indicator text-[10px] text-blue-500 font-mono ml-1';
+		                                    bg.textContent = 'executing…';
+		                                    timerEl.parentNode.insertBefore(bg, timerEl);
+		                                }
+		                            }, 50);
+		                            toolCards[parsed.step] = { card, ticker, startMs };
+		                            chatBox.scrollTop = chatBox.scrollHeight;
+		                        }
+
+		                        // --- Tool end: update card to done/error, stop ticker ---
+		                        if (parsed.tool_end != null) {
+		                            const entry = toolCards[parsed.step];
+		                            if (entry) {
+		                                clearInterval(entry.ticker);
+		                                const isErr = (parsed.result || '').includes('[ERROR') || (parsed.result || '').includes('Error');
+		                                entry.card.classList.remove('running');
+		                                entry.card.classList.add(isErr ? 'error' : 'done');
+		                                const timerEl = entry.card.querySelector('.tool-step-timer');
+		                                if (timerEl) timerEl.textContent = parsed.ms >= 1000
+		                                    ? (parsed.ms / 1000).toFixed(2) + 's'
+		                                    : parsed.ms + 'ms';
+		                                const bgInd = entry.card.querySelector('.bg-indicator');
+		                                if (bgInd) bgInd.remove();
+		                            }
+		                        }
+
+		                        // --- Done: finalise logs ---
+		                        if (parsed.done) {
+		                            // Stop any lingering tickers.
+		                            Object.values(toolCards).forEach(e => clearInterval(e.ticker));
+		                            if (parsed.error) {
+		                                aiBubble.innerHTML = `<span class="text-red-500">${escapeHTML(parsed.error)}</span>`;
+		                            }
+		                            if (parsed.logs && parsed.logs.length) {
+		                                parsed.logs.forEach(log => {
+		                                    if (log.includes('[Agent]') || log.includes('[Stream')) return;
+		                                    let cls = 'chat-bubble-sys';
+		                                    if (log.includes('[Privacy')) cls += ' border-green-500 text-green-600';
+		                                    chatBox.insertBefore(
+		                                        Object.assign(document.createElement('div'), { className: cls, textContent: log }),
+		                                        aiBubble
+		                                    );
+		                                });
+		                            }
+		                        }
+		                    }
+		                }
+		            } else {
+		                // Provider returned non-SSE despite stream flag — fall back to JSON.
+		                const data = await resp.json();
+		                if (data.logs) {
+		                    data.logs.forEach(log => {
+		                        if (log.includes('[Agent]')) return;
+		                        chatBox.innerHTML += `<div class="chat-bubble-sys">${escapeHTML(log)}</div>`;
+		                    });
+		                }
+		                chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(data.reply || '')}</div>`;
+		            }
+		        } else {
+		            // ---- NON-STREAMING (JSON) path ----
+		            const resp = await fetch('/api/v1/chat', {
+		                method: 'POST',
+		                headers,
+		                body: JSON.stringify(reqPayload)
+		            });
+		            if (resp.status === 401) {
+		                showLoginPage();
+		                throw new Error('Unauthorized');
+		            }
+		            const data = await resp.json();
+		            if (data.logs) {
+		                data.logs.forEach(log => {
+		                    if (log.includes('[Agent]')) return;
+		                    let cls = 'chat-bubble-sys';
+		                    if (log.includes('[Privacy') || log.includes('[Session]')) cls += ' border-green-500 text-green-600';
+		                    chatBox.innerHTML += `<div class="${cls}">${escapeHTML(log)}</div>`;
+		                });
+		            }
+		            chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(data.reply || '')}</div>`;
 		        }
-		        chatBox.innerHTML += `<div class="chat-bubble-ai">${marked.parse(data.reply)}</div>`;
-		    } catch (err) { 
-		        chatBox.innerHTML += `<div class="chat-bubble-sys text-red-500">Network Error.</div>`; 
+		    } catch (err) {
+		        if (err.message !== 'Unauthorized') {
+		            chatBox.innerHTML += `<div class="chat-bubble-sys text-red-500">Network Error: ${escapeHTML(err.message)}</div>`;
+		        }
 		    }
-		    btn.innerHTML = `Send`; 
-		    chatBox.scrollTop = chatBox.scrollHeight; 
-		    loadAllData(); 
+
+		    // Reset state.
+		    window.uploadedFiles = [];
+		    document.getElementById('chat-input-type').value = 'Text';
+		    document.getElementById('chat-file-input').value = '';
+		    renderFilePreviewStrip();
+		    // Reset modality button highlights
+		    document.querySelectorAll('.modality-btn').forEach(b => {
+		        b.classList.remove('bg-gray-100','dark:bg-gray-800');
+		        if (b.getAttribute('data-modality') === 'Text') {
+		            b.classList.add('bg-gray-100','dark:bg-gray-800');
+		        }
+		    });
+		    const sendKey = 'Send';
+		    btn.innerHTML = currentLang === 'en' ? sendKey : (i18nDict[sendKey]?.[currentLang] || sendKey);
+		    btn.disabled = false;
+		    chatBox.scrollTop = chatBox.scrollHeight;
+		    loadAllData();
 		};
 		
 		/* ==========================================
-		 * VISUAL ROUTER / WORKFLOW EDITOR ENGINE
+		 * VISUAL WORKFLOW / PIPELINE EDITOR ENGINE
 		 * ========================================== */
-		let nodes = [], edges = [], activeId = null, selectedNode = null, tempLineStart = null, tempMouseX = 0, tempMouseY = 0;
-		
-		window.openEditor = (id) => {
-		    document.getElementById('view-projects-list').classList.add('hidden'); document.getElementById('view-projects-editor').classList.remove('hidden'); document.getElementById('view-projects-editor').classList.add('flex');
-		    if(id) {
-		        activeId = id; const p = dataStore.projects.find(x => x.id === id);
-		        try { const flow = JSON.parse(p.flow_json); nodes = flow.nodes||[]; edges = flow.edges||[]; } catch(e){}
-		    } else { activeId = 'proj_' + Date.now(); nodes = [{id:'start', type:'Start', x:50, y:150}, {id:'end', type:'End', x:400, y:150}]; edges = []; }
-		    renderCanvas(); renderProps();
+		let nodes = [], edges = [], activeId = null, selectedNode = null;
+		let tempLineStart = null, tempMouseX = 0, tempMouseY = 0;
+		let undoStack = []; // Snapshot-based undo: each entry is {nodes, edges} deep clone
+
+		// Push the current canvas state onto the undo stack before a modification.
+		function pushUndo() {
+		    undoStack.push({
+		        nodes: JSON.parse(JSON.stringify(nodes)),
+		        edges: JSON.parse(JSON.stringify(edges))
+		    });
+		    // Limit history depth to avoid memory bloat.
+		    if (undoStack.length > 50) undoStack.shift();
+		    // Mark the project as having unsaved changes.
+		    if (typeof window.markDirty === 'function') window.markDirty('project');
+		}
+
+		// Node type visual config: color, lucide icon, display label
+		const NODE_STYLES = {
+		    Start:       { color:'#22c55e', icon:'play-circle',           label:'Start' },
+		    End:         { color:'#ef4444', icon:'stop-circle',           label:'End' },
+		    Agent:       { color:'#3b82f6', icon:'bot',                   label:'Agent' },
+		    Skill:       { color:'#f97316', icon:'zap',                   label:'Skill' },
+		    Code:        { color:'#8b5cf6', icon:'code-2',                label:'Go Code' },
+		    If:          { color:'#eab308', icon:'git-branch',            label:'If / Branch' },
+		    Transform:   { color:'#14b8a6', icon:'wand-2',                label:'Transform' },
+		    HTTP:        { color:'#10b981', icon:'globe',                 label:'HTTP Request' },
+		    Wait:        { color:'#6b7280', icon:'timer',                 label:'Wait' },
+		    Project:     { color:'#ec4899', icon:'layers',                label:'Sub-Pipeline' },
+		    SetVariable: { color:'#6366f1', icon:'variable',              label:'Set Variable' },
+		    GetVariable: { color:'#818cf8', icon:'arrow-right-to-line',   label:'Get Variable' },
 		};
-		
-		window.closeEditor = () => { document.getElementById('view-projects-editor').classList.add('hidden'); document.getElementById('view-projects-editor').classList.remove('flex'); document.getElementById('view-projects-list').classList.remove('hidden'); loadAllData(); };
-		window.addNode = (type) => { nodes.push({ id: 'n'+Date.now(), type, x: 200, y: 200 }); renderCanvas(); };
-		
-		function renderCanvas() {
-		    const c = document.getElementById('canvas-nodes'); c.innerHTML = '';
-		    nodes.forEach(n => {
-		        const d = document.createElement('div');
-		        d.className = `wf-node ${selectedNode?.id === n.id ? 'selected' : ''}`;
-		        d.style.left = n.x + 'px'; d.style.top = n.y + 'px';
-		        let btn = n.type==='Start'||n.type==='End' ? '' : `<i onclick="delNode('${n.id}')" data-lucide="x" class="w-3 h-3 text-gray-400 hover:text-red-500 cursor-pointer"></i>`;
-		        d.innerHTML = `<div class="p-2 text-xs font-bold border-b dark:border-gray-800 flex justify-between"><span>${n.type}</span>${btn}</div><div class="p-2 text-[9px] text-gray-400">ID: ${n.id.substring(0,6)}...</div>${n.type !== 'Start' ? '<div class="wf-port wf-port-in"></div>' : ''}${n.type !== 'End' ? '<div class="wf-port wf-port-out" onmousedown="startLine(event, \''+n.id+'\')"></div>' : ''}`;
-		        
-		        d.onmousedown = (e) => {
-		            if(e.target.classList.contains('wf-port') || e.target.closest('i')) return;
-		            selectedNode = n; renderProps(); 
-		            document.querySelectorAll('.wf-node').forEach(el=>el.classList.remove('selected')); d.classList.add('selected');
-		            const sx = e.clientX, sy = e.clientY, nx = n.x, ny = n.y;
-		            document.onmousemove = (me) => { n.x = nx + (me.clientX - sx); n.y = ny + (me.clientY - sy); d.style.left = n.x + 'px'; d.style.top = n.y + 'px'; drawLines(); }
-		            document.onmouseup = () => { document.onmousemove = null; document.onmouseup=null; }
+
+		function nodeSubtitle(n) {
+		    switch(n.type) {
+		        case 'Agent':       return dataStore.agents.find(a=>a.id===n.agentId)?.name || 'Not configured';
+		        case 'Skill':       return dataStore.skills.find(s=>s.id===n.skillId)?.name || 'Not configured';
+		        case 'HTTP':        return (n.httpMethod||'GET')+' '+(n.httpUrl ? n.httpUrl.substring(0,22)+'…' : '(no url)');
+		        case 'If':          return (n.condition||'contains')+': '+(n.condValue||'(value)');
+		        case 'Transform':   return n.operation||'trim';
+		        case 'Wait':        return (n.seconds||1)+'s';
+		        case 'Start':       return 'Trigger: '+(n.trigger||'Manual');
+		        case 'SetVariable': return 'var: '+(n.varName||'?');
+		        case 'GetVariable': return 'var: '+(n.varName||'?');
+		        case 'Project':     return dataStore.projects.find(p=>p.id===n.projectId)?.name||'Not configured';
+		        default: return '';
+		    }
+		}
+
+		window.openEditor = (id) => {
+		    document.getElementById('view-projects-list').classList.add('hidden');
+		    const ed = document.getElementById('view-projects-editor');
+		    ed.classList.remove('hidden'); ed.classList.add('flex');
+		    const p = id ? dataStore.projects.find(x=>x.id===id) : null;
+		    activeId = id || ('proj_'+Date.now());
+		    document.getElementById('proj-name-input').value = p ? p.name : '';
+		    document.getElementById('proj-desc-input').value = p ? (p.description||'') : '';
+		    if(p) {
+		        try { const flow = JSON.parse(p.flow_json); nodes=flow.nodes||[]; edges=flow.edges||[]; } catch(e){ nodes=[]; edges=[]; }
+		    } else {
+		        nodes = [{id:'start',type:'Start',x:80,y:180,trigger:'Manual'},{id:'end',type:'End',x:520,y:180}];
+		        edges = [];
+		    }
+		    selectedNode = null;
+		    undoStack = []; // Reset undo history when opening a new project
+		    if (typeof window.markClean === 'function') window.markClean('project'); // Fresh open — not dirty yet
+		    renderCanvas(); renderProps(); lucide.createIcons();
+		};
+
+		window.closeEditor = async () => {
+		    if (typeof window.isDirty === 'function' && window.isDirty('project')) {
+		        const proceed = await showConfirm(
+		            'You have unsaved changes in this Application.<br>Leave without saving?',
+		            'Leave', true
+		        );
+		        if (!proceed) return;
+		        if (typeof window.markClean === 'function') window.markClean('project');
+		    }
+		    const ed = document.getElementById('view-projects-editor');
+		    ed.classList.add('hidden'); ed.classList.remove('flex');
+		    document.getElementById('view-projects-list').classList.remove('hidden');
+		    loadAllData();
+		};
+
+		window.addNode = (type) => {
+		    pushUndo();
+		    const x = 180 + (nodes.length%4)*60, y = 120 + Math.floor(nodes.length/4)*90;
+		    nodes.push({ id:'n'+Date.now(), type, x, y });
+		    renderCanvas(); lucide.createIcons();
+		};
+
+		window.delNode = (id) => {
+		    pushUndo();
+		    nodes  = nodes.filter(n=>n.id!==id);
+		    edges  = edges.filter(e=>e.from!==id && e.to!==id);
+		    if(selectedNode?.id===id) selectedNode=null;
+		    renderProps(); renderCanvas();
+		};
+
+		// Extract <param> placeholders from skill content/url/body
+		function getSkillParams(skill) {
+		    if (!skill) return [];
+		    const re = /<([^>\s]+)>/g;
+		    const seen = new Set();
+		    const fields = [skill.content||'', skill.api_url||'', skill.api_body||''];
+		    for (const f of fields) {
+		        let m;
+		        while ((m = re.exec(f)) !== null) {
+		            seen.add(m[1]);
+		            re.lastIndex = m.index + 1; // avoid infinite loop on same position
 		        }
-		        
-		        d.onmouseup = () => { if(tempLineStart && tempLineStart !== n.id && n.type !== 'Start') { if(!edges.some(edge => edge.from === tempLineStart && edge.to === n.id)) { edges.push({from: tempLineStart, to: n.id}); } tempLineStart = null; renderCanvas(); } }
+		    }
+		    return [...seen];
+		}
+
+		function renderCanvas() {
+		    const c = document.getElementById('canvas-nodes');
+		    c.innerHTML = '';
+		    nodes.forEach(n => {
+		        const style = NODE_STYLES[n.type] || { color:'#6b7280', icon:'circle', label:n.type };
+		        const d = document.createElement('div');
+		        d.className = `wf-node${selectedNode?.id===n.id?' selected':''}`;
+		        d.style.left = n.x+'px'; d.style.top = n.y+'px'; d.style.width = '170px';
+		        const canDel = n.type!=='Start' && n.type!=='End';
+		        const subtitle = nodeSubtitle(n);
+
+		        // Build per-param input ports for Skill nodes
+		        let paramPortsHTML = '';
+		        let skillParams = [];
+		        if (n.type === 'Skill' && n.skillId) {
+		            const skill = dataStore.skills.find(s => s.id === n.skillId);
+		            skillParams = getSkillParams(skill);
+		        }
+		        // Determine how many input ports: 1 default (top-left) + param ports stacked on left
+		        // Default 'input' port is always rendered at top-left; extra params below it
+		        let extraPortsHeight = skillParams.length > 0 ? skillParams.length * 22 : 0;
+		        if (skillParams.length > 0) {
+		            paramPortsHTML = skillParams.map((p, i) => {
+		                const topPct = 44 + i * 22; // px from top of node body (below header)
+		                return `<div class="wf-port wf-port-in" style="top:${topPct}px;left:-7px;transform:none;" title="param: ${escapeHTML(p)}" data-param="${escapeHTML(p)}" onmouseup="connectParam(event,'${n.id}','${escapeHTML(p)}')">
+		                    <span style="position:absolute;left:10px;top:-2px;font-size:9px;color:#9ca3af;white-space:nowrap;pointer-events:none;">${escapeHTML(p)}</span>
+		                </div>`;
+		            }).join('');
+		        }
+
+		        d.innerHTML = `
+		            <div class="px-2.5 py-1.5 flex items-center justify-between rounded-t-xl" style="background:${style.color}22;border-bottom:1px solid ${style.color}44">
+		                <div class="flex items-center gap-1.5">
+		                    <i data-lucide="${style.icon}" class="w-3 h-3" style="color:${style.color}"></i>
+		                    <span class="text-[11px] font-bold" style="color:${style.color}">${style.label}</span>
+		                </div>
+		                ${canDel?`<i onclick="event.stopPropagation();delNode('${n.id}')" data-lucide="x" class="w-3 h-3 text-gray-400 hover:text-red-500 cursor-pointer"></i>`:''}
+		            </div>
+		            <div class="px-2.5 py-1.5" style="min-height:${Math.max(22, extraPortsHeight)}px"><p class="text-[10px] text-gray-400 truncate">${escapeHTML(subtitle||'\u00a0')}</p></div>
+		            ${n.type!=='Start'?'<div class="wf-port wf-port-in" style="top:28px"></div>':''}
+		            ${paramPortsHTML}
+		            ${n.type!=='End'?`<div class="wf-port wf-port-out" onmousedown="startLine(event,'${n.id}')"></div>`:''}
+		            ${n.type==='If'?`<div class="wf-port" style="right:-7px;top:72%;transform:translateY(-50%);background:#eab308;border-color:#ca8a04" title="False branch" onmousedown="startLine(event,'${n.id}',true)"></div>`:''}
+		        `;
+		        d.onmousedown = (e) => {
+		            if(e.target.classList.contains('wf-port')||e.target.closest('[data-lucide="x"]')) return;
+		            selectedNode = n;
+		            document.querySelectorAll('.wf-node').forEach(el=>el.classList.remove('selected'));
+		            d.classList.add('selected'); renderProps();
+		            const sx=e.clientX, sy=e.clientY, nx=n.x, ny=n.y;
+		            document.onmousemove = (me) => {
+		                n.x = nx+(me.clientX-sx);
+		                n.y = ny+(me.clientY-sy);
+		                d.style.left = n.x+'px'; d.style.top = n.y+'px'; drawLines();
+		            };
+		            document.onmouseup = () => { document.onmousemove=null; document.onmouseup=null; };
+		        };
+		        d.onmouseup = () => {
+		            if(tempLineStart && tempLineStart!==n.id && n.type!=='Start') {
+		                if(!edges.some(ed=>ed.from===tempLineStart&&ed.to===n.id&&ed.isFalse===window._connectingFalseBranch)) {
+		                    pushUndo();
+		                    edges.push({from:tempLineStart, to:n.id, isFalse:window._connectingFalseBranch||false});
+		                }
+		                tempLineStart=null; window._connectingFalseBranch=false; renderCanvas();
+		            }
+		        };
 		        c.appendChild(d);
 		    });
 		    lucide.createIcons(); drawLines();
 		}
-		
-		window.startLine = (e, id) => { 
-		            e.stopPropagation(); tempLineStart = id; 
-		            const canvas = document.getElementById('canvas-container'); 
-		            if(canvas) { 
-		                // Calculate bounding rect offset
-		                const rect = canvas.getBoundingClientRect(); 
-		                tempMouseX = e.clientX - rect.left; 
-		                tempMouseY = e.clientY - rect.top; 
-		            }
+
+		window.startLine = (e, id, isFalse=false) => {
+		    e.stopPropagation(); tempLineStart=id; window._connectingFalseBranch=isFalse;
+		    window._connectingParamTarget = null;
+		    const rect = document.getElementById('canvas-container').getBoundingClientRect();
+		    tempMouseX = e.clientX-rect.left;
+		    tempMouseY = e.clientY-rect.top;
+		    drawLines();
+		};
+
+		// connectParam is called when a param port receives a mouseup during line drawing
+		window.connectParam = (e, toNodeId, paramName) => {
+		    e.stopPropagation();
+		    if (!tempLineStart || tempLineStart === toNodeId) return;
+		    const key = `param_${tempLineStart}_${toNodeId}_${paramName}`;
+		    if (!edges.some(ed => ed.from===tempLineStart && ed.to===toNodeId && ed.paramName===paramName)) {
+		        pushUndo();
+		        edges.push({ from: tempLineStart, to: toNodeId, paramName, isFalse: false });
+		    }
+		    tempLineStart = null; window._connectingFalseBranch = false;
+		    renderCanvas();
+		};
+
+		document.addEventListener('mousemove', (e) => {
+		    if(!tempLineStart) return;
+		    const canvas = document.getElementById('canvas-container'); if(!canvas) return;
+		    const rect = canvas.getBoundingClientRect();
+		    tempMouseX = e.clientX-rect.left; tempMouseY = e.clientY-rect.top;
+		    drawLines();
+		});
+
+		document.addEventListener('mouseup', (e) => {
+		    if(tempLineStart && !e.target.classList.contains('wf-port-in')) {
+		        tempLineStart=null; window._connectingFalseBranch=false; drawLines();
+		    }
+		});
+
+		// Undo last action (snapshot-based) — Ctrl+Z / toolbar button
+		window.undoEdge = () => {
+		    if (undoStack.length > 0) {
+		        const snap = undoStack.pop();
+		        nodes = snap.nodes;
+		        edges = snap.edges;
+		        selectedNode = null;
+		        renderCanvas();
+		        renderProps();
+		        lucide.createIcons();
+		        showToast('Undone.', 'info', 1800);
+		    } else {
+		        showToast('Nothing to undo.', 'warn', 2000);
+		    }
+		};
+		document.addEventListener('keydown', (e) => {
+		    if ((e.ctrlKey||e.metaKey) && e.key === 'z') { window.undoEdge(); }
+		});
+
+		function drawLines() {
+		    const svg = document.getElementById('canvas-lines');
+		    svg.innerHTML = `<defs>
+		        <marker id="arrow-blue"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#3b82f6"/></marker>
+		        <marker id="arrow-yellow" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#eab308"/></marker>
+		        <marker id="arrow-gray"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9ca3af"/></marker>
+		        <marker id="arrow-orange" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#f97316"/></marker>
+		    </defs>`;
+		    const NW=170;
+		    edges.forEach(edge => {
+		        const n1=nodes.find(x=>x.id===edge.from), n2=nodes.find(x=>x.id===edge.to);
+		        if(!n1||!n2) return;
+		        const isParam = !!edge.paramName;
+		        const isFalse = edge.isFalse && !isParam;
+		        // Determine node card height for vertical offsets
+		        const n2skill = (n2.type==='Skill'&&n2.skillId) ? dataStore.skills.find(s=>s.id===n2.skillId) : null;
+		        const n2params = getSkillParams(n2skill);
+		        const n2NH = 58 + Math.max(0, n2params.length * 22);
+		        const n1NH = 58;
+
+		        let color, marker;
+		        if (isParam) { color='#f97316'; marker='url(#arrow-orange)'; }
+		        else if (isFalse) { color='#eab308'; marker='url(#arrow-yellow)'; }
+		        else { color='#3b82f6'; marker='url(#arrow-blue)'; }
+
+		        const x1 = n1.x+NW;
+		        const y1 = isFalse ? (n1.y+n1NH*0.72) : (n1.y+n1NH/2);
+		        let x2 = n2.x;
+		        let y2;
+		        if (isParam) {
+		            const paramIdx = n2params.indexOf(edge.paramName);
+		            y2 = n2.y + 44 + (paramIdx >= 0 ? paramIdx * 22 : 0);
+		        } else {
+		            y2 = n2.y + n2NH/2;
+		        }
+		        const cx=(x1+x2)/2;
+		        const d=`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`;
+
+		        // Invisible wide hit area for easy clicking (pointer-events:all)
+		        const hitPath=document.createElementNS('http://www.w3.org/2000/svg','path');
+		        hitPath.setAttribute('d',d);
+		        hitPath.setAttribute('stroke','transparent'); hitPath.setAttribute('stroke-width','12');
+		        hitPath.setAttribute('fill','none');
+		        hitPath.style.pointerEvents='stroke'; hitPath.style.cursor='pointer';
+		        hitPath.title = isParam ? `param: ${edge.paramName} — click to delete` : 'click to delete';
+		        hitPath.onclick = (ev) => {
+		            ev.stopPropagation();
+		            pushUndo();
+		            edges = edges.filter(ed=>ed!==edge);
 		            drawLines();
 		        };
-		        
-		document.addEventListener('mousemove', (e) => { 
-		            if(tempLineStart) { 
-		                const canvas = document.getElementById('canvas-container'); 
-		                if(!canvas) return; 
-		                const rect = canvas.getBoundingClientRect(); 
-		                tempMouseX = e.clientX - rect.left; 
-		                tempMouseY = e.clientY - rect.top; 
-		                drawLines(); 
-		            }
-		        });
-		        
-		        // Clear temporary connection line if the drop target is not a valid input port
-		        document.addEventListener('mouseup', (e) => { 
-		            if(tempLineStart) { 
-		                if (!e.target.classList.contains('wf-port-in')) {
-		                    tempLineStart = null; 
-		                }
-		                drawLines(); 
-		            } 
-		        });
-		        
-		window.delNode = (id) => { nodes = nodes.filter(n=>n.id!==id); edges = edges.filter(e=>e.from!==id && e.to!==id); if(selectedNode?.id===id) selectedNode=null; renderProps(); renderCanvas(); };
-		
-		function drawLines() {
-		    const svg = document.getElementById('canvas-lines'); svg.innerHTML = '<defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker></defs>';
-		    edges.forEach(e => {
-		        const n1 = nodes.find(x => x.id === e.from), n2 = nodes.find(x => x.id === e.to);
-		        if(n1 && n2) {
-		            const x1 = n1.x + 160, y1 = n1.y + 25, x2 = n2.x, y2 = n2.y + 25;
-		            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-		            path.setAttribute('d', `M${x1},${y1} C${x1+40},${y1} ${x2-40},${y2} ${x2},${y2}`);
-		            path.setAttribute('stroke', '#3b82f6'); path.setAttribute('stroke-width', '2'); path.setAttribute('fill', 'none'); path.setAttribute('marker-end', 'url(#arrow)'); path.setAttribute('class', 'edge-path');
-		            path.onclick = (event) => { event.stopPropagation(); edges = edges.filter(ed => !(ed.from === e.from && ed.to === e.to)); drawLines(); };
-		            svg.appendChild(path);
+
+		        // Visible styled path (no pointer events — handled by hitPath)
+		        const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+		        path.setAttribute('d',d);
+		        path.setAttribute('stroke',color); path.setAttribute('stroke-width', isParam?'1.5':'2');
+		        path.setAttribute('fill','none'); path.setAttribute('marker-end',marker);
+		        if (isParam) path.setAttribute('stroke-dasharray','4,3');
+		        path.style.pointerEvents='none';
+
+		        svg.appendChild(hitPath);
+		        svg.appendChild(path);
+
+		        // Edge label
+		        if (isFalse || isParam) {
+		            const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+		            lbl.setAttribute('x',cx); lbl.setAttribute('y',(y1+y2)/2-4);
+		            lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('font-size','9');
+		            lbl.setAttribute('fill', isParam?'#f97316':'#eab308');
+		            lbl.textContent = isParam ? edge.paramName : 'false';
+		            lbl.style.pointerEvents='none';
+		            svg.appendChild(lbl);
 		        }
 		    });
 		    if(tempLineStart) {
-		        const n1 = nodes.find(x => x.id === tempLineStart);
+		        const n1=nodes.find(x=>x.id===tempLineStart);
 		        if(n1) {
-		            const x1 = n1.x + 160, y1 = n1.y + 25;
-		            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-		            path.setAttribute('d', `M${x1},${y1} C${x1+40},${y1} ${tempMouseX-40},${tempMouseY} ${tempMouseX},${tempMouseY}`);
-		            path.setAttribute('stroke', '#9ca3af'); path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-dasharray', '5,5'); path.setAttribute('fill', 'none');
+		            const NW=170, NH=58;
+		            const x1=n1.x+NW, y1=n1.y+NH/2;
+		            const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+		            path.setAttribute('d',`M${x1},${y1} C${(x1+tempMouseX)/2},${y1} ${(x1+tempMouseX)/2},${tempMouseY} ${tempMouseX},${tempMouseY}`);
+		            path.setAttribute('stroke','#9ca3af'); path.setAttribute('stroke-width','1.5');
+		            path.setAttribute('stroke-dasharray','5,4'); path.setAttribute('fill','none');
+		            path.setAttribute('marker-end','url(#arrow-gray)');
+		            path.style.pointerEvents='none';
 		            svg.appendChild(path);
 		        }
 		    }
 		}
-		
+
+		// Input helper class
+		const FI = 'w-full p-1.5 border dark:border-gray-700 rounded text-xs bg-transparent mt-1 outline-none focus:border-blue-500';
+		const FL = 'block text-[10px] text-gray-500 mt-2 mb-0.5 font-bold uppercase';
+
 		function renderProps() {
-		    const p = document.getElementById('node-props');
-		    if(!selectedNode) { p.innerHTML = '<p class="text-xs text-gray-400 text-center mt-8">Select node</p>'; return; }
-		    let h = `<h4 class="font-bold text-xs uppercase mb-3 text-blue-500">${selectedNode.type} Config</h4>`;
-		    if(selectedNode.type === 'Start') {
-		        h += `<label class="block text-[10px] text-gray-500 mb-1">Trigger Event</label>
-		              <select onchange="updateNode('trigger', this.value); renderProps()" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">
-		                  <option value="Manual" ${selectedNode.trigger==='Manual'?'selected':''}>Manual / Console Exec</option>
-		                  <option value="Command" ${selectedNode.trigger==='Command'?'selected':''}>Agent Command</option>
-		                  <option value="Source" ${selectedNode.trigger==='Source'?'selected':''}>Source Data Event</option>
-		                  <option value="Regex" ${selectedNode.trigger==='Regex'?'selected':''}>System Regex</option>
-		              </select>`;
-		        if(selectedNode.trigger === 'Command') h += `<input type="text" oninput="updateNode('param', this.value)" value="${selectedNode.param||''}" placeholder="e.g. /run_proj" class="w-full mt-2 p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
-		    if(selectedNode.trigger === 'Regex' || selectedNode.trigger === 'Source') h += `<input type="text" oninput="updateNode('param', this.value)" value="${selectedNode.param||''}" placeholder="Condition / Target ID" class="w-full mt-2 p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
+		    const panel = document.getElementById('node-props');
+		    if(!selectedNode) { panel.innerHTML = '<p class="text-xs text-gray-400 text-center mt-10">Select a node to configure</p>'; return; }
+		    const n = selectedNode;
+		    const style = NODE_STYLES[n.type] || { color:'#6b7280', label:n.type };
+		    let h = `<div class="flex items-center gap-2 mb-3 pb-2 border-b dark:border-gray-800">
+		        <span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${style.color}"></span>
+		        <h4 class="font-bold text-xs uppercase tracking-wide" style="color:${style.color}">${style.label} Config</h4>
+		    </div>`;
+
+		    switch(n.type) {
+		        case 'Start':
+		            h += `<label class="${FL}">Trigger Event</label>
+		                  <select onchange="updateNode('trigger',this.value);renderProps()" class="${FI}">
+		                      <option value="Manual"  ${n.trigger==='Manual' ?'selected':''}>Manual / Console</option>
+		                      <option value="Command" ${n.trigger==='Command'?'selected':''}>Agent Command</option>
+		                      <option value="Source"  ${n.trigger==='Source' ?'selected':''}>Source Data Event</option>
+		                      <option value="Regex"   ${n.trigger==='Regex'  ?'selected':''}>System Regex</option>
+		                  </select>`;
+		            if(n.trigger==='Command') h += `<label class="${FL}">Command String</label><input type="text" oninput="updateNode('param',this.value)" value="${escapeHTML(n.param||'')}" placeholder="/run_pipeline" class="${FI}">`;
+		            if(n.trigger==='Regex'||n.trigger==='Source') h += `<label class="${FL}">Pattern / Source ID</label><input type="text" oninput="updateNode('param',this.value)" value="${escapeHTML(n.param||'')}" placeholder="regex or source ID" class="${FI}">`;
+		            break;
+		        case 'Agent':
+		            h += `<label class="${FL}">Target Agent</label>
+		                  <select onchange="updateNode('agentId',this.value);renderCanvas()" class="${FI}">
+		                      <option value="">-- Select Agent --</option>
+		                      ${dataStore.agents.map(a=>`<option value="${a.id}"${n.agentId===a.id?' selected':''}>${escapeHTML(a.name)}</option>`).join('')}
+		                  </select>
+		                  <label class="${FL}">System Prompt Override</label>
+		                  <textarea oninput="updateNode('sysPrompt',this.value)" placeholder="Leave blank for agent default" rows="3" class="${FI} font-mono">${escapeHTML(n.sysPrompt||'')}</textarea>
+		                  <label class="${FL}">User Prefix Override</label>
+		                  <input type="text" oninput="updateNode('userPrefix',this.value)" value="${escapeHTML(n.userPrefix||'')}" placeholder="Leave blank for agent default" class="${FI}">`;
+		            break;
+		        case 'Skill': {
+		            h += `<label class="${FL}">Target Skill</label>
+		                  <select onchange="updateNode('skillId',this.value);renderCanvas();renderProps()" class="${FI}">
+		                      <option value="">-- Choose Skill --</option>
+		                      ${dataStore.skills.map(s=>`<option value="${s.id}"${n.skillId===s.id?' selected':''}>${escapeHTML(s.name)} [${s.type}]</option>`).join('')}
+		                  </select>`;
+		            if (n.skillId) {
+		                const sk = dataStore.skills.find(s=>s.id===n.skillId);
+		                const params = getSkillParams(sk);
+		                if (params.length > 0) {
+		                    h += `<p class="text-[10px] text-gray-400 mt-3 mb-1 font-bold uppercase tracking-wide">Parameter Bindings</p>
+		                          <p class="text-[9px] text-gray-400 mb-1">Map each &lt;param&gt; to a pipeline variable name or literal value. You can also wire the orange port from a node on the canvas.</p>`;
+		                    const bindings = n.paramBindings || {};
+		                    params.forEach(p => {
+		                        h += `<label class="${FL}" style="color:#f97316">&lt;${escapeHTML(p)}&gt;</label>
+		                              <input type="text" placeholder="variable name or value"
+		                                     value="${escapeHTML(bindings[p]||'')}"
+		                                     oninput="updateParamBinding('${escapeHTML(p)}',this.value)"
+		                                     class="${FI} border-orange-300 dark:border-orange-700">`;
+		                    });
+		                } else {
+		                    h += `<label class="${FL}">Input ({input})</label>
+		                          <input type="text" oninput="updateNode('inputTemplate',this.value)" value="${escapeHTML(n.inputTemplate||'{input}')}" placeholder="{input}" class="${FI}">`;
+		                }
+		            } else {
+		                h += `<label class="${FL}">Input Template</label>
+		                      <input type="text" oninput="updateNode('inputTemplate',this.value)" value="${escapeHTML(n.inputTemplate||'{input}')}" placeholder="{input}" class="${FI}">`;
+		            }
+		            break;
+		        }
+		        case 'Code':
+		            h += `<label class="${FL}">Go Source Code</label>
+		                  <textarea oninput="updateNode('code',this.value)" rows="12" spellcheck="false" class="${FI} font-mono text-[11px] bg-gray-50 dark:bg-[#0d0d0d]">${escapeHTML(n.code||'package main\n\nimport "fmt"\n\nfunc main() {\n    // {input} available as arg\n    fmt.Println("Result")\n}')}</textarea>`;
+		            break;
+		        case 'HTTP':
+		            h += `<label class="${FL}">Method</label>
+		                  <select onchange="updateNode('httpMethod',this.value)" class="${FI}">
+		                      ${['GET','POST','PUT','PATCH','DELETE'].map(m=>`<option${n.httpMethod===m?' selected':''}>${m}</option>`).join('')}
+		                  </select>
+		                  <label class="${FL}">URL</label>
+		                  <input type="text" oninput="updateNode('httpUrl',this.value)" value="${escapeHTML(n.httpUrl||'')}" placeholder="https://api.example.com/{input}" class="${FI} font-mono">
+		                  <label class="${FL}">Headers (JSON)</label>
+		                  <textarea oninput="updateNode('httpHeaders',this.value)" rows="2" class="${FI} font-mono text-[10px]">${escapeHTML(n.httpHeaders||'{}')}</textarea>
+		                  <label class="${FL}">Body</label>
+		                  <textarea oninput="updateNode('httpBody',this.value)" rows="3" class="${FI} font-mono text-[10px]">${escapeHTML(n.httpBody||'')}</textarea>`;
+		            break;
+		        case 'If':
+		            h += `<label class="${FL}">Condition</label>
+		                  <select onchange="updateNode('condition',this.value)" class="${FI}">
+		                      ${['contains','notContains','equals','startsWith','regex'].map(c=>`<option value="${c}"${n.condition===c?' selected':''}>${c}</option>`).join('')}
+		                  </select>
+		                  <label class="${FL}">Value</label>
+		                  <input type="text" oninput="updateNode('condValue',this.value)" value="${escapeHTML(n.condValue||'')}" placeholder="Match value" class="${FI}">
+		                  <p class="text-[10px] text-gray-400 mt-2">True branch: blue port (right-center).<br>False branch: yellow port (right-bottom).</p>`;
+		            break;
+		        case 'Transform':
+		            h += `<label class="${FL}">Operation</label>
+		                  <select onchange="updateNode('operation',this.value);renderProps()" class="${FI}">
+		                      ${['trim','upper','lower','prefix','suffix','replace','jsonField','template'].map(op=>`<option value="${op}"${n.operation===op?' selected':''}>${op}</option>`).join('')}
+		                  </select>`;
+		            if(['prefix','suffix','replace','jsonField','template'].includes(n.operation))
+		                h += `<label class="${FL}">${n.operation==='replace'?'find|replace':n.operation==='jsonField'?'Field name':'Parameter'}</label><input type="text" oninput="updateNode('param',this.value)" value="${escapeHTML(n.param||'')}" placeholder="value" class="${FI}">`;
+		            break;
+		        case 'Wait':
+		            h += `<label class="${FL}">Duration (seconds, max 30)</label>
+		                  <input type="number" min="1" max="30" oninput="updateNode('seconds',parseFloat(this.value)||1)" value="${n.seconds||1}" class="${FI}">`;
+		            break;
+		        case 'Project':
+		            h += `<label class="${FL}">Sub-Pipeline</label>
+		                  <select onchange="updateNode('projectId',this.value);renderCanvas()" class="${FI}">
+		                      <option value="">-- Select Pipeline --</option>
+		                      ${dataStore.projects.filter(x=>x.id!==activeId).map(pr=>`<option value="${pr.id}"${n.projectId===pr.id?' selected':''}>${escapeHTML(pr.name)}</option>`).join('')}
+		                  </select>`;
+		            break;
+		        case 'SetVariable': case 'GetVariable':
+		            h += `<label class="${FL}">Variable Name</label>
+		                  <input type="text" oninput="updateNode('varName',this.value)" value="${escapeHTML(n.varName||'')}" placeholder="my_var" class="${FI} font-mono">`;
+		            break;
+		        default:
+		            h += `<p class="text-[10px] text-gray-400">No configuration needed.</p>`;
 		    }
-		    if(selectedNode.type === 'Agent') {
-		        h += `<label class="block text-[10px] text-gray-500 mb-1">Target Agent</label>
-		              <select onchange="updateNode('agentId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">
-		                  <option value="">-- Select Agent --</option>
-		                  ${dataStore.agents.map(a => `<option value="${a.id}" ${selectedNode.agentId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
-		              </select>
-		              <label class="block text-[10px] text-gray-500 mt-3 mb-1">Custom System Prompt (Optional)</label>
-		              <textarea oninput="updateNode('sysPrompt', this.value)" placeholder="Leave blank to use agent's default setting" rows="3" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">${selectedNode.sysPrompt || ''}</textarea>
-		              <label class="block text-[10px] text-gray-500 mt-2 mb-1">Custom User Prefix (Optional)</label>
-		              <input type="text" oninput="updateNode('userPrefix', this.value)" value="${selectedNode.userPrefix || ''}" placeholder="Leave blank to use agent's default setting" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent">`;
-		    }
-		    else if(selectedNode.type === 'Skill') h += `<label class="block text-[10px] text-gray-500 mb-1">Target Skill</label><select onchange="updateNode('skillId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent"><option value="">-- Choose Skill --</option>${dataStore.skills.map(s => `<option value="${s.id}" ${selectedNode.skillId === s.id ? 'selected' : ''}>${s.name}</option>`).join('')}</select>`;
-		    else if(selectedNode.type === 'Project') h += `<label class="block text-[10px] text-gray-500 mb-1">Nested Project</label><select onchange="updateNode('projectId', this.value)" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-transparent"><option value="">-- Sub-Project --</option>${dataStore.projects.filter(x=>x.id!==activeId).map(pr => `<option value="${pr.id}" ${selectedNode.projectId === pr.id ? 'selected' : ''}>${pr.name}</option>`).join('')}</select>`;
-		    else if(selectedNode.type === 'Code') {
-		        const defCode = `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Logic Executed")\n}`;
-		        h += `<label class="block text-[10px] text-gray-500 mb-1">Native Go Source Code</label><textarea oninput="updateNode('code', this.value)" rows="12" class="w-full p-2 border dark:border-gray-700 rounded text-xs bg-gray-50 dark:bg-[#1a1a1a] font-mono outline-none" spellcheck="false">${selectedNode.code || defCode}</textarea>`;
-		    }
-		    else h += `<p class="text-[10px] text-gray-400">No configs needed.</p>`;
-		    p.innerHTML = h;
+		    panel.innerHTML = h;
 		}
-		
-		window.updateNode = (key, val) => { selectedNode[key] = val; };
-		window.saveProject = async () => { 
-		    const validNodes = nodes.filter(n => n.type === 'Start' || n.type === 'End' || edges.some(e => e.from === n.id || e.to === n.id));
-		    nodes = validNodes; renderCanvas(); 
-		    await api(`/projects/${activeId}`, 'PUT', { id: activeId, name: "Flow_" + activeId.slice(-4), description: "Visual Pipeline", flow_json: JSON.stringify({nodes, edges}) }); 
-		    alert('Workflow Saved!'); 
+
+		window.updateNode = (key, val) => { if(selectedNode) { selectedNode[key]=val; } };
+		window.updateParamBinding = (paramName, val) => {
+		    if (!selectedNode) return;
+		    if (!selectedNode.paramBindings) selectedNode.paramBindings = {};
+		    selectedNode.paramBindings[paramName] = val;
 		};
-		window.exportProjectJSON = () => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges }, null, 2)); const a = document.createElement('a'); a.setAttribute("href", dataStr); a.setAttribute("download", "zuver_router.json"); a.click(); };
-		window.importProjectJSON = () => { const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'; input.onchange = e => { const reader = new FileReader(); reader.readAsText(e.target.files[0], "UTF-8"); reader.onload = readerEvent => { try { const parsed = JSON.parse(readerEvent.target.result); if(parsed.nodes && parsed.edges) { nodes = parsed.nodes; edges = parsed.edges; renderCanvas(); } else alert("Invalid Router JSON"); } catch(err) { alert("Parse Error"); } } }; input.click(); };
+
+		window.saveProject = async () => {
+		    const name = document.getElementById('proj-name-input').value.trim() || ('Pipeline_'+activeId.slice(-6));
+		    const desc = document.getElementById('proj-desc-input').value.trim();
+		    const existingProject = dataStore.projects.find(p=>p.id===activeId);
+		    const method = existingProject ? 'PUT' : 'POST';
+		    const endpoint = existingProject ? `/projects/${activeId}` : '/projects';
+		    try {
+		        await api(endpoint, method, { id:activeId, name, description:desc, flow_json:JSON.stringify({nodes,edges}), is_active:true });
+		        await loadAllData();
+		        window.markClean('project'); // Saved — no longer dirty
+		        showToast(`"${name}" saved successfully.`, 'success');
+		    } catch(e) {
+		        showToast('Failed to save pipeline.', 'error');
+		    }
+		};
+
+		window.runProject = async () => {
+		    // If the project has unsaved changes, ask the user to save before running.
+		    if (window.isDirty && window.isDirty('project')) {
+		        const choice = await showConfirm(
+		            'This Application has unsaved changes.<br>Save before running?',
+		            'Save & Run', false
+		        );
+		        if (choice) {
+		            await window.saveProject();
+		            // If save failed (still dirty), abort.
+		            if (window.isDirty('project')) return;
+		        }
+		        // choice === false means "run anyway without saving"
+		    }
+		    const inputVal = await showPrompt('Pipeline input (or leave blank for manual trigger):', '');
+		    if(inputVal === null) return;
+		    document.getElementById('proj-run-status').classList.remove('hidden');
+		    document.getElementById('run-output-panel').classList.remove('hidden');
+		    document.getElementById('run-output-panel').classList.add('flex');
+		    const log = document.getElementById('run-output-log');
+		    log.innerHTML = '<div class="text-blue-500">Running...</div>';
+		    try {
+		        const data = await api(`/projects/${activeId}/run`, 'POST', { input: inputVal||'[Manual Trigger]' });
+		        log.innerHTML = '';
+		        if(data.logs) data.logs.forEach(l => { log.innerHTML += `<div class="text-gray-500">${escapeHTML(l)}</div>`; });
+		        log.innerHTML += `<div class="mt-2 pt-2 border-t dark:border-gray-700 text-green-500 font-bold">Result: ${escapeHTML(data.result||'(empty)')}</div>`;
+		    } catch(e) {
+		        log.innerHTML = `<div class="text-red-500">Error: ${escapeHTML(e.message)}</div>`;
+		    }
+		    document.getElementById('proj-run-status').classList.add('hidden');
+		    log.scrollTop = log.scrollHeight;
+		};
+
+		window.runProjectFromCard = async (id) => {
+		    const inputVal = await showPrompt('Pipeline input (or leave blank):', '');
+		    if(inputVal===null) return;
+		    const data = await api(`/projects/${id}/run`, 'POST', { input: inputVal||'[Manual Trigger]' });
+		    showToast(`Run complete: ${(data.result||'(empty)').substring(0,120)}`, 'success', 5000);
+		};
+
+		window.deleteProject = async (id) => {
+		    const ok = await showConfirm('Delete this application? This cannot be undone.', 'Delete', true);
+		    if(ok) {
+		        await api(`/projects/${id}`, 'DELETE');
+		        loadAllData();
+		        showToast('Application deleted.', 'success');
+		    }
+		};
+
+		window.exportProjectJSON = () => {
+		    const dataStr = 'data:text/json;charset=utf-8,'+encodeURIComponent(JSON.stringify({nodes,edges},null,2));
+		    Object.assign(document.createElement('a'), {href:dataStr, download:'zuver_pipeline.json'}).click();
+		};
+		window.importProjectJSON = () => {
+		    const input = document.createElement('input');
+		    input.type='file'; input.accept='.json';
+		    input.onchange = e => {
+		        const reader = new FileReader();
+		        reader.readAsText(e.target.files[0], 'UTF-8');
+		        reader.onload = ev => {
+		            try {
+		                const parsed = JSON.parse(ev.target.result);
+		                if(parsed.nodes&&parsed.edges) { nodes=parsed.nodes; edges=parsed.edges; renderCanvas(); showToast('Pipeline imported.', 'success'); }
+		                else showToast('Invalid pipeline JSON.', 'error');
+		            } catch(err) { showToast('Parse error: '+err.message, 'error'); }
+		        };
+		    };
+		    input.click();
+		};
+
+		// Live search filter for projects list; also track dirty state on project name/desc edits.
+		document.addEventListener('input', (e) => {
+		    if(e.target.id === 'proj-search') renderLists();
+		    if(e.target.id === 'proj-name-input' || e.target.id === 'proj-desc-input') {
+		        if (typeof window.markDirty === 'function') window.markDirty('project');
+		    }
+		});
 		
 		/* ==========================================
 		 * CRUD OPERATIONS & MODAL CONTROLLERS
@@ -1630,7 +2555,7 @@
 		    } 
 		};
 		
-		// Submission handler for Providers
+// Submission handler for Providers
 		window.submitProvider = async () => { 
 		    const id = document.getElementById('provider-id-input').value || 'prov_'+Date.now(); 
 		    await api(document.getElementById('provider-id-input').value?`/providers/${id}`:'/providers', document.getElementById('provider-id-input').value?'PUT':'POST', {
@@ -1641,15 +2566,15 @@
 		        api_key: document.getElementById('provider-key-input').value,
 		        extra_config: document.getElementById('provider-config-input').value 
 		    }); 
-		    closeModal('modal-provider'); loadAllData(); 
+		    closeModal('modal-provider'); loadAllData(); showToast('Provider saved.', 'success');
 		};
 		window.openPreferencesModal = (id=null) => { openModal('modal-preferences'); if(id){ const x = dataStore.preferences.find(i=>i.id===id); if(x){ document.getElementById('preferences-id-input').value=x.id; document.getElementById('preferences-name-input').value=x.name; document.getElementById('preferences-desc-input').value=x.description; } } else { document.getElementById('preferences-id-input').value=''; document.getElementById('preferences-name-input').value=''; document.getElementById('preferences-desc-input').value=''; } };
 		window.editPreferences = window.openPreferencesModal;
-		window.deletePreferences = async (id) => { if(confirm('Delete Preferences DB?')) { await api(`/preferences/${id}`, 'DELETE'); loadAllData(); } };
+		window.deletePreferences = async (id) => { if(await showConfirm('Delete Preferences DB?', 'Delete')) { await api(`/preferences/${id}`, 'DELETE'); loadAllData(); showToast('Preferences deleted.', 'success'); } };
 		window.openRAGModal = (id=null) => { openModal('modal-rag'); if(id){ const x = dataStore.rags.find(i=>i.id===id); if(x){ document.getElementById('rag-id-input').value=x.id; document.getElementById('rag-name-input').value=x.name; document.getElementById('rag-desc-input').value=x.description; } } else { document.getElementById('rag-id-input').value=''; document.getElementById('rag-name-input').value=''; document.getElementById('rag-desc-input').value=''; } };
 		window.editRAG = window.openRAGModal;
-		window.deleteRAG = async (id) => { if(confirm('Delete Vector RAG?')) { await api(`/rags/${id}`, 'DELETE'); loadAllData(); } };
-		window.submitRAG = async () => { const id = document.getElementById('rag-id-input').value || 'rag_'+Date.now(); await api(document.getElementById('rag-id-input').value?`/rags/${id}`:'/rags', document.getElementById('rag-id-input').value?'PUT':'POST', {id, name: document.getElementById('rag-name-input').value, description: document.getElementById('rag-desc-input').value}); closeModal('modal-rag'); loadAllData(); };
+		window.deleteRAG = async (id) => { if(await showConfirm('Delete Vector RAG?', 'Delete')) { await api(`/rags/${id}`, 'DELETE'); loadAllData(); showToast('RAG deleted.', 'success'); } };
+		window.submitRAG = async () => { const id = document.getElementById('rag-id-input').value || 'rag_'+Date.now(); await api(document.getElementById('rag-id-input').value?`/rags/${id}`:'/rags', document.getElementById('rag-id-input').value?'PUT':'POST', {id, name: document.getElementById('rag-name-input').value, description: document.getElementById('rag-desc-input').value}); closeModal('modal-rag'); loadAllData(); showToast('RAG saved.', 'success'); };
 		
 		// Skill entity controllers
 		window.openSkillModal = (id=null) => {
@@ -1664,77 +2589,27 @@
 		    }
 		};
 		window.editSkill = window.openSkillModal;
-		window.deleteSkill = async (id) => { if(confirm('Delete Skill?')) { await api(`/skills/${id}`, 'DELETE'); loadAllData(); } };
+		window.deleteSkill = async (id) => { if(await showConfirm('Delete Skill?', 'Delete')) { await api(`/skills/${id}`, 'DELETE'); loadAllData(); showToast('Skill deleted.', 'success'); } };
 		window.submitSkill = async () => {
 		    const id = document.getElementById('skill-id-input').value || 'sk_'+Date.now();
 		    await api(document.getElementById('skill-id-input').value ? `/skills/${id}` : '/skills', document.getElementById('skill-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('skill-name-input').value, type: document.getElementById('skill-type-input').value, instruction: document.getElementById('skill-inst-input').value, content: document.getElementById('skill-content-input').value, api_method: document.getElementById('skill-api-method').value, api_url: document.getElementById('skill-api-url').value, api_headers: document.getElementById('skill-api-headers').value, api_body: document.getElementById('skill-api-body').value });
-		    closeModal('modal-skill'); loadAllData();
+		    closeModal('modal-skill'); loadAllData(); showToast('Skill saved.', 'success');
 		};
 		
-		window.openAgentModal = (id=null) => {
-		    openModal('modal-agent');
-		    document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-		    document.getElementById('agent-mounts-container').innerHTML = 
-		        [...dataStore.sources, ...dataStore.preferences].map(s => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs"><input type="checkbox" value="${s.id}" class="src-cb">${s.name}</label>`).join('') + 
-		        dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb">${sk.name} [Skill]</label>`).join('') + 
-		        dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb">${o.name} [Output]</label>`).join('') +
-		        dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb">${m.name} [MCP]</label>`).join('');
-		        dataStore.projects.map(p => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-indigo-500"><input type="checkbox" value="${p.id}" class="proj-cb accent-indigo-500"> 📦 ${p.name} [Project]</label>`).join('');
-		    
-		    if(id) {
-		        const a = dataStore.agents.find(x=>x.id===id); 
-		        document.getElementById('agent-id-input').value = a.id; document.getElementById('agent-name-input').value = a.name; document.getElementById('agent-model-input').value = a.model; document.getElementById('agent-system-prompt').value = a.system_prompt;
-		        document.getElementById('agent-model-type').value = a.model_type || 'LLM'; document.getElementById('agent-output-type').value = a.output_type || 'Markdown';
-		        document.getElementById('agent-prefix-input').value = a.user_prompt_prefix || ''; document.getElementById('agent-temp').value = a.temperature || 0.7; document.getElementById('val-temp').innerText = a.temperature || 0.7; document.getElementById('agent-max-tokens').value = a.max_tokens || 4096; document.getElementById('val-max').innerText = a.max_tokens || 4096;
-		        document.getElementById('agent-can-create-skills').checked = a.can_create_skills || false;
-		        const srcs = JSON.parse(a.sources||'[]'); document.querySelectorAll('.src-cb').forEach(cb => cb.checked = srcs.some(x=>x.id===cb.value));
-		        const sks = JSON.parse(a.skills||'[]'); document.querySelectorAll('.sk-cb').forEach(cb => cb.checked = sks.includes(cb.value));
-		        const outs = JSON.parse(a.outputs||'[]'); document.querySelectorAll('.out-cb').forEach(cb => cb.checked = outs.includes(cb.value));
-		        // Parse existing MCP associations
-		        const mcps = JSON.parse(a.mcps||'[]'); document.querySelectorAll('.mcp-cb').forEach(cb => cb.checked = mcps.includes(cb.value)); 
-		    } else { 
-		        document.getElementById('agent-id-input').value = ''; document.getElementById('agent-name-input').value = ''; document.getElementById('agent-model-input').value = ''; document.getElementById('agent-system-prompt').value = ''; document.getElementById('agent-model-type').value = 'LLM'; document.getElementById('agent-output-type').value = 'Markdown'; document.getElementById('agent-prefix-input').value = ''; document.getElementById('agent-temp').value = 0.7; document.getElementById('val-temp').innerText = 0.7; document.getElementById('agent-max-tokens').value = 4096; document.getElementById('val-max').innerText = 4096; document.querySelectorAll('.src-cb, .sk-cb, .out-cb, .mcp-cb').forEach(cb=>cb.checked=false); 
-		    }
-		};
-		window.editAgent = window.openAgentModal;
-		window.deleteAgent = async (id) => { if(confirm('Delete Agent?')) { await api(`/agents/${id}`, 'DELETE'); loadAllData(); } };
-		
-		window.submitAgent = async () => {
-		    const id = document.getElementById('agent-id-input').value || 'ag_'+Date.now();
-		    const sources = Array.from(document.querySelectorAll('.src-cb:checked')).map(cb=>({id:cb.value, mode:'auto'}));
-		    const skills = Array.from(document.querySelectorAll('.sk-cb:checked')).map(cb=>cb.value);
-		    const outputs = Array.from(document.querySelectorAll('.out-cb:checked')).map(cb=>cb.value);
-		    const mcps = Array.from(document.querySelectorAll('.mcp-cb:checked')).map(cb=>cb.value); 
-		    const existing = dataStore.agents.find(a => a.id === id);
-		    
-		    // Transmit unified agent payload to remote endpoint
-		    await api(document.getElementById('agent-id-input').value?`/agents/${id}`:'/agents', document.getElementById('agent-id-input').value?'PUT':'POST', {
-		        id, name: document.getElementById('agent-name-input').value, provider_id: document.getElementById('agent-provider-input').value, model: document.getElementById('agent-model-input').value, system_prompt: document.getElementById('agent-system-prompt').value, 
-		        model_type: document.getElementById('agent-model-type').value, output_type: document.getElementById('agent-output-type').value, user_prompt_prefix: document.getElementById('agent-prefix-input').value, 
-		        temperature: parseFloat(document.getElementById('agent-temp').value), max_tokens: parseInt(document.getElementById('agent-max-tokens').value), privacy_enabled: existing ? existing.privacy_enabled : false,
-		        sources: JSON.stringify(sources), skills: JSON.stringify(skills), outputs: JSON.stringify(outputs), mcps: JSON.stringify(mcps) 
-		    });
-		    closeModal('modal-agent'); loadAllData();
-		};
-		
-		// Central Application Router / Navigation Switcher
-		document.querySelectorAll('[data-target]').forEach(btn => {
-		    btn.onclick = () => {
-		        const t = btn.getAttribute('data-target');
-		        document.querySelectorAll('.page-view').forEach(v => v.classList.add('hidden')); 
-		        if(document.getElementById(`view-${t}`)) document.getElementById(`view-${t}`).classList.remove('hidden');
-		        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active')); btn.classList.add('active');
-		        
-		        // Dynamically update view header based on sidebar selection
-		        const navText = btn.querySelector('.nav-text');
-		        if (navText) document.getElementById('page-title').innerText = navText.innerText;
-		        
-		        if (window.innerWidth < 768) toggleMobileMenu();
-		        if(t === 'chat') loadChatHistory();
-		    }
+		// deleteAgent is defined here; editAgent, openAgentModal, submitAgent are defined below.
+		window.deleteAgent = async (id) => { if(await showConfirm('Delete Agent?', 'Delete')) { await api(`/agents/${id}`, 'DELETE'); loadAllData(); showToast('Agent deleted.', 'success'); } };
+
+		// Track dirty state for any input/change inside #modal-agent or #view-agent-editor.
+		document.addEventListener('input', (e) => {
+		    if (!e.target || typeof window.markDirty !== 'function') return;
+		    if (e.target.closest('#modal-agent') || e.target.closest('#view-agent-editor')) window.markDirty('agent');
+		});
+		document.addEventListener('change', (e) => {
+		    if (!e.target || typeof window.markDirty !== 'function') return;
+		    if (e.target.closest('#modal-agent') || e.target.closest('#view-agent-editor')) window.markDirty('agent');
 		});
 		
-		window.onload = () => { loadAllData(); if(window.innerWidth < 768) document.querySelector('[data-target="chat"]').click(); };
+		// (Navigation is handled by initNav() below)
 		
 		/** Handles UI disabling transitions for the Presidio privacy configuration block */
 		function updatePresidioUI() {
@@ -1774,7 +2649,7 @@
 		        id, name: document.getElementById('source-name-input').value, type: document.getElementById('source-type-input').value, 
 		        api_key: document.getElementById('source-key-input').value, file_path: document.getElementById('source-file-input').value
 		    }); 
-		    closeModal('modal-source'); loadAllData(); 
+		    closeModal('modal-source'); loadAllData(); showToast('Source saved.', 'success');
 		};
 		
 		/** Dynamically updates resource mounts available to the currently selected agent */
@@ -1791,26 +2666,28 @@
 		    container.innerHTML = 
 		        filteredSources.map(s => `
 		            <div class="border border-blue-200 dark:border-blue-900/30 rounded-lg p-2 bg-blue-50/20 dark:bg-blue-900/10">
-		                <label class="flex items-center gap-2 text-xs font-bold"><input type="checkbox" value="${s.id}" class="src-cb accent-blue-600"> 🌐 ${s.name} [${s.type}]</label>
+		                <label class="flex items-center gap-2 text-xs font-bold"><input type="checkbox" value="${s.id}" class="src-cb accent-blue-600"> ${s.name} [${s.type}]</label>
 		                <div class="ml-5 mt-1 space-y-1">
 		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="push_${s.id}"> Prompt when received POST update</label>
 		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="fetch_${s.id}"> Fetch & Contain on User Prompt</label>
 		                </div>
 		            </div>
 		        `).join('') +
-		        dataStore.rags.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-indigo-500"> 📚 ${r.name} [Vector RAG]</label>`).join('') +
-		        dataStore.preferences.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-teal-500"> 🧠 ${r.name} [Preferences]</label>`).join('') +
-		        dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb accent-orange-500"> ⚡ ${sk.name} [Skill]</label>`).join('') + 
-		        dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb accent-purple-500"> 📤 ${o.name} [Output]</label>`).join('') +
-		        dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb accent-yellow-500"> 🔌 ${m.name} [MCP]</label>`).join('');
+		        dataStore.rags.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-indigo-500"> ${r.name} [Vector RAG]</label>`).join('') +
+		        dataStore.preferences.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-teal-500"> ${r.name} [Preferences]</label>`).join('') +
+		        dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb accent-orange-500"> ${sk.name} [Skill]</label>`).join('') + 
+		        dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb accent-purple-500"> ${o.name} [Output]</label>`).join('') +
+		        dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb accent-yellow-500"> ${m.name} [MCP]</label>`).join('');
 		        
 		    // Restore previously checked states if operating in edit mode
 		    if (window.activeAgentEditing) restoreAgentCheckboxes(window.activeAgentEditing);
 		};
 		
 		window.editAgent = (id) => {
-		    document.querySelectorAll('.page-view').forEach(v => v.classList.add('hidden')); 
-		    document.getElementById('view-agent-editor').classList.remove('hidden'); document.getElementById('view-agent-editor').classList.add('flex');
+		    // Show the full-page agent editor (hides all other views via showView).
+		    window.showView('agent-editor');
+		    document.getElementById('view-agent-editor').classList.add('flex');
+		    if (typeof window.markClean === 'function') window.markClean('agent'); // Fresh open
 		    document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
 		    
 		    const a = dataStore.agents.find(x=>x.id===id);
@@ -1821,12 +2698,15 @@
 		        document.getElementById('agent-temp').value = a.temperature || 0.7; document.getElementById('val-temp').innerText = a.temperature || 0.7; document.getElementById('agent-max-tokens').value = a.max_tokens || 4096; document.getElementById('val-max').innerText = a.max_tokens || 4096;
 		        const ins = JSON.parse(a.input_methods||'["Text"]'); document.querySelectorAll('.in-cb').forEach(cb => cb.checked = ins.includes(cb.value));
 		        const outs = JSON.parse(a.output_methods||'["Text"]'); document.querySelectorAll('.outm-cb').forEach(cb => cb.checked = outs.includes(cb.value));
+		        document.getElementById('agent-can-create-skills').checked = a.can_create_skills || false;
+		        document.getElementById('agent-stream-enabled').checked = a.stream_enabled !== false; // default true
 		    } else {
 		        window.activeAgentEditing = null;
 		        document.getElementById('agent-id-input').value = ''; document.getElementById('agent-name-input').value = ''; document.getElementById('agent-model-input').value = ''; document.getElementById('agent-system-prompt').value = '';
 		        // Default to Text input modality
-		        document.querySelectorAll('.in-cb, .outm-cb').forEach(cb => cb.checked = (cb.value === 'Text')); 
+		        document.querySelectorAll('.in-cb, .outm-cb').forEach(cb => cb.checked = (cb.value === 'Text'));
 		        document.getElementById('agent-can-create-skills').checked = false;
+		        document.getElementById('agent-stream-enabled').checked = true; // default enabled
 		    }
 		    renderAgentSources();
 		};
@@ -1836,13 +2716,13 @@
 		    
 		    const btn = event.currentTarget;
 		    const originalContent = btn.innerHTML;
-		    btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> 处理中...`;
+		    btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> ���理中...`;
 		    lucide.createIcons();
 		
 		    try {
 		        const formData = new FormData();
 		        formData.append('file', file);
-		        const upResp = await fetch('/api/upload', {
+		        const upResp = await fetch('/api/v1/upload', {
 		            method: 'POST',
 		            headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') },
 		            body: formData
@@ -1871,7 +2751,7 @@
 		
 		    } catch (e) {
 		        console.error("Upload Failure:", e);
-		        alert("Failed to process file. Please check API permission and accessibility.");
+		        showToast("Failed to process file. Check API permission and accessibility.", "error");
 		    } finally {
 		        btn.innerHTML = originalContent;
 		        lucide.createIcons();
@@ -1879,40 +2759,62 @@
 		};
 		
 		/* --- Fine-Grained API Key Management --- */
-		window.deleteAPIKey = async (id) => { if(confirm('Revoke this API Key?')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); } };
+		window.deleteAPIKey = async (id) => { if(await showConfirm('Revoke this API Key?', 'Revoke')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); showToast('API key revoked.', 'success'); } };
 		
+		// Resources that get action-level permission rows in the API key modal.
+		const AK_RESOURCES = [
+		    { key: 'agents',   label: 'Agents',       actions: ['read','write','delete','execute'] },
+		    { key: 'skills',   label: 'Skills',        actions: ['read','write','delete'] },
+		    { key: 'sources',  label: 'Sources',       actions: ['read','write','delete'] },
+		    { key: 'outputs',  label: 'Outputs',       actions: ['read','write','delete'] },
+		    { key: 'mcps',     label: 'MCP Servers',   actions: ['read','write','delete'] },
+		    { key: 'projects', label: 'Applications',  actions: ['read','write','delete','execute'] },
+		    { key: 'rags',     label: 'Vector RAGs',   actions: ['read','write','delete'] },
+		];
+
+		function renderApikeyMatrix(existingPerms) {
+		    const tbody = document.getElementById('apikey-permission-rows');
+		    tbody.innerHTML = AK_RESOURCES.map(res => {
+		        const p = existingPerms && existingPerms[res.key] ? existingPerms[res.key] : {};
+		        const allActions = ['read','write','delete','execute'];
+		        const cells = allActions.map(action => {
+		            const has = res.actions.includes(action);
+		            if (!has) return `<td class="px-3 py-2 text-center"><span class="text-gray-200 dark:text-gray-800">—</span></td>`;
+		            const checked = p[action] === true ? 'checked' : '';
+		            const colors = {read:'accent-green-500',write:'accent-blue-500',delete:'accent-red-500',execute:'accent-orange-500'};
+		            return `<td class="px-3 py-2 text-center"><input type="checkbox" data-res="${res.key}" data-action="${action}" class="ak-action-cb ${colors[action]}" ${checked}></td>`;
+		        }).join('');
+		        return `<tr class="hover:bg-gray-50 dark:hover:bg-[#1c1c1c] transition-colors">
+		            <td class="px-3 py-2.5 font-semibold text-gray-700 dark:text-gray-300">${res.label}</td>${cells}
+		        </tr>`;
+		    }).join('');
+
+		    // Preferences per-DB read/write section
+		    safeHtml('apikey-preferences-list', dataStore.preferences.length ? dataStore.preferences.map(r => {
+		        const pref = existingPerms && existingPerms.preferences && existingPerms.preferences[r.id] ? existingPerms.preferences[r.id] : {};
+		        return `<div class="flex items-center justify-between text-xs p-2 border dark:border-gray-800 rounded-lg bg-gray-50 dark:bg-black">
+		            <span class="font-semibold text-gray-700 dark:text-gray-300">${r.name}</span>
+		            <div class="flex gap-4">
+		                <label class="flex items-center gap-1 text-green-600"><input type="checkbox" data-preferences="${r.id}" value="read" class="ak-preferences-cb accent-green-500" ${pref.read?'checked':''}> Read</label>
+		                <label class="flex items-center gap-1 text-blue-500"><input type="checkbox" data-preferences="${r.id}" value="write" class="ak-preferences-cb accent-blue-500" ${pref.write?'checked':''}> Write</label>
+		            </div>
+		        </div>`;
+		    }).join('') : '<p class="text-xs text-gray-400 italic">No Preferences databases configured.</p>');
+		}
+
 		window.openModal = (id) => { 
 		    document.getElementById(id).classList.remove('hidden'); 
 		    if(id === 'modal-apikey') {
-		        const lists = ['apikey-agents-list', 'apikey-skills-list', 'apikey-sources-list', 'apikey-outputs-list', 'apikey-mcps-list', 'apikey-projects-list', 'apikey-preferences-list'];
-		        lists.forEach(l => {
-		            const el = document.getElementById(l);
-		            if(el) el.innerHTML = '';
-		        });
-		        
-		        // Generic checkbox DOM generator helper
-		        const makeCb = (arr, cls, icon) => arr.map(x => `<label class="flex items-center gap-1.5 p-1 text-[11px] truncate"><input type="checkbox" value="${x.id}" class="${cls} accent-indigo-500"> ${icon} ${x.name}</label>`).join('');
-		        
-		        safeHtml('apikey-agents-list', makeCb(dataStore.agents, 'ak-agent-cb', '🤖'));
-		        safeHtml('apikey-skills-list', makeCb(dataStore.skills, 'ak-skill-cb', '⚡'));
-		        safeHtml('apikey-sources-list', makeCb(dataStore.sources, 'ak-source-cb', '🌐'));
-		        safeHtml('apikey-outputs-list', makeCb(dataStore.outputs, 'ak-output-cb', '📤'));
-		        safeHtml('apikey-mcps-list', makeCb(dataStore.mcp, 'ak-mcp-cb', '🔌'));
-		        safeHtml('apikey-projects-list', makeCb(dataStore.projects, 'ak-project-cb', '📦'));
-		        safeHtml('apikey-preferences-list', dataStore.preferences.map(r => `
-		            <div class="flex items-center justify-between text-xs p-2 bg-gray-100 dark:bg-black rounded-lg">
-		                <span class="font-bold">🧠 ${r.name}</span>
-		                <div class="flex gap-4">
-		                    <label class="flex items-center gap-1"><input type="checkbox" data-preferences="${r.id}" value="read" class="ak-preferences-cb accent-green-500"> Read</label>
-		                    <label class="flex items-center gap-1"><input type="checkbox" data-preferences="${r.id}" value="write" class="ak-preferences-cb accent-red-500"> Write</label>
-		                </div>
-		            </div>
-		        `).join(''));
+		        // Clear form state
+		        document.getElementById('apikey-id-input').value = '';
+		        document.getElementById('apikey-name-input').value = '';
+		        document.getElementById('apikey-desc-input').value = '';
+		        renderApikeyMatrix({});
 		    }
 		};
-		
+
 		window.editAPIKey = (id) => {
-		    openModal('modal-apikey');
+		    document.getElementById('modal-apikey').classList.remove('hidden');
 		    const k = dataStore.apiKeys.find(x => x.id === id);
 		    if(k) {
 		        document.getElementById('apikey-id-input').value = k.id;
@@ -1920,37 +2822,31 @@
 		        document.getElementById('apikey-desc-input').value = k.description;
 		        try {
 		            const p = JSON.parse(k.permissions || '{}');
-		            const setCb = (cls, arr) => document.querySelectorAll('.' + cls).forEach(cb => cb.checked = (arr || []).includes(cb.value));
-		            setCb('ak-agent-cb', p.agents);
-		            setCb('ak-skill-cb', p.skills);
-		            setCb('ak-source-cb', p.sources);
-		            setCb('ak-output-cb', p.outputs);
-		            setCb('ak-mcp-cb', p.mcps);
-		            setCb('ak-project-cb', p.projects);
-		            document.querySelectorAll('.ak-preferences-cb').forEach(cb => {
-		                const rId = cb.getAttribute('data-preferences');
-		                if(p.preferences && p.preferences[rId] && p.preferences[rId].includes(cb.value)) cb.checked = true;
-		            });
-		        } catch(e) {}
+		            renderApikeyMatrix(p);
+		        } catch(e) { renderApikeyMatrix({}); }
+		    } else {
+		        document.getElementById('apikey-id-input').value = '';
+		        document.getElementById('apikey-name-input').value = '';
+		        document.getElementById('apikey-desc-input').value = '';
+		        renderApikeyMatrix({});
 		    }
 		};
-		
+
 		window.submitAPIKey = async () => {
 		    const id = document.getElementById('apikey-id-input').value;
-		    const getCb = (cls) => Array.from(document.querySelectorAll('.' + cls + ':checked')).map(cb => cb.value);
-		    const perms = {
-		        agents: getCb('ak-agent-cb'),
-		        skills: getCb('ak-skill-cb'),
-		        sources: getCb('ak-source-cb'),
-		        outputs: getCb('ak-output-cb'),
-		        mcps: getCb('ak-mcp-cb'),
-		        projects: getCb('ak-project-cb'),
-		        preferences: {}
-		    };
+		    // Build action-level permission map from matrix checkboxes
+		    const perms = { preferences: {} };
+		    document.querySelectorAll('.ak-action-cb:checked').forEach(cb => {
+		        const res = cb.getAttribute('data-res');
+		        const action = cb.getAttribute('data-action');
+		        if (!perms[res]) perms[res] = {};
+		        perms[res][action] = true;
+		    });
+		    // Preferences per-DB
 		    document.querySelectorAll('.ak-preferences-cb:checked').forEach(cb => {
 		        const rId = cb.getAttribute('data-preferences');
-		        if(!perms.preferences[rId]) perms.preferences[rId] = [];
-		        perms.preferences[rId].push(cb.value);
+		        if (!perms.preferences[rId]) perms.preferences[rId] = {};
+		        perms.preferences[rId][cb.value] = true;
 		    });
 		    await api(id ? `/apikeys/${id}` : '/apikeys', id ? 'PUT' : 'POST', {
 		        name: document.getElementById('apikey-name-input').value,
@@ -1958,6 +2854,7 @@
 		        permissions: JSON.stringify(perms)
 		    });
 		    closeModal('modal-apikey');
+		    showToast('API key saved.', 'success');
 		    loadAllData();
 		};
 		
@@ -2000,35 +2897,154 @@
 		    const existing = dataStore.agents.find(a => a.id === id);
 		    
 		    await api(document.getElementById('agent-id-input').value?`/agents/${id}`:'/agents', document.getElementById('agent-id-input').value?'PUT':'POST', {
-		        id, name: document.getElementById('agent-name-input').value, provider_id: document.getElementById('agent-provider-input').value, model: document.getElementById('agent-model-input').value, system_prompt: document.getElementById('agent-system-prompt').value, 
-		        input_methods: JSON.stringify(ins), output_methods: JSON.stringify(outs), 
+		        id, name: document.getElementById('agent-name-input').value, provider_id: document.getElementById('agent-provider-input').value, model: document.getElementById('agent-model-input').value, system_prompt: document.getElementById('agent-system-prompt').value,
+		        input_methods: JSON.stringify(ins), output_methods: JSON.stringify(outs),
 		        temperature: parseFloat(document.getElementById('agent-temp').value), max_tokens: parseInt(document.getElementById('agent-max-tokens').value), privacy_enabled: existing ? existing.privacy_enabled : false, can_create_skills: document.getElementById('agent-can-create-skills').checked,
+		        stream_enabled: document.getElementById('agent-stream-enabled').checked,
 		        sources: JSON.stringify(sources), skills: JSON.stringify(skills), outputs: JSON.stringify(outputs), mcps: JSON.stringify(mcps),
 		        projects: JSON.stringify(projs)
 		    });
-		    document.querySelector('[data-target="agents"]').click(); 
+		    if (typeof window.markClean === 'function') window.markClean('agent');
+		    window.showView('agents');
 		    loadAllData();
+		    showToast('Agent saved.', 'success');
 		};
 		
 		async function wipeDatabase() {
-		    if(confirm("⚠️ WARNING: This will permanently delete ALL Agents, Skills, Preferences, and Projects.\n\nAre you absolutely sure you want to proceed?")) {
+		    const ok = await showConfirm("WARNING: This will permanently delete ALL Agents, Skills, Preferences, and Projects. Are you absolutely sure?", "Wipe Everything", true);
+		    if(ok) {
 		        try {
-		            const r = await fetch('/api/wipe-database', { 
+		            const r = await fetch('/api/v1/wipe-database', { 
 		                method: 'POST', 
 		                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') }
 		            });
 		            if(r.ok) {
-		                alert("Database has been completely wiped. Reloading UI...");
-		                window.location.reload();
+		                showToast("Database wiped. Reloading...", "warn");
+		                setTimeout(() => window.location.reload(), 1200);
 		            } else {
-		                alert("Failed to wipe database.");
+		                showToast("Failed to wipe database.", "error");
 		            }
 		        } catch(e) {
-		            alert("Network Error.");
+		            showToast("Network error.", "error");
 		        }
 		    }
 		}
 		
+	/* ==========================================
+		 * NAVIGATION — data-target click delegation
+		 * ==========================================
+		 * Each sidebar .nav-item has data-target="<name>" which maps to
+		 * a section with id="view-<name>". Clicking a nav item hides all
+		 * other sections and shows the targeted one.
+		 */
+		(function initNav() {
+		    const ALL_VIEWS = [
+		        'home','statistics','projects','agents','agent-editor','skills','sources',
+		        'rags','preferences','mcp','providers','outputs','apikeys',
+		        'settings','chat'
+		    ];
+
+		    // --- Dirty-state registry ---
+		    // Each editor that has unsaved changes should call markDirty(key) / markClean(key).
+		    const dirtyEditors = new Set();
+		    window.markDirty = (key) => dirtyEditors.add(key);
+		    window.markClean = (key) => dirtyEditors.delete(key);
+		    window.isDirty  = (key) => dirtyEditors.has(key);
+		    window.anyDirty = ()    => dirtyEditors.size > 0;
+
+		    // Returns the human-readable label(s) of what is unsaved, e.g. "Application editor"
+		    function dirtyLabel() {
+		        const labels = {
+		            'project': 'Application editor',
+		            'agent':   'Agent editor',
+		        };
+		        return [...dirtyEditors].map(k => labels[k] || k).join(', ');
+		    }
+
+		    // --- Core view-switch function ---
+		    function applyShowView(target) {
+		        ALL_VIEWS.forEach(v => {
+		            const el = document.getElementById('view-' + v);
+		            if (!el) return;
+		            if (v === target) {
+		                el.classList.remove('hidden');
+		            } else {
+		                el.classList.add('hidden');
+		            }
+		        });
+
+		        // Always reset the projects sub-panel to list when entering the projects view.
+		        if (target === 'projects') {
+		            document.getElementById('view-projects-list').classList.remove('hidden');
+		            document.getElementById('view-projects-editor').classList.add('hidden');
+		            document.getElementById('view-projects-editor').classList.remove('flex');
+		        }
+
+		        // When navigating to agents list, also ensure agent-editor flex is cleared.
+		        if (target === 'agents') {
+		            const ae = document.getElementById('view-agent-editor');
+		            if (ae) { ae.classList.add('hidden'); ae.classList.remove('flex'); }
+		        }
+
+		        // Update active state in nav.
+		        document.querySelectorAll('.nav-item[data-target]').forEach(item => {
+		            item.classList.toggle('active', item.getAttribute('data-target') === target);
+		        });
+
+		        // Update header title.
+		        const pageTitleEl = document.getElementById('page-title');
+		        const navEl = document.querySelector(`.nav-item[data-target="${target}"] .nav-text`);
+		        if (pageTitleEl && navEl) pageTitleEl.innerText = navEl.innerText;
+
+		        // Lazy-load chart when statistics tab is opened.
+		        if (target === 'statistics') window.loadChartData('global');
+
+		        // Load chat history when switching to console.
+		        if (target === 'chat') { if(typeof loadChatHistory === 'function') loadChatHistory(); }
+
+		        // Close mobile sidebar when a nav item is tapped.
+		        const sidebar = document.getElementById('main-sidebar');
+		        const overlay = document.getElementById('sidebar-overlay');
+		        if (sidebar && window.innerWidth < 768) {
+		            sidebar.classList.add('-translate-x-full');
+		            if (overlay) overlay.classList.add('hidden');
+		        }
+		    }
+
+		    // --- Public showView — bypasses dirty guard (for programmatic navigation after save) ---
+		    window.showView = applyShowView;
+
+		    // --- showViewGuarded — checks dirty state, used by nav clicks ---
+		    async function showViewGuarded(target) {
+		        if (dirtyEditors.size > 0) {
+		            const label = dirtyLabel();
+		            const proceed = await showConfirm(
+		                `You have unsaved changes in: <strong>${label}</strong>.<br>Leave without saving?`,
+		                'Leave', true
+		            );
+		            if (!proceed) return;
+		            // Discard changes: reset dirty state.
+		            dirtyEditors.clear();
+		        }
+		        applyShowView(target);
+		    }
+
+		    // Expose guarded navigation globally (used by back buttons).
+		    window.showViewGuarded = showViewGuarded;
+
+		    // Wire nav-item clicks through the guard.
+		    document.querySelectorAll('.nav-item[data-target]').forEach(item => {
+		        item.addEventListener('click', () => showViewGuarded(item.getAttribute('data-target')));
+		    });
+
+		    // Also wire the mobile Console button in the header (data-target="chat", not a .nav-item).
+		    const mobileChatBtn = document.querySelector('button[data-target="chat"]');
+		    if (mobileChatBtn) mobileChatBtn.addEventListener('click', () => showViewGuarded('chat'));
+
+		    // Initial load — only if a session token is present (auth guard will redirect if not).
+		    if (localStorage.getItem('zuver_token')) loadAllData();
+		})();
+
 		let mainChartObj = null;
 		window.loadChartData = async (filterId = 'global') => {
 		    try {
@@ -2074,34 +3090,52 @@
 		    } catch(e) { console.error('Failed to load chart', e); }
 		};
 	</script>
-	<!-- Authentication Flow Modal -->
-	<div id="modal-login" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
-		<div class="bg-white dark:bg-[#111] p-8 rounded-lg w-full max-w-sm space-y-6 shadow-md border border-gray-200/60 border border-gray-200 dark:border-gray-800">
-			<div class="text-center">
-				<div class="bg-black dark:bg-white text-white dark:text-black p-3 rounded-md inline-block mb-4 shadow-lg">
-					<i data-lucide="lock" class="w-8 h-8"></i>
+	<!-- Toast Notification Container -->
+	<div id="toast-container" class="fixed top-4 right-4 z-[500] flex flex-col gap-2 pointer-events-none" style="max-width:320px"></div>
+
+	<!-- Authentication Login Page (covers entire UI until authenticated) -->
+	<div id="page-login" class="hidden fixed inset-0 z-[200] bg-[#f6f9fc] dark:bg-[#0a0a0a] flex items-center justify-center p-4">
+		<div class="w-full max-w-sm space-y-8">
+			<div class="text-center space-y-3">
+				<div class="inline-flex items-center justify-center w-14 h-14 bg-black dark:bg-white rounded-xl shadow-lg mb-2">
+					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
 				</div>
-				<h3 class="font-bold text-xl" data-i18n="System Locked">System Locked</h3>
-				<p class="text-xs text-gray-500 mt-2" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
+				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
+				<p class="text-sm text-gray-500" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
 			</div>
-			<input type="password" id="login-pwd" placeholder="••••••••" class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-md text-center font-mono focus:border-blue-500 outline-none transition-colors" onkeypress="if(event.key === 'Enter') doLogin()">
-			<button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-md font-bold shadow-lg transition-colors flex justify-center items-center gap-2">
-				<i data-lucide="unlock" class="w-4 h-4"></i> <span data-i18n="Unlock OS">Unlock OS</span>
-			</button>
-			<p id="login-err" class="text-xs text-red-500 text-center hidden"></p>
+			<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
+				<div>
+					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
+					<input type="password" id="login-pwd" placeholder="••••••••"
+						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+						onkeypress="if(event.key === 'Enter') doLogin()">
+				</div>
+				<button onclick="doLogin()" class="w-full bg-black dark:bg-white text-white dark:text-black p-3 rounded-lg font-bold shadow transition-colors hover:opacity-80 flex justify-center items-center gap-2">
+					<i data-lucide="unlock" class="w-4 h-4"></i> <span data-i18n="Unlock OS">Unlock OS</span>
+				</button>
+				<p id="login-err" class="text-xs text-red-500 text-center hidden"></p>
+			</div>
+			<p class="text-center text-[10px] text-gray-400">Zuver Framework &mdash; Open Source AI Platform</p>
 		</div>
 	</div>
 	<script>
+		function showLoginPage() {
+		    document.getElementById('page-login').classList.remove('hidden');
+		    lucide.createIcons();
+		}
+		function hideLoginPage() {
+		    document.getElementById('page-login').classList.add('hidden');
+		}
 		/** Validates authentication payloads and issues session tokens */
 		async function doLogin() {
 		    const p = document.getElementById('login-pwd').value;
 		    if(!p) return;
 		    try {
-		        const r = await fetch('/api/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: p})});
+		        const r = await fetch('/api/v1/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: p})});
 		        const data = await r.json();
 		        if(r.ok) {
 		            localStorage.setItem('zuver_token', data.token);
-		            document.getElementById('modal-login').classList.add('hidden');
+		            hideLoginPage();
 		            document.getElementById('login-err').classList.add('hidden');
 		            document.getElementById('login-pwd').value = '';
 		            loadAllData(); 
@@ -2111,6 +3145,81 @@
 		        }
 		    } catch(e) {}
 		}
+		// Show login page on first load if no token
+		(function() {
+		    if (!localStorage.getItem('zuver_token')) showLoginPage();
+		})();
+
+		/* ==========================================
+		 * TOAST NOTIFICATION SYSTEM
+		 * ========================================== */
+		const TOAST_ICONS = {
+		    success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+		    error:   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+		    info:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+		    warn:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+		};
+
+		window.showToast = function(msg, type = 'info', duration = 3500) {
+		    const container = document.getElementById('toast-container');
+		    const el = document.createElement('div');
+		    el.className = `toast ${type}`;
+		    el.innerHTML = `<span class="shrink-0 mt-0.5">${TOAST_ICONS[type] || TOAST_ICONS.info}</span><span class="flex-1">${msg}</span><button onclick="this.parentElement.remove()" style="opacity:0.4;font-size:14px;line-height:1;background:none;border:none;cursor:pointer;padding:0 0 0 4px;">&#x2715;</button>`;
+		    container.appendChild(el);
+		    setTimeout(() => {
+		        el.classList.add('leaving');
+		        el.addEventListener('animationend', () => el.remove(), { once: true });
+		    }, duration);
+		};
+
+		/**
+		 * Non-blocking confirmation dialog — resolves true/false via inline overlay.
+		 * Returns a Promise<boolean>.
+		 */
+		window.showConfirm = function(msg, confirmLabel = 'Confirm', danger = true) {
+		    return new Promise(resolve => {
+		        const overlay = document.createElement('div');
+		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
+		        overlay.innerHTML = `
+		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
+		                <p class="text-sm font-medium leading-snug">${msg}</p>
+		                <div class="flex gap-2 justify-end">
+		                    <button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+		                    <button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${confirmLabel}</button>
+		                </div>
+		            </div>`;
+		        document.body.appendChild(overlay);
+		        overlay.querySelector('#confirm-cancel').onclick = () => { overlay.remove(); resolve(false); };
+		        overlay.querySelector('#confirm-ok').onclick    = () => { overlay.remove(); resolve(true); };
+		    });
+		};
+
+		/**
+		 * Non-blocking prompt dialog — resolves with string or null on cancel.
+		 */
+		window.showPrompt = function(msg, placeholder = '', defaultVal = '') {
+		    return new Promise(resolve => {
+		        const overlay = document.createElement('div');
+		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
+		        overlay.innerHTML = `
+		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
+		                <p class="text-sm font-medium">${msg}</p>
+		                <input id="prompt-input" type="text" value="${defaultVal}" placeholder="${placeholder}"
+		                    class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
+		                <div class="flex gap-2 justify-end">
+		                    <button id="prompt-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+		                    <button id="prompt-ok" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">OK</button>
+		                </div>
+		            </div>`;
+		        document.body.appendChild(overlay);
+		        const input = overlay.querySelector('#prompt-input');
+		        input.focus();
+		        const submit = () => { overlay.remove(); resolve(input.value); };
+		        input.addEventListener('keydown', e => { if(e.key==='Enter') submit(); if(e.key==='Escape') { overlay.remove(); resolve(null); } });
+		        overlay.querySelector('#prompt-cancel').onclick = () => { overlay.remove(); resolve(null); };
+		        overlay.querySelector('#prompt-ok').onclick = submit;
+		    });
+		};
 	</script>
 </body>
 </html>
