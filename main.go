@@ -523,7 +523,7 @@ func main() {
 	mux.HandleFunc("GET /api/sysinfo", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.0.3",
+			"version":     "v1.0.4",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -677,7 +677,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	isInputAllowed := false
 	for _, m := range acceptedInputs {
-		if m == req.InputType {
+		if m == req.InputType || (req.InputType == "File" && m == "Text") {
 			isInputAllowed = true
 			break
 		}
@@ -889,6 +889,22 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 			executionLogs = append(executionLogs, "[I/O Shield]: Failed to read file, falling back to pure text mode.")
 		} else {
 			executionLogs = append(executionLogs, fmt.Sprintf("[Modality]: Loaded %s payload.", fileMime))
+
+			if fileMime == "text/plain" {
+				rawBytes, err := base64.StdEncoding.DecodeString(fileData)
+				if err == nil {
+					baseName := filepath.Base(req.FilePath)
+					originalName := baseName
+					parts := strings.SplitN(baseName, "___", 3)
+					if len(parts) == 3 {
+						originalName = parts[2]
+					}
+
+					currentUserText = fmt.Sprintf("Attached File (%s):\n\n```\n%s\n```\n\n%s", originalName, string(rawBytes), currentUserText)
+					hasFile = false
+					executionLogs = append(executionLogs, fmt.Sprintf("[Modality]: Injected %s directly into prompt.", originalName))
+				}
+			}
 		}
 	}
 
@@ -916,7 +932,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 						"source": map[string]string{"type": "base64", "media_type": fileMime, "data": fileData},
 					})
 				} else {
-					currentUserText = fmt.Sprintf("[System Note: The user attached a %s file, but it is not natively supported by your vision engine. Assume the user is referencing it.]\n%s", fileMime, currentUserText)
+					currentUserText = fmt.Sprintf("[File %s]\n", fileData, fileMime, currentUserText)
 				}
 				contentArray = append(contentArray, map[string]interface{}{"type": "text", "text": currentUserText})
 				finalUserMsg = map[string]interface{}{"role": "user", "content": contentArray}
@@ -1533,6 +1549,12 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // handleFileUpload processes multipart payload files securely onto disk storage.
 func (a *App) handleFileUpload(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		http.Error(w, "Invalid request", 400)
+		return
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Invalid file", 400)
@@ -1540,8 +1562,19 @@ func (a *App) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	path := filepath.Join("uploads", fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(header.Filename)))
-	dst, _ := os.Create(path)
+	agentID := r.FormValue("agent_id")
+	if agentID == "" {
+		agentID = "global_temp" // 防呆机制，以防前端没传
+	}
+
+	fileName := fmt.Sprintf("%s___%d___%s", agentID, time.Now().UnixNano(), filepath.Base(header.Filename))
+	path := filepath.Join("uploads", fileName)
+
+	dst, err := os.Create(path)
+	if err != nil {
+		http.Error(w, "Failed to save file", 500)
+		return
+	}
 	defer dst.Close()
 	io.Copy(dst, file)
 
@@ -1585,10 +1618,24 @@ func (a *App) handleGetChatHistory(w http.ResponseWriter, r *http.Request) {
 
 // handleClearChatHistory purges memory allocations assigned to a specific agent entity.
 func (a *App) handleClearChatHistory(w http.ResponseWriter, r *http.Request) {
-	a.ConfigDB.Exec("DELETE FROM chat_history WHERE agent_id=?", r.PathValue("agent_id"))
+	agentID := r.PathValue("agent_id")
+	a.ConfigDB.Exec("DELETE FROM chat_history WHERE agent_id=?", agentID)
+
 	paginationMu.Lock()
-	delete(paginationStore, r.PathValue("agent_id"))
+	delete(paginationStore, agentID)
 	paginationMu.Unlock()
+
+	files, err := os.ReadDir("./uploads")
+	if err == nil {
+		prefix := agentID + "___"
+		for _, f := range files {
+			if !f.IsDir() && strings.HasPrefix(f.Name(), prefix) {
+				filePath := filepath.Join("./uploads", f.Name())
+				os.Remove(filePath)
+			}
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
@@ -2129,7 +2176,7 @@ func extractFilePayload(path string) (mime string, pureB64 string, ok bool) {
 		mime = "image/gif"
 	case ".pdf":
 		mime = "application/pdf"
-	case ".txt", ".md", ".csv":
+	case ".txt", ".md", ".csv", ".go", ".py", ".html", ".json", ".yaml":
 		mime = "text/plain"
 	case ".mp3", ".wav":
 		mime = "audio/mpeg"

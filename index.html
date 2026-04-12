@@ -1309,6 +1309,10 @@
 		    if (!file) return;
 		    const formData = new FormData();
 		    formData.append('file', file);
+			const agentId = document.getElementById('chat-agent-select').value;
+		    if (agentId) {
+		        formData.append('agent_id', agentId);
+		    }
 		    const btn = document.getElementById('upload-btn');
 		    btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i>`;
 		    
