@@ -7,7 +7,7 @@
 
 *Empower next gen of Agentic/Companion AI via an unified, ease of use framework.*
 
-**[Website](https://zuver.oi.ms) • [Documentations](https://github.com/synasties/zuver/wiki) • [Market](https://zuver.oi.ms/market) • [Telegram Community](https://t.me/zuver_guthib)**
+**[Website](https://zuver.oi.ms) • [Documentations](https://github.com/synasties/zuver/wiki) • [Market](https://matex.oi.ms) • [Telegram Community](https://t.me/zuver_guthib)**
 
 [![License: AI-NCRL v1.1](https://img.shields.io/badge/License-AI--NCRL_v1.1-blue.svg)](https://zuver.oi.ms/license)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/synasties/zuver)](https://golang.org/)
