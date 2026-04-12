@@ -1134,7 +1134,30 @@
 		function renderLists() {
 		    safeHtml('projects-grid', dataStore.projects.map(p => `<div onclick="openEditor('${p.id}')" class="p-6 bg-white dark:bg-[#111] border dark:border-gray-800 rounded-lg hover:border-blue-500 cursor-pointer transition-all shadow-sm"><h4 class="font-bold text-lg text-blue-600">${p.name}</h4><p class="text-xs text-gray-500 mt-2">${p.description}</p></div>`).join(''));
 		    safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} onchange="window.togglePrivacy('${a.id}', this.checked)" class="accent-green-500"> 🤖 ${a.name}</label>`).join(''));
-		    safeHtml('agents-list', dataStore.agents.map(a => `<div class="p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold">${a.name}</h3><p class="text-xs text-gray-500 mt-1">${a.model}</p></div><div class="flex gap-2"><i onclick="window.editAgent('${a.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('agents-list', dataStore.agents.map(a => {
+		        const st = (window.analyticsStats && window.analyticsStats.entities[a.id]) || {tokens_24h: 0, calls_24h: 0};
+		        return `
+		        <div class="agent-card p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg cursor-pointer shadow-sm relative group overflow-hidden flex flex-col justify-between h-40">
+		            <div class="absolute inset-0 bg-gradient-to-br from-transparent to-blue-50/50 dark:to-blue-900/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+		            <div class="flex justify-between items-start relative z-10">
+		                <div class="flex gap-3 items-center">
+		                    <div class="w-10 h-10 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm text-white font-bold">${a.name.substring(0, 1).toUpperCase()}</div>
+		                    <div>
+		                        <h3 class="font-bold text-sm">${a.name}</h3>
+		                        <p class="text-[10px] font-mono text-gray-500">${a.model}</p>
+		                    </div>
+		                </div>
+		                <div class="flex items-center gap-3 z-20">
+		                    <i onclick="event.stopPropagation(); window.editAgent('${a.id}')" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
+		                    <i onclick="event.stopPropagation(); window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
+		                </div>
+		            </div>
+		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 relative z-10 pt-4 border-t dark:border-gray-800/50">
+		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
+		                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> ${st.calls_24h} Calls (24h)</span>
+		            </div>
+		        </div>
+		    `}).join(''));
 		    safeHtml('skills-list', dataStore.skills.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}</p></div><div class="flex gap-2"><i onclick="window.editSkill('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSkill('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 		    safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editPreferences('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deletePreferences('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editRAG('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteRAG('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
