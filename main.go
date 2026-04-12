@@ -238,7 +238,7 @@ func permissionScopeForPath(method, path string) (resource string, action string
 		return "preferences", toAction(method)
 	case "rags":
 		return "rags", toAction(method)
-	case "providers", "apikeys", "settings", "wipe-database":
+	case "providers", "apikeys", "settings", "wipe-database", "import":
 		// Admin-only: never accessible via external API keys.
 		return "admin_only", ""
 	default:
@@ -256,7 +256,11 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Accept token from Authorization header OR ?token= query param (used for download links).
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
 
 		// Admin token always passes without scope restriction.
 		if adminToken != "" && token == adminToken {
@@ -738,7 +742,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.0",
+			"version":     "v1.1.1",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -843,12 +847,334 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	// ------------------------------------------------------------------
+	// /api/add — public confirmation page for one-click config import.
+	// Usage: /api/add?configURL=https://...&type=skill|agent
+	// The page fetches the remote JSON, shows a preview, and requires
+	// the admin password before committing the import.
+	// ------------------------------------------------------------------
+	mux.HandleFunc("GET /api/add", func(w http.ResponseWriter, r *http.Request) {
+		configURL := r.URL.Query().Get("configURL")
+		itemType := r.URL.Query().Get("type")
+		if configURL == "" || (itemType != "skill" && itemType != "agent") {
+			http.Error(w, "Missing or invalid configURL / type parameter.", http.StatusBadRequest)
+			return
+		}
+
+		// Fetch the remote config JSON (timeout 10 s).
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get(configURL)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			http.Error(w, "Failed to fetch config from remote URL.", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10)) // 512 KB max
+
+		// Validate it is parseable JSON and extract title/description for preview.
+		var preview map[string]interface{}
+		if err := json.Unmarshal(body, &preview); err != nil {
+			http.Error(w, "Remote URL did not return valid JSON.", http.StatusBadRequest)
+			return
+		}
+		title, _ := preview["name"].(string)
+		desc, _ := preview["description"].(string)
+		if title == "" {
+			title = "(unnamed)"
+		}
+
+		// Pretty-print JSON for the code preview pane.
+		prettyJSON, _ := json.MarshalIndent(preview, "", "  ")
+		// Escape backticks and backslashes so the JSON can be safely embedded
+		// in a JS template literal (backtick string) without breaking the syntax.
+		safeJSONStr := strings.ReplaceAll(strings.ReplaceAll(string(prettyJSON), `\`, `\\`), "`", "\\`")
+
+		// Inline HTML confirmation page — no external dependencies on this host.
+		escapedTitle := strings.ReplaceAll(title, `"`, `&quot;`)
+		escapedDesc := strings.ReplaceAll(desc, `"`, `&quot;`)
+		escapedType := itemType
+		escapedConfigURL := configURL
+
+		html := `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Import ` + escapedType + ` — Zuver</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:#0a0a0a;color:#e5e5e5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:#111;border:1px solid #222;border-radius:12px;max-width:560px;width:100%;overflow:hidden;box-shadow:0 24px 48px rgba(0,0,0,.6)}
+  .header{padding:24px 28px 20px;border-bottom:1px solid #1e1e1e}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:20px;margin-bottom:12px}
+  .badge.skill{background:rgba(249,115,22,.15);color:#f97316;border:1px solid rgba(249,115,22,.3)}
+  .badge.agent{background:rgba(59,130,246,.15);color:#3b82f6;border:1px solid rgba(59,130,246,.3)}
+  .badge svg{width:12px;height:12px}
+  h1{font-size:20px;font-weight:700;color:#fff;margin-bottom:6px}
+  .desc{font-size:13px;color:#888;line-height:1.5}
+  .origin{font-size:11px;color:#555;margin-top:8px;font-family:monospace;word-break:break-all}
+  .body{padding:24px 28px}
+  .preview-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#555;margin-bottom:8px}
+  .code-wrap{background:#0a0a0a;border:1px solid #1e1e1e;border-radius:6px;overflow:auto;max-height:260px}
+  pre{font-size:11.5px;font-family:'Menlo','Monaco',monospace;color:#9ca3af;padding:14px 16px;white-space:pre;line-height:1.55}
+  .form{margin-top:20px}
+  label{font-size:12px;color:#666;display:block;margin-bottom:6px;font-weight:600}
+  input[type=password]{width:100%;background:#0a0a0a;border:1px solid #2a2a2a;color:#fff;font-size:14px;padding:10px 14px;border-radius:7px;outline:none;transition:border-color .15s}
+  input[type=password]:focus{border-color:#3b82f6}
+  .actions{display:flex;gap:10px;margin-top:16px}
+  .btn{flex:1;padding:11px 0;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s}
+  .btn:hover{opacity:.85}
+  .btn-primary{background:#3b82f6;color:#fff}
+  .btn-danger{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.25)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .msg{margin-top:12px;font-size:12px;padding:8px 12px;border-radius:6px;display:none}
+  .msg.error{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2);display:block}
+  .msg.success{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.2);display:block}
+  .footer{padding:16px 28px;border-top:1px solid #1a1a1a;font-size:11px;color:#444;text-align:center}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="badge ` + escapedType + `">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      ` + escapedType + `
+    </span>
+    <h1>` + escapedTitle + `</h1>
+    <p class="desc">` + escapedDesc + `</p>
+    <p class="origin">Source: ` + escapedConfigURL + `</p>
+  </div>
+  <div class="body">
+    <p class="preview-label">Configuration Preview</p>
+    <div class="code-wrap"><pre id="json-preview"></pre></div>
+    <form class="form" onsubmit="doImport(event)">
+      <label>Admin Password</label>
+      <input type="password" id="pw" placeholder="Enter admin password to confirm" required autofocus>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary" id="confirm-btn">Import ` + escapedType + `</button>
+        <button type="button" class="btn btn-danger" onclick="window.close()">Cancel</button>
+      </div>
+      <div id="msg" class="msg"></div>
+    </form>
+  </div>
+  <div class="footer">Zuver Framework &mdash; Importing will add this ` + escapedType + ` to your instance permanently.</div>
+</div>
+<script>
+const RAW_JSON = ` + "`" + safeJSONStr + "`" + `;
+const ITEM_TYPE = "` + escapedType + `";
+const CONFIG_URL = "` + escapedConfigURL + `";
+document.getElementById('json-preview').textContent = RAW_JSON;
+async function doImport(e) {
+  e.preventDefault();
+  const pw = document.getElementById('pw').value;
+  const btn = document.getElementById('confirm-btn');
+  const msg = document.getElementById('msg');
+  msg.className = 'msg';
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  try {
+    // Step 1: authenticate to get a token.
+    const loginResp = await fetch('/api/v1/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({password: pw})
+    });
+    if (!loginResp.ok) {
+      const e = await loginResp.json().catch(()=>({error:'Wrong password'}));
+      throw new Error(e.error || 'Authentication failed');
+    }
+    const {token} = await loginResp.json();
+    // Step 2: import via the API.
+    const importResp = await fetch('/api/v1/import', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({type: ITEM_TYPE, data: JSON.parse(RAW_JSON)})
+    });
+    if (!importResp.ok) {
+      const e = await importResp.json().catch(()=>({error:'Import failed'}));
+      throw new Error(e.error || 'Import failed');
+    }
+    msg.textContent = '` + escapedType + ` imported successfully. You can close this page.';
+    msg.className = 'msg success';
+    btn.textContent = 'Imported';
+  } catch(err) {
+    msg.textContent = err.message;
+    msg.className = 'msg error';
+    btn.disabled = false;
+    btn.textContent = 'Import ` + escapedType + `';
+  }
+}
+</script>
+</body>
+</html>`
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, html)
+	})
+
+	// ------------------------------------------------------------------
+	// POST /api/v1/import — authenticated one-shot import endpoint.
+	// Body: {"type":"skill"|"agent", "data":{...config object...}}
+	// ------------------------------------------------------------------
+	mux.HandleFunc("POST /api/v1/import", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Type string                 `json:"type"`
+			Data map[string]interface{} `json:"data"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Data == nil {
+			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+		str := func(key string) string {
+			v, _ := req.Data[key].(string)
+			return v
+		}
+		id := str("id")
+		if id == "" {
+			id = fmt.Sprintf("%s_%d", req.Type[:2], time.Now().UnixNano())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Type {
+		case "skill":
+			_, err := SyncDBExec(app.ConfigDB,
+				"INSERT OR REPLACE INTO skills (id, name, type, instruction, content, api_method, api_url, api_headers, api_body) VALUES (?,?,?,?,?,?,?,?,?)",
+				id, str("name"), str("type"), str("instruction"), str("content"),
+				str("api_method"), str("api_url"), str("api_headers"), str("api_body"),
+			)
+			if err != nil {
+				http.Error(w, `{"error":"database error: `+err.Error()+`"}`, http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id})
+		case "agent":
+			// Agents are imported without provider_id — user must assign one after import.
+			_, err := SyncDBExec(app.ConfigDB,
+				`INSERT OR REPLACE INTO agents
+				 (id, name, provider_id, model, system_prompt, user_prompt_prefix,
+				  temperature, max_tokens, top_p, privacy_enabled, can_create_skills,
+				  stream_enabled, sources, skills, outputs, mcps, input_methods, output_methods)
+				 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				id, str("name"), "", str("model"), str("system_prompt"), str("user_prompt_prefix"),
+				floatOr(req.Data["temperature"], 0.7), intOr(req.Data["max_tokens"], 4096),
+				floatOr(req.Data["top_p"], 1.0), false, false, boolOr(req.Data["stream_enabled"], true),
+				"[]", "[]", "[]", "[]", str("input_methods"), str("output_methods"),
+			)
+			if err != nil {
+				http.Error(w, `{"error":"database error: `+err.Error()+`"}`, http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id, "note": "Provider not set — assign one in the Agent editor."})
+		default:
+			http.Error(w, `{"error":"unsupported type"}`, http.StatusBadRequest)
+		}
+	})
+
+	// ------------------------------------------------------------------
+	// GET /api/v1/agents/export  — download all agents as sanitized JSON
+	// GET /api/v1/skills/export  — download all skills as sanitized JSON
+	// ------------------------------------------------------------------
+	mux.HandleFunc("GET /api/v1/agents/export", func(w http.ResponseWriter, r *http.Request) {
+		rows, err := app.ConfigDB.Query(
+			`SELECT id, name, model, system_prompt, user_prompt_prefix,
+			        temperature, max_tokens, top_p, stream_enabled,
+			        input_methods, output_methods
+			 FROM agents`)
+		if err != nil {
+			http.Error(w, `{"error":"db error"}`, http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		type ExportedAgent struct {
+			ID               string  `json:"id"`
+			Name             string  `json:"name"`
+			Model            string  `json:"model"`
+			SystemPrompt     string  `json:"system_prompt"`
+			UserPromptPrefix string  `json:"user_prompt_prefix"`
+			Temperature      float64 `json:"temperature"`
+			MaxTokens        int     `json:"max_tokens"`
+			TopP             float64 `json:"top_p"`
+			StreamEnabled    bool    `json:"stream_enabled"`
+			InputMethods     string  `json:"input_methods"`
+			OutputMethods    string  `json:"output_methods"`
+		}
+		var list []ExportedAgent
+		for rows.Next() {
+			var a ExportedAgent
+			rows.Scan(&a.ID, &a.Name, &a.Model, &a.SystemPrompt, &a.UserPromptPrefix,
+				&a.Temperature, &a.MaxTokens, &a.TopP, &a.StreamEnabled,
+				&a.InputMethods, &a.OutputMethods)
+			list = append(list, a)
+		}
+		if list == nil {
+			list = []ExportedAgent{}
+		}
+		out, _ := json.MarshalIndent(list, "", "  ")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="zuver_agents.json"`)
+		w.Write(out)
+	})
+
+	mux.HandleFunc("GET /api/v1/skills/export", func(w http.ResponseWriter, r *http.Request) {
+		rows, err := app.ConfigDB.Query(
+			`SELECT id, name, type, instruction, content, api_method, api_url, api_headers, api_body
+			 FROM skills`)
+		if err != nil {
+			http.Error(w, `{"error":"db error"}`, http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		var list []Skill
+		for rows.Next() {
+			var s Skill
+			rows.Scan(&s.ID, &s.Name, &s.Type, &s.Instruction, &s.Content,
+				&s.APIMethod, &s.APIURL, &s.APIHeaders, &s.APIBody)
+			list = append(list, s)
+		}
+		if list == nil {
+			list = []Skill{}
+		}
+		out, _ := json.MarshalIndent(list, "", "  ")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="zuver_skills.json"`)
+		w.Write(out)
+	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "18806"
 	}
 	log.Printf("Starting Zuver OS Framework on port %s", port)
 	http.ListenAndServe(":"+port, loggingMiddleware(app.authMiddleware(mux)))
+}
+
+// floatOr safely casts an interface{} to float64, falling back to def.
+func floatOr(v interface{}, def float64) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int:
+		return float64(n)
+	}
+	return def
+}
+
+// intOr safely casts an interface{} to int, falling back to def.
+func intOr(v interface{}, def int) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	}
+	return def
+}
+
+// boolOr safely casts an interface{} to bool, falling back to def.
+func boolOr(v interface{}, def bool) bool {
+	if b, ok := v.(bool); ok {
+		return b
+	}
+	return def
 }
 
 // --------------------------------------------------------------------------

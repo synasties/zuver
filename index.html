@@ -640,11 +640,15 @@
 				</div>
 				<!-- View: Agents -->
 				<div id="view-agents" class="page-view hidden space-y-6">
-					<div class="flex justify-between items-center">
-						<p class="text-sm text-gray-500 mt-1">Manage, edit and control your agents and what they can do, so they don't create chaotic messes.</p>
-						<button onclick="openAgentModal()" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Agent</button>
+					<div class="flex flex-wrap justify-between items-center gap-3">
+						<p class="text-sm text-gray-500 mt-1">Manage, configure and monitor your AI agents.</p>
+						<div class="flex items-center gap-2">
+							<button onclick="window.importAgentsJSON()" title="Import agents from JSON file" class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i data-lucide="upload" class="w-3.5 h-3.5"></i> Import</button>
+							<button onclick="window.exportAgentsJSON()" title="Export all agents to JSON" class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i data-lucide="download" class="w-3.5 h-3.5"></i> Export All</button>
+							<button onclick="window.openAgentModal()" class="bg-black text-white dark:bg-white dark:text-black px-4 py-2 rounded-lg text-sm shadow-sm">New Agent</button>
+						</div>
 					</div>
-					<div id="agents-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+					<div id="agents-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 				</div>
 				<div id="view-agent-editor" class="page-view hidden h-[calc(100vh-140px)] flex-col space-y-4">
 					<div class="flex justify-between items-center shrink-0 border-b dark:border-gray-800 pb-4">
@@ -716,9 +720,13 @@
 					<div id="outputs-list" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
 				</div>
 				<div id="view-skills" class="page-view hidden space-y-6">
-					<div class="flex justify-between items-center">
+					<div class="flex flex-wrap justify-between items-center gap-3">
 						<p class="text-sm text-gray-500 mt-1">Create, manage and edit the Skills, so your agents can do something beyond MCP and Markdown files.</p>
-						<button onclick="openSkillModal()" class="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New Skill</button>
+						<div class="flex items-center gap-2">
+							<button onclick="window.importSkillsJSON()" title="Import skills from JSON file" class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i data-lucide="upload" class="w-3.5 h-3.5"></i> Import</button>
+							<button onclick="window.exportSkillsJSON()" title="Export all skills to JSON" class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"><i data-lucide="download" class="w-3.5 h-3.5"></i> Export All</button>
+							<button onclick="openSkillModal()" class="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New Skill</button>
+						</div>
 					</div>
 					<div id="skills-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
 				</div>
@@ -1047,12 +1055,117 @@
 			</div>
 		</div>
 	</div>
+
+	<!-- Toast Notification Container -->
+	<div id="toast-container" class="fixed top-4 right-4 z-[500] flex flex-col gap-2 pointer-events-none" style="max-width:320px"></div>
+
+	<!-- Authentication Login Page (covers entire UI until authenticated) -->
+	<div id="page-login" class="hidden fixed inset-0 z-[200] bg-[#f6f9fc] dark:bg-[#0a0a0a] flex items-center justify-center p-4">
+		<div class="w-full max-w-sm space-y-8">
+			<div class="text-center space-y-3">
+				<div class="inline-flex items-center justify-center w-14 h-14 bg-black dark:bg-white rounded-xl shadow-lg mb-2">
+					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
+				</div>
+				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
+				<p class="text-sm text-gray-500" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
+			</div>
+			<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
+				<div>
+					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
+					<input type="password" id="login-pwd" placeholder="••••••••"
+						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+						onkeypress="if(event.key === 'Enter') doLogin()">
+				</div>
+				<button onclick="doLogin()" class="w-full bg-black dark:bg-white text-white dark:text-black p-3 rounded-lg font-bold shadow transition-colors hover:opacity-80 flex justify-center items-center gap-2">
+					<i data-lucide="unlock" class="w-4 h-4"></i> <span data-i18n="Unlock OS">Unlock OS</span>
+				</button>
+				<p id="login-err" class="text-xs text-red-500 text-center hidden"></p>
+			</div>
+			<p class="text-center text-[10px] text-gray-400">Zuver Framework &mdash; Open Source AI Platform</p>
+		</div>
+	</div>
+
 	<script>
+		// ================================================================
+		// AUTH + UI UTILITY FUNCTIONS — defined first so api() can call
+		// them synchronously during the very first loadAllData() call.
+		// ================================================================
+		function showLoginPage() {
+		    document.getElementById('page-login').classList.remove('hidden');
+		    lucide.createIcons();
+		}
+		function hideLoginPage() {
+		    document.getElementById('page-login').classList.add('hidden');
+		}
+
+		const TOAST_ICONS = {
+		    success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+		    error:   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+		    info:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+		    warn:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+		};
+
+		window.showToast = function(msg, type = 'info', duration = 3500) {
+		    const container = document.getElementById('toast-container');
+		    if (!container) { console.warn('[v0] toast-container not ready, msg:', msg); return; }
+		    const el = document.createElement('div');
+		    el.className = `toast ${type}`;
+		    el.innerHTML = `<span class="shrink-0 mt-0.5">${TOAST_ICONS[type] || TOAST_ICONS.info}</span><span class="flex-1">${msg}</span><button onclick="this.parentElement.remove()" style="opacity:0.4;font-size:14px;line-height:1;background:none;border:none;cursor:pointer;padding:0 0 0 4px;">&#x2715;</button>`;
+		    container.appendChild(el);
+		    setTimeout(() => {
+		        el.classList.add('leaving');
+		        el.addEventListener('animationend', () => el.remove(), { once: true });
+		    }, duration);
+		};
+
+		window.showConfirm = function(msg, confirmLabel = 'Confirm', danger = true) {
+		    return new Promise(resolve => {
+		        const overlay = document.createElement('div');
+		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
+		        overlay.innerHTML = `
+		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
+		                <p class="text-sm font-medium leading-snug">${msg}</p>
+		                <div class="flex gap-2 justify-end">
+		                    <button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+		                    <button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${confirmLabel}</button>
+		                </div>
+		            </div>`;
+		        document.body.appendChild(overlay);
+		        overlay.querySelector('#confirm-cancel').onclick = () => { overlay.remove(); resolve(false); };
+		        overlay.querySelector('#confirm-ok').onclick    = () => { overlay.remove(); resolve(true); };
+		    });
+		};
+
+		window.showPrompt = function(msg, placeholder = '', defaultVal = '') {
+		    return new Promise(resolve => {
+		        const overlay = document.createElement('div');
+		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
+		        overlay.innerHTML = `
+		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
+		                <p class="text-sm font-medium">${msg}</p>
+		                <input id="prompt-input" type="text" value="${defaultVal}" placeholder="${placeholder}"
+		                    class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
+		                <div class="flex gap-2 justify-end">
+		                    <button id="prompt-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+		                    <button id="prompt-ok" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">OK</button>
+		                </div>
+		            </div>`;
+		        document.body.appendChild(overlay);
+		        const input = overlay.querySelector('#prompt-input');
+		        input.focus();
+		        const submit = () => { overlay.remove(); resolve(input.value); };
+		        input.addEventListener('keydown', e => { if(e.key==='Enter') submit(); if(e.key==='Escape') { overlay.remove(); resolve(null); } });
+		        overlay.querySelector('#prompt-cancel').onclick = () => { overlay.remove(); resolve(null); };
+		        overlay.querySelector('#prompt-ok').onclick = submit;
+		    });
+		};
+
+		// ================================================================
 		// Dictionary for UI internationalization
 		const i18nDict = {
 		    // Sidebar navigation
 		    "Home":            { zh: "主页",          de: "Startseite" },
-		    "Statistics":      { zh: "数据看板",      de: "Statistiken" },
+		    "Statistics":      { zh: "数据���计",      de: "Statistiken" },
 		    "Applications":    { zh: "应用",          de: "Anwendungen" },
 		    "Agents":          { zh: "Agents",        de: "Agenten" },
 		    "Sources":         { zh: "数据源",        de: "Quellen" },
@@ -1082,7 +1195,7 @@
 		    "Save Agent":      { zh: "保存 Agent",    de: "Agent speichern" },
 		    "Send":            { zh: "发送",          de: "Senden" },
 		    "Wipe Memory":     { zh: "清空记忆",      de: "Speicher leeren" },
-		    "New Provider":    { zh: "新建提供商",    de: "Neuer Anbieter" },
+		    "New Provider":    { zh: "新建供应商",    de: "Neuer Anbieter" },
 		    "New Source":      { zh: "新建数据源",    de: "Neue Quelle" },
 		    "New Output":      { zh: "新建输出",      de: "Neue Ausgabe" },
 		    "New Skill":       { zh: "新建技能",      de: "Neue Fähigkeit" },
@@ -1094,14 +1207,14 @@
 		    "Save Flow":       { zh: "保存流程",      de: "Fluss speichern" },
 		    "Back":            { zh: "返回",          de: "Zurück" },
 		    "Export":          { zh: "导出",          de: "Exportieren" },
-		    "Import":          { zh: "导入",   de: "Importieren" },
+		    "Import":          { zh: "Importieren",   de: "Importieren" },
 		    "Cancel":          { zh: "取消",          de: "Abbrechen" },
 		    "Delete Database": { zh: "删除数据库",    de: "Datenbank löschen" },
 		    // Home stats
-		    "Agents":          { zh: "Agents",   de: "Agenten" },
-		    "Skills":          { zh: "技能",      de: "Fähigkeiten" },
-		    "Preferences":     { zh: "记忆",      de: "Speicher" },
-		    "Tokens":          { zh: "Tokens",      de: "Token" },
+		    "Agents":          { zh: "Agents 数量",   de: "Agenten" },
+		    "Skills":          { zh: "技能数量",      de: "Fähigkeiten" },
+		    "Preferences":     { zh: "记忆数量",      de: "Speicher" },
+		    "Tokens":          { zh: "令牌消耗",      de: "Token" },
 		    // Settings panel
 		    "Cache Hit Optimization": { zh: "缓存命中优化",       de: "Cache-Optimierung" },
 		    "Interface Language":     { zh: "界面语言",           de: "Benutzersprache" },
@@ -1437,10 +1550,11 @@
 		                        <p class="text-[10px] font-mono text-gray-500">${a.model}</p>
 		                    </div>
 		                </div>
-		                <div class="flex items-center gap-3 z-20">
-		                    <i onclick="event.stopPropagation(); window.editAgent('${a.id}')" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
-		                    <i onclick="event.stopPropagation(); window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
-		                </div>
+			<div class="flex items-center gap-3 z-20">
+				                    <i onclick="event.stopPropagation(); window.exportAgentJSON('${a.id}')" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" title="Export agent JSON"></i>
+				                    <i onclick="event.stopPropagation(); window.editAgent('${a.id}')" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
+				                    <i onclick="event.stopPropagation(); window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
+				                </div>
 		            </div>
 		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 flex-wrap relative z-10 pt-4 border-t dark:border-gray-800/50">
 		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
@@ -1449,7 +1563,7 @@
 		            </div>
 		        </div>
 		    `}).join(''));
-		    safeHtml('skills-list', dataStore.skills.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}</p></div><div class="flex gap-2"><i onclick="window.editSkill('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSkill('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+		    safeHtml('skills-list', dataStore.skills.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}</p></div><div class="flex gap-2"><i onclick="window.exportSkillJSON('${s.id}')" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 cursor-pointer" title="Export skill JSON"></i><i onclick="window.editSkill('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSkill('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 		    safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editPreferences('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deletePreferences('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editRAG('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteRAG('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 		    safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${p.name}</h3><p class="text-[10px] text-gray-400 mt-1">${p.endpoint}</p></div><div class="flex gap-2"><i onclick="window.editProvider('${p.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteProvider('${p.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
@@ -2479,6 +2593,108 @@
 		    input.click();
 		};
 
+		/* ================================================================
+		 * AGENT EXPORT / IMPORT
+		 * ================================================================ */
+
+		// Export all agents as a sanitized JSON file (no provider ID / API keys).
+		window.exportAgentsJSON = async () => {
+		    const token = localStorage.getItem('zuver_token') || '';
+		    const link = document.createElement('a');
+		    link.href = `/api/v1/agents/export?token=${encodeURIComponent(token)}`;
+		    link.download = 'zuver_agents.json';
+		    link.click();
+		};
+
+		// Export a single agent by ID.
+		window.exportAgentJSON = (id) => {
+		    const a = dataStore.agents.find(x => x.id === id);
+		    if (!a) return;
+		    // Strip provider-specific and runtime fields before exporting.
+		    const { provider_id, token_usage, privacy_enabled, ...exportable } = a;
+		    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportable, null, 2));
+		    Object.assign(document.createElement('a'), { href: dataStr, download: `zuver_agent_${a.name.replace(/\s+/g,'_')}.json` }).click();
+		};
+
+		// Import agents from a JSON file (array or single object).
+		window.importAgentsJSON = () => {
+		    const input = document.createElement('input');
+		    input.type = 'file'; input.accept = '.json';
+		    input.onchange = async (e) => {
+		        const reader = new FileReader();
+		        reader.readAsText(e.target.files[0], 'UTF-8');
+		        reader.onload = async (ev) => {
+		            let items;
+		            try {
+		                const parsed = JSON.parse(ev.target.result);
+		                items = Array.isArray(parsed) ? parsed : [parsed];
+		            } catch(err) {
+		                showToast('Parse error: ' + err.message, 'error'); return;
+		            }
+		            let ok = 0, fail = 0;
+		            for (const item of items) {
+		                try {
+		                    const resp = await api('/import', 'POST', { type: 'agent', data: item });
+		                    ok++;
+		                } catch { fail++; }
+		            }
+		            loadAllData();
+		            showToast(`Imported ${ok} agent(s)${fail ? `, ${fail} failed` : ''}.`, ok > 0 ? 'success' : 'error');
+		        };
+		    };
+		    input.click();
+		};
+
+		/* ================================================================
+		 * SKILL EXPORT / IMPORT
+		 * ================================================================ */
+
+		// Export all skills as a JSON file.
+		window.exportSkillsJSON = async () => {
+		    const token = localStorage.getItem('zuver_token') || '';
+		    const link = document.createElement('a');
+		    link.href = `/api/v1/skills/export?token=${encodeURIComponent(token)}`;
+		    link.download = 'zuver_skills.json';
+		    link.click();
+		};
+
+		// Export a single skill by ID.
+		window.exportSkillJSON = (id) => {
+		    const s = dataStore.skills.find(x => x.id === id);
+		    if (!s) return;
+		    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(s, null, 2));
+		    Object.assign(document.createElement('a'), { href: dataStr, download: `zuver_skill_${s.name.replace(/\s+/g,'_')}.json` }).click();
+		};
+
+		// Import skills from a JSON file (array or single object).
+		window.importSkillsJSON = () => {
+		    const input = document.createElement('input');
+		    input.type = 'file'; input.accept = '.json';
+		    input.onchange = async (e) => {
+		        const reader = new FileReader();
+		        reader.readAsText(e.target.files[0], 'UTF-8');
+		        reader.onload = async (ev) => {
+		            let items;
+		            try {
+		                const parsed = JSON.parse(ev.target.result);
+		                items = Array.isArray(parsed) ? parsed : [parsed];
+		            } catch(err) {
+		                showToast('Parse error: ' + err.message, 'error'); return;
+		            }
+		            let ok = 0, fail = 0;
+		            for (const item of items) {
+		                try {
+		                    await api('/import', 'POST', { type: 'skill', data: item });
+		                    ok++;
+		                } catch { fail++; }
+		            }
+		            loadAllData();
+		            showToast(`Imported ${ok} skill(s)${fail ? `, ${fail} failed` : ''}.`, ok > 0 ? 'success' : 'error');
+		        };
+		    };
+		    input.click();
+		};
+
 		// Live search filter for projects list; also track dirty state on project name/desc edits.
 		document.addEventListener('input', (e) => {
 		    if(e.target.id === 'proj-search') renderLists();
@@ -3089,43 +3305,6 @@
 		        });
 		    } catch(e) { console.error('Failed to load chart', e); }
 		};
-	</script>
-	<!-- Toast Notification Container -->
-	<div id="toast-container" class="fixed top-4 right-4 z-[500] flex flex-col gap-2 pointer-events-none" style="max-width:320px"></div>
-
-	<!-- Authentication Login Page (covers entire UI until authenticated) -->
-	<div id="page-login" class="hidden fixed inset-0 z-[200] bg-[#f6f9fc] dark:bg-[#0a0a0a] flex items-center justify-center p-4">
-		<div class="w-full max-w-sm space-y-8">
-			<div class="text-center space-y-3">
-				<div class="inline-flex items-center justify-center w-14 h-14 bg-black dark:bg-white rounded-xl shadow-lg mb-2">
-					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
-				</div>
-				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
-				<p class="text-sm text-gray-500" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
-			</div>
-			<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
-				<div>
-					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
-					<input type="password" id="login-pwd" placeholder="••••••••"
-						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
-						onkeypress="if(event.key === 'Enter') doLogin()">
-				</div>
-				<button onclick="doLogin()" class="w-full bg-black dark:bg-white text-white dark:text-black p-3 rounded-lg font-bold shadow transition-colors hover:opacity-80 flex justify-center items-center gap-2">
-					<i data-lucide="unlock" class="w-4 h-4"></i> <span data-i18n="Unlock OS">Unlock OS</span>
-				</button>
-				<p id="login-err" class="text-xs text-red-500 text-center hidden"></p>
-			</div>
-			<p class="text-center text-[10px] text-gray-400">Zuver Framework &mdash; Open Source AI Platform</p>
-		</div>
-	</div>
-	<script>
-		function showLoginPage() {
-		    document.getElementById('page-login').classList.remove('hidden');
-		    lucide.createIcons();
-		}
-		function hideLoginPage() {
-		    document.getElementById('page-login').classList.add('hidden');
-		}
 		/** Validates authentication payloads and issues session tokens */
 		async function doLogin() {
 		    const p = document.getElementById('login-pwd').value;
@@ -3138,7 +3317,7 @@
 		            hideLoginPage();
 		            document.getElementById('login-err').classList.add('hidden');
 		            document.getElementById('login-pwd').value = '';
-		            loadAllData(); 
+		            loadAllData();
 		        } else {
 		            document.getElementById('login-err').innerText = data.error || 'Access Denied';
 		            document.getElementById('login-err').classList.remove('hidden');
@@ -3149,77 +3328,6 @@
 		(function() {
 		    if (!localStorage.getItem('zuver_token')) showLoginPage();
 		})();
-
-		/* ==========================================
-		 * TOAST NOTIFICATION SYSTEM
-		 * ========================================== */
-		const TOAST_ICONS = {
-		    success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
-		    error:   '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
-		    info:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
-		    warn:    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-		};
-
-		window.showToast = function(msg, type = 'info', duration = 3500) {
-		    const container = document.getElementById('toast-container');
-		    const el = document.createElement('div');
-		    el.className = `toast ${type}`;
-		    el.innerHTML = `<span class="shrink-0 mt-0.5">${TOAST_ICONS[type] || TOAST_ICONS.info}</span><span class="flex-1">${msg}</span><button onclick="this.parentElement.remove()" style="opacity:0.4;font-size:14px;line-height:1;background:none;border:none;cursor:pointer;padding:0 0 0 4px;">&#x2715;</button>`;
-		    container.appendChild(el);
-		    setTimeout(() => {
-		        el.classList.add('leaving');
-		        el.addEventListener('animationend', () => el.remove(), { once: true });
-		    }, duration);
-		};
-
-		/**
-		 * Non-blocking confirmation dialog — resolves true/false via inline overlay.
-		 * Returns a Promise<boolean>.
-		 */
-		window.showConfirm = function(msg, confirmLabel = 'Confirm', danger = true) {
-		    return new Promise(resolve => {
-		        const overlay = document.createElement('div');
-		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
-		        overlay.innerHTML = `
-		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
-		                <p class="text-sm font-medium leading-snug">${msg}</p>
-		                <div class="flex gap-2 justify-end">
-		                    <button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-		                    <button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${confirmLabel}</button>
-		                </div>
-		            </div>`;
-		        document.body.appendChild(overlay);
-		        overlay.querySelector('#confirm-cancel').onclick = () => { overlay.remove(); resolve(false); };
-		        overlay.querySelector('#confirm-ok').onclick    = () => { overlay.remove(); resolve(true); };
-		    });
-		};
-
-		/**
-		 * Non-blocking prompt dialog — resolves with string or null on cancel.
-		 */
-		window.showPrompt = function(msg, placeholder = '', defaultVal = '') {
-		    return new Promise(resolve => {
-		        const overlay = document.createElement('div');
-		        overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
-		        overlay.innerHTML = `
-		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
-		                <p class="text-sm font-medium">${msg}</p>
-		                <input id="prompt-input" type="text" value="${defaultVal}" placeholder="${placeholder}"
-		                    class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
-		                <div class="flex gap-2 justify-end">
-		                    <button id="prompt-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-		                    <button id="prompt-ok" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">OK</button>
-		                </div>
-		            </div>`;
-		        document.body.appendChild(overlay);
-		        const input = overlay.querySelector('#prompt-input');
-		        input.focus();
-		        const submit = () => { overlay.remove(); resolve(input.value); };
-		        input.addEventListener('keydown', e => { if(e.key==='Enter') submit(); if(e.key==='Escape') { overlay.remove(); resolve(null); } });
-		        overlay.querySelector('#prompt-cancel').onclick = () => { overlay.remove(); resolve(null); };
-		        overlay.querySelector('#prompt-ok').onclick = submit;
-		    });
-		};
 	</script>
 </body>
 </html>
