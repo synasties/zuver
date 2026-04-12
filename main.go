@@ -523,7 +523,7 @@ func main() {
 	mux.HandleFunc("GET /api/sysinfo", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.0.2",
+			"version":     "v1.0.3",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1033,6 +1033,8 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 			if errDo != nil {
 				executionLogs = append(executionLogs, "[Network Error]: "+errDo.Error())
+				a.logAnalytics("agent", agent.ID, 0, false)
+				a.logAnalytics("provider", agent.ProviderID, 0, false)
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[SYSTEM] Failed to connect to the API provider.", "logs": executionLogs})
 				return
@@ -1071,6 +1073,8 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 			if replyContent == "" {
 				executionLogs = append(executionLogs, "[API Refusal]: "+string(bodyBytes))
+				a.logAnalytics("agent", agent.ID, 0, false)
+				a.logAnalytics("provider", agent.ProviderID, 0, false)
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[Error] API Provider returned errors.", "logs": executionLogs})
 				return
@@ -1514,6 +1518,9 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 		AsyncDBExec(a.ConfigDB, "UPDATE agents SET token_usage = token_usage + ? WHERE id = ?", totalTokensUsed, agent.ID)
 		AsyncDBExec(a.ConfigDB, "UPDATE providers SET token_usage = token_usage + ? WHERE id = ?", totalTokensUsed, agent.ProviderID)
+
+		a.logAnalytics("agent", agent.ID, totalTokensUsed, true)
+		a.logAnalytics("provider", agent.ProviderID, totalTokensUsed, true)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"reply": replyContent, "logs": executionLogs})
