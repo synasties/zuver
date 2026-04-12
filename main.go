@@ -523,7 +523,7 @@ func main() {
 	mux.HandleFunc("GET /api/sysinfo", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.0.1",
+			"version":     "v1.0.2",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
