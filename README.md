@@ -35,7 +35,7 @@
 
 * 🔌 **Choose Your Favorite Provider.** Fully compatible with OpenAI-standard APIs, as well as mainstream model providers like Ollama, LM Studio, Phala, and more.
 
-* 📱 **Choose Your Favorite Client.** Use our open-source Agent clients, or interact with your Agent directly via Web GUI or Telegram Bot.
+* 📱 **Choose Your Favorite Client.** Use our open-source Agent clients, or interact with your Agent directly via Web GUI or [Telegram Bot](https://github.com/synasties/zuver_telegram).
 
 * ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
 
