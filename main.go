@@ -1890,7 +1890,8 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		payloadBytes, _ := json.Marshal(reqBody)
 
 		// Cache lookup (only for non-streaming, non-loop-0+ tool calls).
-		cacheKey := hex.EncodeToString(sha256.New().Sum(payloadBytes))
+		cacheHash := sha256.Sum256(payloadBytes)
+		cacheKey := hex.EncodeToString(cacheHash[:])
 		var replyContent string
 
 		if !useStream && req.UseCache {
@@ -1931,13 +1932,50 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 					sseEmit(map[string]interface{}{"done": true, "error": "[SYSTEM] Failed to connect to the API provider.", "logs": executionLogs})
 					return
 				}
-				defer resp.Body.Close()
+
+				// Non-2xx from provider means the body is a JSON error, not an SSE stream.
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+					resp.Body.Close()
+					// Try to extract a human-readable error message from the provider JSON.
+					var errObj map[string]interface{}
+					errMsg := fmt.Sprintf("[SYSTEM] Provider returned HTTP %d.", resp.StatusCode)
+					if json.Unmarshal(errBody, &errObj) == nil {
+						if errDetail, ok := errObj["error"].(map[string]interface{}); ok {
+							if msg, ok := errDetail["message"].(string); ok && msg != "" {
+								errMsg = "[Provider Error] " + msg
+							}
+						} else if msg, ok := errObj["message"].(string); ok && msg != "" {
+							errMsg = "[Provider Error] " + msg
+						}
+					}
+					executionLogs = append(executionLogs, fmt.Sprintf("[HTTP %d]: %s", resp.StatusCode, string(errBody)))
+					a.logAnalytics("agent", agent.ID, 0, false)
+					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					sseEmit(map[string]interface{}{"done": true, "error": errMsg, "logs": executionLogs})
+					return
+				}
 
 				var fullReply strings.Builder
 				scanner := bufio.NewScanner(resp.Body)
 				for scanner.Scan() {
 					line := scanner.Text()
 					if !strings.HasPrefix(line, "data: ") {
+						// For Ollama which doesn't use SSE prefix, try parsing raw JSON.
+						if pType == "ollama" && strings.HasPrefix(line, "{") {
+							var chunk map[string]interface{}
+							if json.Unmarshal([]byte(line), &chunk) == nil {
+								if msg, ok := chunk["message"].(map[string]interface{}); ok {
+									if delta, _ := msg["content"].(string); delta != "" {
+										fullReply.WriteString(delta)
+										sseEmit(map[string]interface{}{"delta": delta})
+									}
+								}
+								if done, _ := chunk["done"].(bool); done {
+									break
+								}
+							}
+						}
 						continue
 					}
 					data := strings.TrimPrefix(line, "data: ")
@@ -1948,6 +1986,20 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 					var chunk map[string]interface{}
 					if json.Unmarshal([]byte(data), &chunk) != nil {
 						continue
+					}
+
+					// Surface streaming-level error events from the provider.
+					if errObj, ok := chunk["error"].(map[string]interface{}); ok {
+						errMsg := "[Provider Error] Unknown streaming error."
+						if msg, ok := errObj["message"].(string); ok && msg != "" {
+							errMsg = "[Provider Error] " + msg
+						}
+						executionLogs = append(executionLogs, errMsg)
+						resp.Body.Close()
+						a.logAnalytics("agent", agent.ID, 0, false)
+						a.logAnalytics("provider", agent.ProviderID, 0, false)
+						sseEmit(map[string]interface{}{"done": true, "error": errMsg, "logs": executionLogs})
+						return
 					}
 
 					var delta string
@@ -1975,8 +2027,19 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 						sseEmit(map[string]interface{}{"delta": delta})
 					}
 				}
+				resp.Body.Close()
+
 				// Collect complete reply for this loop iteration.
 				replyContent = fullReply.String()
+				if replyContent == "" {
+					// Empty stream means the provider sent nothing useful — surface an error.
+					errMsg := "[SYSTEM] Provider returned an empty streaming response. Check model name and API key."
+					executionLogs = append(executionLogs, "[Empty Stream]")
+					a.logAnalytics("agent", agent.ID, 0, false)
+					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					sseEmit(map[string]interface{}{"done": true, "error": errMsg, "logs": executionLogs})
+					return
+				}
 				totalTokensUsed += estimateTokens(string(payloadBytes)) + estimateTokens(replyContent)
 			} else {
 				// ---------- NON-STREAMING PATH ----------
@@ -1993,18 +2056,49 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 				bodyBytes, _ := io.ReadAll(resp2.Body)
 				resp2.Body.Close()
 
+				// Non-2xx: parse and surface the provider error message before attempting to extract content.
+				if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+					var errObj map[string]interface{}
+					errMsg := fmt.Sprintf("[SYSTEM] Provider returned HTTP %d.", resp2.StatusCode)
+					if json.Unmarshal(bodyBytes, &errObj) == nil {
+						if errDetail, ok := errObj["error"].(map[string]interface{}); ok {
+							if msg, ok := errDetail["message"].(string); ok && msg != "" {
+								errMsg = "[Provider Error] " + msg
+							}
+						} else if msg, ok := errObj["message"].(string); ok && msg != "" {
+							errMsg = "[Provider Error] " + msg
+						}
+					}
+					executionLogs = append(executionLogs, fmt.Sprintf("[HTTP %d]: %s", resp2.StatusCode, string(bodyBytes)))
+					a.logAnalytics("agent", agent.ID, 0, false)
+					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]interface{}{"reply": errMsg, "logs": executionLogs})
+					return
+				}
+
 				var result2 map[string]interface{}
-				json.Unmarshal(bodyBytes, &result2)
+				if err := json.Unmarshal(bodyBytes, &result2); err != nil {
+					executionLogs = append(executionLogs, "[Parse Error]: Provider returned non-JSON body.")
+					a.logAnalytics("agent", agent.ID, 0, false)
+					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[SYSTEM] Provider returned an invalid (non-JSON) response.", "logs": executionLogs})
+					return
+				}
 
 				if choices, ok := result2["choices"].([]interface{}); ok && len(choices) > 0 {
 					if choice, ok := choices[0].(map[string]interface{}); ok {
 						if msg, ok := choice["message"].(map[string]interface{}); ok {
 							replyContent, _ = msg["content"].(string)
+							// content can be null for tool-call-only responses; fall through to empty check.
 						}
 					}
 				} else if message, ok := result2["message"].(map[string]interface{}); ok {
+					// Ollama non-streaming wraps the reply in "message".
 					replyContent, _ = message["content"].(string)
 				} else if contentArr, ok := result2["content"].([]interface{}); ok && len(contentArr) > 0 {
+					// Claude returns an array of content blocks.
 					var combinedText []string
 					for _, b := range contentArr {
 						if block, ok := b.(map[string]interface{}); ok {
@@ -2022,11 +2116,21 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if replyContent == "" {
-					executionLogs = append(executionLogs, "[API Refusal]: "+string(bodyBytes))
+					// Try to surface an inline error field even on a 200 response (some providers do this).
+					var errMsg string
+					if errDetail, ok := result2["error"].(map[string]interface{}); ok {
+						errMsg, _ = errDetail["message"].(string)
+					}
+					if errMsg == "" {
+						errMsg = "[SYSTEM] Provider returned an empty response. Check your model name and API key."
+					} else {
+						errMsg = "[Provider Error] " + errMsg
+					}
+					executionLogs = append(executionLogs, "[Empty Response]: "+string(bodyBytes))
 					a.logAnalytics("agent", agent.ID, 0, false)
 					a.logAnalytics("provider", agent.ProviderID, 0, false)
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[Error] API Provider returned no content.", "logs": executionLogs})
+					json.NewEncoder(w).Encode(map[string]interface{}{"reply": errMsg, "logs": executionLogs})
 					return
 				}
 
