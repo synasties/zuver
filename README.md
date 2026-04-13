@@ -37,6 +37,8 @@
 
 * 📱 **Choose Your Favorite Client.** Use our open-source Agent clients, or interact with your Agent directly via Web GUI or Telegram Bot.
 
+* ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
+
 * 🛠️ **Development Made Simple.** Comes with comprehensive API and SDK documentation for you to effortlessly add brand new capabilities and sensory data sources to your Agent.
 
 ## 🚀 Quick Start
