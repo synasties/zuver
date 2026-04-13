@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -167,6 +168,10 @@ type DBTask struct {
 }
 
 // Thread-safe channels and mutexes for resolving concurrent SQLite locks and requests.
+// contextKeyAPIKeyPerms is the context key under which authMiddleware stores the
+// raw permissions JSON string for an authenticated external API key request.
+type contextKeyAPIKeyPerms struct{}
+
 var (
 	dbWriteQueue  = make(chan DBTask, 10000)
 	adminToken    string
@@ -290,6 +295,11 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Attach the raw permissions JSON to the context so downstream handlers
+		// (e.g. handleChat) can enforce per-resource checks after parsing the body.
+		ctx := context.WithValue(r.Context(), contextKeyAPIKeyPerms{}, permJSON)
+		r = r.WithContext(ctx)
+
 		// Determine required scope for this endpoint.
 		resource, itemID, action := permissionScopeForPath(r.Method, r.URL.Path)
 
@@ -346,12 +356,22 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 							allowed = true
 						}
 					}
-					// For list-level operations (itemID == ""), wildcard access is enough.
 					// For specific item operations, also check the exact item entry.
 					if !allowed && itemID != "" && itemID != "*" {
 						if itemRaw, hasItem := v[itemID]; hasItem {
 							if im, ok2 := itemRaw.(map[string]interface{}); ok2 && checkActionMap(im) {
 								allowed = true
+							}
+						}
+					}
+					// itemID == "*" means the body carries the real agent ID (e.g. /api/v1/chat).
+					// The middleware can't know the agent ID yet — pass through if *any*
+					// per-agent entry grants the action. handleChat enforces the specific check.
+					if !allowed && itemID == "*" {
+						for _, entryRaw := range v {
+							if em, ok2 := entryRaw.(map[string]interface{}); ok2 && checkActionMap(em) {
+								allowed = true
+								break
 							}
 						}
 					}
@@ -842,7 +862,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.5",
+			"version":     "v1.1.6",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1498,6 +1518,39 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[SYSTEM] Failed to find the selected Agent.", "logs": []string{}})
 		return
+	}
+
+	// Per-agent execute permission check for external API key requests.
+	// The middleware already validated the key exists and has broad agents/execute scope;
+	// here we enforce the specific agent ID against the key's permissions document.
+	if permJSON, ok := r.Context().Value(contextKeyAPIKeyPerms{}).(string); ok && permJSON != "" {
+		var perms map[string]interface{}
+		agentAllowed := false
+		if json.Unmarshal([]byte(permJSON), &perms) == nil {
+			if agentsVal, hasAgents := perms["agents"]; hasAgents {
+				if agentsMap, ok2 := agentsVal.(map[string]interface{}); ok2 {
+					// Allow if wildcard "*" has execute:true.
+					if wc, hasWC := agentsMap["*"].(map[string]interface{}); hasWC {
+						if b, _ := wc["execute"].(bool); b {
+							agentAllowed = true
+						}
+					}
+					// Allow if the specific agent ID has execute:true.
+					if !agentAllowed {
+						if entry, hasEntry := agentsMap[agent.ID].(map[string]interface{}); hasEntry {
+							if b, _ := entry["execute"].(bool); b {
+								agentAllowed = true
+							}
+						}
+					}
+				}
+			}
+		}
+		if !agentAllowed {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Forbidden: API key does not have execute permission for this agent"}`, http.StatusForbidden)
+			return
+		}
 	}
 
 	// Determine whether streaming is active for this request.
