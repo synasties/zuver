@@ -13,6 +13,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -210,6 +211,10 @@ func permissionScopeForPath(method, path string) (resource string, action string
 
 	switch seg {
 	case "agents":
+		// agents/{id}/run is an execute action.
+		if len(parts) >= 3 && parts[2] == "run" {
+			return "agents", "execute"
+		}
 		return "agents", toAction(method)
 	case "chat":
 		// Chat invocation is a special "execute" action on agents.
@@ -675,6 +680,61 @@ func main() {
 	mux.HandleFunc("POST /api/v1/agents", app.handleCreateAgent)
 	mux.HandleFunc("PUT /api/v1/agents/{id}", app.handleUpdateAgent)
 	mux.HandleFunc("DELETE /api/v1/agents/{id}", app.handleDeleteAgent)
+
+	// ------------------------------------------------------------------
+	// POST /api/v1/agents/{id}/run — standalone execution endpoint.
+	// Accepts {"input":"..."} (or "message"), runs the agent pipeline
+	// synchronously without streaming, returns {"reply":"...","logs":[]}.
+	// Requires agents/execute scope for API key callers.
+	// ------------------------------------------------------------------
+	mux.HandleFunc("POST /api/v1/agents/{id}/run", func(w http.ResponseWriter, r *http.Request) {
+		agentID := r.PathValue("id")
+		if agentID == "" {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"agent id is required"}`, http.StatusBadRequest)
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, 32<<20)
+		var req struct {
+			Input   string `json:"input"`   // primary field
+			Message string `json:"message"` // alias for compatibility
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+		// Support "message" as an alias for "input".
+		if req.Input == "" {
+			req.Input = req.Message
+		}
+		if strings.TrimSpace(req.Input) == "" {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"'input' field is required and must not be empty"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Build a synthetic /api/v1/chat body and re-use handleChat via an
+		// in-process ResponseRecorder so we get the full pipeline for free
+		// (skill execution, RAG, MCP, privacy filters, caching, analytics).
+		chatBody, _ := json.Marshal(map[string]interface{}{
+			"agent_id": agentID,
+			"message":  req.Input,
+			"stream":   false, // force non-streaming for REST response
+		})
+		synthetic, _ := http.NewRequest("POST", "/api/v1/chat", bytes.NewReader(chatBody))
+		synthetic.Header.Set("Content-Type", "application/json")
+		// Copy Authorization header so any downstream auth checks pass.
+		synthetic.Header.Set("Authorization", r.Header.Get("Authorization"))
+
+		rec := &responseRecorder{header: make(http.Header), code: http.StatusOK}
+		app.handleChat(rec, synthetic)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(rec.code)
+		w.Write(rec.body)
+	})
 	mux.HandleFunc("GET /api/v1/projects", app.handleGetProjects)
 	mux.HandleFunc("POST /api/v1/projects", app.handleCreateProject)
 	mux.HandleFunc("PUT /api/v1/projects/{id}", app.handleUpdateProject)
@@ -742,7 +802,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.1",
+			"version":     "v1.1.2",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -861,6 +921,21 @@ func main() {
 			return
 		}
 
+		// SSRF guard: configURL must be a valid https URL pointing to a public host.
+		parsedCfgURL, urlErr := url.ParseRequestURI(configURL)
+		if urlErr != nil || parsedCfgURL.Scheme != "https" {
+			http.Error(w, "configURL must be a valid https:// URL.", http.StatusBadRequest)
+			return
+		}
+		// Block requests to private/loopback ranges.
+		hostLower := strings.ToLower(parsedCfgURL.Hostname())
+		for _, blocked := range []string{"localhost", "127.", "10.", "192.168.", "172.16.", "::1", "0.0.0.0", "169.254."} {
+			if strings.HasPrefix(hostLower, blocked) || hostLower == blocked {
+				http.Error(w, "configURL must point to a public host.", http.StatusForbidden)
+				return
+			}
+		}
+
 		// Fetch the remote config JSON (timeout 10 s).
 		client := &http.Client{Timeout: 10 * time.Second}
 		resp, err := client.Get(configURL)
@@ -871,12 +946,19 @@ func main() {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<10)) // 512 KB max
 
-		// Validate it is parseable JSON and extract title/description for preview.
+		// Validate it is parseable JSON.
 		var preview map[string]interface{}
 		if err := json.Unmarshal(body, &preview); err != nil {
 			http.Error(w, "Remote URL did not return valid JSON.", http.StatusBadRequest)
 			return
 		}
+
+		// Validate structure and sanitize the remote payload before displaying or importing.
+		if err := validateImportPayload(itemType, preview); err != nil {
+			http.Error(w, "Remote config failed validation: "+err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+
 		title, _ := preview["name"].(string)
 		desc, _ := preview["description"].(string)
 		if title == "" {
@@ -1017,6 +1099,9 @@ async function doImport(e) {
 	// Body: {"type":"skill"|"agent", "data":{...config object...}}
 	// ------------------------------------------------------------------
 	mux.HandleFunc("POST /api/v1/import", func(w http.ResponseWriter, r *http.Request) {
+		// Enforce body size limit — 256 KB is more than enough for a config object.
+		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
+
 		var req struct {
 			Type string                 `json:"type"`
 			Data map[string]interface{} `json:"data"`
@@ -1025,6 +1110,14 @@ async function doImport(e) {
 			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
 			return
 		}
+
+		// Validate structure and sanitize before any DB write.
+		if err := validateImportPayload(req.Type, req.Data); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error":"validation failed: `+err.Error()+`"}`, http.StatusUnprocessableEntity)
+			return
+		}
+
 		str := func(key string) string {
 			v, _ := req.Data[key].(string)
 			return v
@@ -1147,6 +1240,117 @@ async function doImport(e) {
 	http.ListenAndServe(":"+port, loggingMiddleware(app.authMiddleware(mux)))
 }
 
+// --------------------------------------------------------------------------
+// validateImportPayload enforces strict schema checks on agent/skill JSON
+// before it is committed to the database, guarding against injection,
+// oversized blobs, and structurally invalid configs.
+// --------------------------------------------------------------------------
+
+// allowedSkillTypes is the closed set of values the "type" field may hold.
+var allowedSkillTypes = map[string]bool{
+	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true,
+}
+
+// dangerousPatterns lists substrings that must not appear inside any string
+// field — they indicate XSS / script injection attempts.
+var dangerousPatterns = []string{
+	"<script", "</script", "javascript:", "data:text/html", "onerror=", "onload=",
+	"eval(", "document.cookie", "window.location", "__proto__", "constructor[",
+}
+
+// validateImportPayload returns a non-nil error if the payload is unsafe or malformed.
+func validateImportPayload(itemType string, data map[string]interface{}) error {
+	// Total encoded size guard (independent of the earlier 512 KB HTTP body limit).
+	if encoded, _ := json.Marshal(data); len(encoded) > 256<<10 {
+		return fmt.Errorf("payload exceeds 256 KB limit")
+	}
+
+	// Helper: extract a string field and enforce a max byte length.
+	str := func(key string, maxLen int) (string, error) {
+		v, _ := data[key].(string)
+		if len(v) > maxLen {
+			return "", fmt.Errorf("field '%s' exceeds maximum length of %d characters", key, maxLen)
+		}
+		return v, nil
+	}
+
+	// Scan every string value in the top-level map for injection patterns.
+	for k, raw := range data {
+		s, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		sLower := strings.ToLower(s)
+		for _, pat := range dangerousPatterns {
+			if strings.Contains(sLower, pat) {
+				return fmt.Errorf("field '%s' contains disallowed pattern: %s", k, pat)
+			}
+		}
+	}
+
+	// Require a non-empty name.
+	name, err := str("name", 128)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("field 'name' is required")
+	}
+
+	switch itemType {
+	case "skill":
+		// Validate skill-specific fields.
+		skillType, _ := data["type"].(string)
+		if skillType != "" && !allowedSkillTypes[skillType] {
+			return fmt.Errorf("skill type '%s' is not allowed; must be one of: API, Go, Bash, Python, Text, Prompt", skillType)
+		}
+		if _, err := str("instruction", 32768); err != nil {
+			return err
+		}
+		if _, err := str("content", 65536); err != nil {
+			return err
+		}
+		// Validate api_url if present.
+		if rawURL, _ := data["api_url"].(string); rawURL != "" {
+			u, err := url.ParseRequestURI(rawURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf("field 'api_url' must be a valid http/https URL")
+			}
+		}
+		// api_method must be one of the standard HTTP verbs if set.
+		if method, _ := data["api_method"].(string); method != "" {
+			allowed := map[string]bool{"GET": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true}
+			if !allowed[strings.ToUpper(method)] {
+				return fmt.Errorf("field 'api_method' must be a valid HTTP method")
+			}
+		}
+
+	case "agent":
+		if _, err := str("system_prompt", 65536); err != nil {
+			return err
+		}
+		if _, err := str("user_prompt_prefix", 4096); err != nil {
+			return err
+		}
+		if _, err := str("model", 128); err != nil {
+			return err
+		}
+		// Temperature must be 0–2 if present.
+		if t, ok := data["temperature"].(float64); ok && (t < 0 || t > 2) {
+			return fmt.Errorf("field 'temperature' must be between 0 and 2")
+		}
+		// max_tokens must be positive if present.
+		if mt, ok := data["max_tokens"].(float64); ok && mt <= 0 {
+			return fmt.Errorf("field 'max_tokens' must be a positive integer")
+		}
+
+	default:
+		return fmt.Errorf("unsupported type '%s'; must be 'skill' or 'agent'", itemType)
+	}
+
+	return nil
+}
+
 // floatOr safely casts an interface{} to float64, falling back to def.
 func floatOr(v interface{}, def float64) float64 {
 	switch n := v.(type) {
@@ -1175,6 +1379,21 @@ func boolOr(v interface{}, def bool) bool {
 		return b
 	}
 	return def
+}
+
+// responseRecorder is a minimal http.ResponseWriter that buffers the response
+// body and status code so handleChat can be called in-process.
+type responseRecorder struct {
+	header http.Header
+	code   int
+	body   []byte
+}
+
+func (rr *responseRecorder) Header() http.Header  { return rr.header }
+func (rr *responseRecorder) WriteHeader(code int) { rr.code = code }
+func (rr *responseRecorder) Write(b []byte) (int, error) {
+	rr.body = append(rr.body, b...)
+	return len(b), nil
 }
 
 // --------------------------------------------------------------------------
