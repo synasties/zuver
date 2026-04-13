@@ -7,9 +7,9 @@
 
 *Empower next gen of Agentic/Companion AI via an unified, ease of use framework.*
 
-**[Website](https://zuver.oi.ms) • [Documentations](https://github.com/synasties/zuver/wiki) • [Market](https://matex.oi.ms) • [Telegram Community](https://t.me/zuver_guthib)**
+**[Website](https://zuver.cc) • [Documentations](https://github.com/synasties/zuver/wiki) • [Market](https://matex.oi.ms) • [Telegram Community](https://t.me/zuver_guthib)**
 
-[![License: AI-NCRL v1.1](https://img.shields.io/badge/License-AI--NCRL_v1.1-blue.svg)](https://zuver.oi.ms/license)
+[![License: AI-NCRL v1.1](https://img.shields.io/badge/License-AI--NCRL_v1.1-blue.svg)](https://zuver.cc/license)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/synasties/zuver)](https://golang.org/)
 [![GitHub Release](https://img.shields.io/github/v/release/synasties/zuver)](https://github.com/synasties/zuver/releases)
 [![GitHub stars](https://img.shields.io/github/stars/synasties/zuver?style=social)](https://github.com/synasties/zuver/stargazers)
@@ -90,5 +90,5 @@ The **Zuver** name, logos (including the visual mark featured above), and relate
 Disclaimer: All trademarks, logos and brand names mentioned in this project are the property of their respective owners. All company, product and service names used in this repository are for identification purposes only. Use of these names, trademarks and brands does not imply endorsement, sponsorship, or affiliation.
 
 <div align="center">
-<em>Built with ❤️ by **[Synasties](https://oi.ms) and our [Global Contributors](https://zuver.oi.ms/contributors).**</em>
+<em>Built with ❤️ by **[Synasties](https://oi.ms) and our [Global Contributors](https://zuver.cc/contributors).**</em>
 </div>
