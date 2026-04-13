@@ -4,7 +4,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 	<title>Zuver Framework Console</title>
-	<link rel="icon" type="image/x-icon" href="https://zuver.cc/6x6logo.png">
+	<link rel="icon" type="image/x-icon" href="https://zuver.oi.ms/6x6logo.png">
 	<!-- UI Framework & Utilities -->
 	<script src="https://cdn.tailwindcss.com"></script>
 	<script>
@@ -425,7 +425,7 @@
 		<div class="flex items-center h-16 px-4 border-b border-gray-200 dark:border-gray-800 shrink-0 justify-between md:justify-start">
 			<div class="flex items-center">
 				<div class="bg-black dark:bg-white text-white dark:text-black p-1.5 rounded-lg shrink-0">
-					<img src="https://zuver.cc/6x6logo.png" alt="Zuver OS Logo" class="w-5 h-5 object-cover">
+					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver OS Logo" class="w-5 h-5 object-cover">
 				</div>
 				<span class="ml-3 font-bold text-lg overflow-hidden whitespace-nowrap nav-text">Zuver</span>
 				<span id="sidebar-version" class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-gray-200 dark:bg-gray-800 text-gray-500 hidden md:block group-hover:block transition-all">v-.--</span>
@@ -869,7 +869,7 @@
 					<div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
 						<div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-lg border border-gray-200 dark:border-gray-800 text-center space-y-4 shadow-sm">
 							<div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-black dark:bg-white text-white dark:text-black mb-2 shadow-lg">
-								<img src="https://zuver.cc/6x6logo.png" alt="Zuver OS Logo" class="w-6 h-6 object-cover">
+								<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver OS Logo" class="w-6 h-6 object-cover">
 							</div>
 							<div>
 								<h3 id="about-name" class="font-black text-lg">Zuver</h3>
@@ -879,8 +879,7 @@
 							<div class="flex items-center justify-center gap-3 pt-2">
 								<a href="https://github.com/synasties/zuver" target="_blank" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4"></i>
 									GitHub</a>
-								<a href="https://wiki.zuver.cc" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> Docs</a>
-								<a href="https://zuver.cc" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="globe" class="w-4 h-4"></i> Website</a>
+								<a href="https://wiki.zuver.oi.ms" class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> Docs</a>
 							</div>
 						</div>
 						<div class="mt-6 p-4 border border-red-200 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/10 rounded-lg flex items-center justify-between">
@@ -897,38 +896,92 @@
 	</main>
 	<!-- Modals -->
 	<div id="modal-apikey" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] p-6 rounded-md w-full max-w-2xl space-y-4">
-			<h3 class="font-bold flex items-center gap-2"><i data-lucide="key" class="text-indigo-500 w-5 h-5"></i> API Key Permissions</h3>
-			<input type="hidden" id="apikey-id-input">
-			<div class="grid grid-cols-2 gap-2">
-				<input type="text" id="apikey-name-input" placeholder="App Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
-				<input type="text" id="apikey-desc-input" placeholder="Description" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-2xl shadow-xl flex flex-col" style="max-height:90vh">
+			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 shrink-0">
+				<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="key" class="text-indigo-500 w-5 h-5"></i> API Key Permissions</h3>
+				<p class="text-xs text-gray-500 mt-1">Control access to individual agents, applications, and shared resources.</p>
 			</div>
-			<!-- Action-level permission matrix: each resource row has read/write/delete/execute toggles -->
-			<div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-				<table class="w-full text-xs">
-					<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
-						<tr>
-							<th class="text-left px-3 py-2 font-bold text-gray-500 uppercase tracking-wider">Resource</th>
-							<th class="px-3 py-2 text-center font-bold text-green-600 uppercase tracking-wider">Read</th>
-							<th class="px-3 py-2 text-center font-bold text-blue-600 uppercase tracking-wider">Write</th>
-							<th class="px-3 py-2 text-center font-bold text-red-500 uppercase tracking-wider">Delete</th>
-							<th class="px-3 py-2 text-center font-bold text-orange-500 uppercase tracking-wider">Execute</th>
-						</tr>
-					</thead>
-					<tbody class="divide-y dark:divide-gray-800" id="apikey-permission-rows">
-						<!-- Populated by JS -->
-					</tbody>
-				</table>
+			<div class="px-6 py-4 shrink-0">
+				<input type="hidden" id="apikey-id-input">
+				<div class="grid grid-cols-2 gap-2">
+					<input type="text" id="apikey-name-input" placeholder="App Name" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm">
+					<input type="text" id="apikey-desc-input" placeholder="Description (optional)" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm">
+				</div>
 			</div>
-			<!-- Preferences section: per-database read/write -->
-			<div id="apikey-preferences-section" class="space-y-2">
-				<p class="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Preferences Databases (per-DB access)</p>
-				<div id="apikey-preferences-list" class="space-y-1 max-h-36 overflow-y-auto"></div>
+			<div class="flex-1 overflow-y-auto px-6 pb-4 space-y-4">
+
+				<!-- Per-Agent permissions -->
+				<div class="space-y-1">
+					<div class="flex items-center justify-between">
+						<p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Agents</p>
+						<button type="button" onclick="toggleAkWildcard('agents')" class="text-[10px] text-indigo-500 hover:underline font-semibold">Toggle All</button>
+					</div>
+					<div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+						<table class="w-full text-xs">
+							<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+								<tr>
+									<th class="text-left px-3 py-2 font-semibold text-gray-500">Agent</th>
+									<th class="px-2 py-2 text-center font-semibold text-green-600">Read</th>
+									<th class="px-2 py-2 text-center font-semibold text-blue-600">Write</th>
+									<th class="px-2 py-2 text-center font-semibold text-red-500">Delete</th>
+									<th class="px-2 py-2 text-center font-semibold text-orange-500">Run</th>
+								</tr>
+							</thead>
+							<tbody id="ak-agents-rows" class="divide-y dark:divide-gray-800"><!-- JS --></tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- Per-Application permissions -->
+				<div class="space-y-1">
+					<div class="flex items-center justify-between">
+						<p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Applications</p>
+						<button type="button" onclick="toggleAkWildcard('projects')" class="text-[10px] text-indigo-500 hover:underline font-semibold">Toggle All</button>
+					</div>
+					<div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+						<table class="w-full text-xs">
+							<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+								<tr>
+									<th class="text-left px-3 py-2 font-semibold text-gray-500">Application</th>
+									<th class="px-2 py-2 text-center font-semibold text-green-600">Read</th>
+									<th class="px-2 py-2 text-center font-semibold text-blue-600">Write</th>
+									<th class="px-2 py-2 text-center font-semibold text-red-500">Delete</th>
+									<th class="px-2 py-2 text-center font-semibold text-orange-500">Run</th>
+								</tr>
+							</thead>
+							<tbody id="ak-projects-rows" class="divide-y dark:divide-gray-800"><!-- JS --></tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- Flat resource permissions -->
+				<div class="space-y-1">
+					<p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Shared Resources</p>
+					<div class="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+						<table class="w-full text-xs">
+							<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+								<tr>
+									<th class="text-left px-3 py-2 font-semibold text-gray-500">Resource</th>
+									<th class="px-2 py-2 text-center font-semibold text-green-600">Read</th>
+									<th class="px-2 py-2 text-center font-semibold text-blue-600">Write</th>
+									<th class="px-2 py-2 text-center font-semibold text-red-500">Delete</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y dark:divide-gray-800" id="ak-flat-rows"><!-- JS --></tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- Preferences per-DB -->
+				<div class="space-y-1">
+					<p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Preference Databases</p>
+					<div id="apikey-preferences-list" class="space-y-1"></div>
+				</div>
+
 			</div>
-			<div class="flex justify-end gap-2 pt-2">
-				<button onclick="closeModal('modal-apikey')" class="p-2 border dark:border-gray-700 rounded text-sm">Cancel</button>
-				<button onclick="submitAPIKey()" class="p-2 px-4 bg-indigo-600 text-white rounded text-sm font-bold shadow-sm">Save Key</button>
+			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2 shrink-0">
+				<button onclick="closeModal('modal-apikey')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitAPIKey()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Key</button>
 			</div>
 		</div>
 	</div>
@@ -1065,7 +1118,7 @@
 		<div class="w-full max-w-sm space-y-8">
 			<div class="text-center space-y-3">
 				<div class="inline-flex items-center justify-center w-14 h-14 bg-black dark:bg-white rounded-xl shadow-lg mb-2">
-					<img src="https://zuver.cc/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
+					<img src="https://zuver.oi.ms/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
 				</div>
 				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
 				<p class="text-sm text-gray-500" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this as the permanent Admin password.</p>
@@ -2977,40 +3030,65 @@
 		
 		/* --- Fine-Grained API Key Management --- */
 		window.deleteAPIKey = async (id) => { if(await showConfirm('Revoke this API Key?', 'Revoke')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); showToast('API key revoked.', 'success'); } };
-		
-		// Resources that get action-level permission rows in the API key modal.
-		const AK_RESOURCES = [
-		    { key: 'agents',   label: 'Agents',       actions: ['read','write','delete','execute'] },
-		    { key: 'skills',   label: 'Skills',        actions: ['read','write','delete'] },
-		    { key: 'sources',  label: 'Sources',       actions: ['read','write','delete'] },
-		    { key: 'outputs',  label: 'Outputs',       actions: ['read','write','delete'] },
-		    { key: 'mcps',     label: 'MCP Servers',   actions: ['read','write','delete'] },
-		    { key: 'projects', label: 'Applications',  actions: ['read','write','delete','execute'] },
-		    { key: 'rags',     label: 'Vector RAGs',   actions: ['read','write','delete'] },
+
+		// Flat shared resource rows (no per-item granularity needed).
+		const AK_FLAT_RESOURCES = [
+		    { key: 'skills',  label: 'Skills' },
+		    { key: 'sources', label: 'Sources' },
+		    { key: 'outputs', label: 'Outputs' },
+		    { key: 'mcps',    label: 'MCP Servers' },
+		    { key: 'rags',    label: 'Vector RAGs' },
 		];
 
-		function renderApikeyMatrix(existingPerms) {
-		    const tbody = document.getElementById('apikey-permission-rows');
-		    tbody.innerHTML = AK_RESOURCES.map(res => {
-		        const p = existingPerms && existingPerms[res.key] ? existingPerms[res.key] : {};
-		        const allActions = ['read','write','delete','execute'];
-		        const cells = allActions.map(action => {
-		            const has = res.actions.includes(action);
-		            if (!has) return `<td class="px-3 py-2 text-center"><span class="text-gray-200 dark:text-gray-800">—</span></td>`;
-		            const checked = p[action] === true ? 'checked' : '';
-		            const colors = {read:'accent-green-500',write:'accent-blue-500',delete:'accent-red-500',execute:'accent-orange-500'};
-		            return `<td class="px-3 py-2 text-center"><input type="checkbox" data-res="${res.key}" data-action="${action}" class="ak-action-cb ${colors[action]}" ${checked}></td>`;
+		const AK_ACTION_COLORS = { read: 'accent-green-500', write: 'accent-blue-500', delete: 'accent-red-500', execute: 'accent-orange-500' };
+
+		// Render a per-item table (agents or projects).
+		function renderAkPerItemRows(tbodyId, items, resource, existingPerms) {
+		    const perms = (existingPerms && existingPerms[resource]) ? existingPerms[resource] : {};
+		    const actions = ['read','write','delete','execute'];
+		    const tbody = document.getElementById(tbodyId);
+		    if (!items || items.length === 0) {
+		        tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-xs">No ${resource} configured.</td></tr>`;
+		        return;
+		    }
+		    const rows = items.map(item => {
+		        const itemPerms = perms[item.id] || {};
+		        const cells = actions.map(action => {
+		            const checked = itemPerms[action] === true ? 'checked' : '';
+		            return `<td class="px-2 py-2 text-center"><input type="checkbox" data-res="${resource}" data-id="${item.id}" data-action="${action}" class="ak-item-cb ${AK_ACTION_COLORS[action]}" ${checked}></td>`;
 		        }).join('');
 		        return `<tr class="hover:bg-gray-50 dark:hover:bg-[#1c1c1c] transition-colors">
-		            <td class="px-3 py-2.5 font-semibold text-gray-700 dark:text-gray-300">${res.label}</td>${cells}
+		            <td class="px-3 py-2">
+		                <span class="font-semibold text-gray-700 dark:text-gray-300 text-xs">${item.name}</span>
+		                <span class="text-[10px] text-gray-400 font-mono ml-1">${item.id}</span>
+		            </td>${cells}
+		        </tr>`;
+		    });
+		    tbody.innerHTML = rows.join('');
+		}
+
+		// Render flat shared resource rows.
+		function renderAkFlatRows(existingPerms) {
+		    const tbody = document.getElementById('ak-flat-rows');
+		    tbody.innerHTML = AK_FLAT_RESOURCES.map(res => {
+		        const p = (existingPerms && existingPerms[res.key]) ? existingPerms[res.key] : {};
+		        const cells = ['read','write','delete'].map(action => {
+		            const checked = p[action] === true ? 'checked' : '';
+		            return `<td class="px-2 py-2 text-center"><input type="checkbox" data-res="${res.key}" data-action="${action}" class="ak-action-cb ${AK_ACTION_COLORS[action]}" ${checked}></td>`;
+		        }).join('');
+		        return `<tr class="hover:bg-gray-50 dark:hover:bg-[#1c1c1c] transition-colors">
+		            <td class="px-3 py-2.5 font-semibold text-gray-700 dark:text-gray-300 text-xs">${res.label}</td>${cells}
 		        </tr>`;
 		    }).join('');
+		}
 
-		    // Preferences per-DB read/write section
+		// Render preference DB rows.
+		function renderAkPrefRows(existingPerms) {
 		    safeHtml('apikey-preferences-list', dataStore.preferences.length ? dataStore.preferences.map(r => {
-		        const pref = existingPerms && existingPerms.preferences && existingPerms.preferences[r.id] ? existingPerms.preferences[r.id] : {};
+		        const pref = (existingPerms && existingPerms.preferences && existingPerms.preferences[r.id]) ? existingPerms.preferences[r.id] : {};
 		        return `<div class="flex items-center justify-between text-xs p-2 border dark:border-gray-800 rounded-lg bg-gray-50 dark:bg-black">
 		            <span class="font-semibold text-gray-700 dark:text-gray-300">${r.name}</span>
+		            <span class="text-[10px] font-mono text-gray-400">${r.id}</span>
 		            <div class="flex gap-4">
 		                <label class="flex items-center gap-1 text-green-600"><input type="checkbox" data-preferences="${r.id}" value="read" class="ak-preferences-cb accent-green-500" ${pref.read?'checked':''}> Read</label>
 		                <label class="flex items-center gap-1 text-blue-500"><input type="checkbox" data-preferences="${r.id}" value="write" class="ak-preferences-cb accent-blue-500" ${pref.write?'checked':''}> Write</label>
@@ -3018,6 +3096,21 @@
 		        </div>`;
 		    }).join('') : '<p class="text-xs text-gray-400 italic">No Preferences databases configured.</p>');
 		}
+
+		function renderApikeyMatrix(existingPerms) {
+		    renderAkPerItemRows('ak-agents-rows',   dataStore.agents,   'agents',   existingPerms);
+		    renderAkPerItemRows('ak-projects-rows',  dataStore.projects, 'projects', existingPerms);
+		    renderAkFlatRows(existingPerms);
+		    renderAkPrefRows(existingPerms);
+		    lucide.createIcons();
+		}
+
+		// Toggle all checkboxes for a per-item resource (wildcard convenience).
+		window.toggleAkWildcard = (resource) => {
+		    const cbs = document.querySelectorAll(`.ak-item-cb[data-res="${resource}"]`);
+		    const allChecked = [...cbs].every(cb => cb.checked);
+		    cbs.forEach(cb => cb.checked = !allChecked);
+		};
 
 		window.openModal = (id) => { 
 		    document.getElementById(id).classList.remove('hidden'); 
@@ -3051,22 +3144,35 @@
 
 		window.submitAPIKey = async () => {
 		    const id = document.getElementById('apikey-id-input').value;
-		    // Build action-level permission map from matrix checkboxes
 		    const perms = { preferences: {} };
+
+		    // Per-item checkboxes (agents + projects) — build nested {resource: {id: {action: true}}}
+		    document.querySelectorAll('.ak-item-cb:checked').forEach(cb => {
+		        const res    = cb.getAttribute('data-res');
+		        const itemId = cb.getAttribute('data-id');
+		        const action = cb.getAttribute('data-action');
+		        if (!perms[res]) perms[res] = {};
+		        if (!perms[res][itemId]) perms[res][itemId] = {};
+		        perms[res][itemId][action] = true;
+		    });
+
+		    // Flat shared-resource checkboxes (skills, sources, outputs, mcps, rags)
 		    document.querySelectorAll('.ak-action-cb:checked').forEach(cb => {
-		        const res = cb.getAttribute('data-res');
+		        const res    = cb.getAttribute('data-res');
 		        const action = cb.getAttribute('data-action');
 		        if (!perms[res]) perms[res] = {};
 		        perms[res][action] = true;
 		    });
-		    // Preferences per-DB
+
+		    // Preferences per-DB checkboxes
 		    document.querySelectorAll('.ak-preferences-cb:checked').forEach(cb => {
 		        const rId = cb.getAttribute('data-preferences');
 		        if (!perms.preferences[rId]) perms.preferences[rId] = {};
 		        perms.preferences[rId][cb.value] = true;
 		    });
+
 		    await api(id ? `/apikeys/${id}` : '/apikeys', id ? 'PUT' : 'POST', {
-		        name: document.getElementById('apikey-name-input').value,
+		        name:        document.getElementById('apikey-name-input').value,
 		        description: document.getElementById('apikey-desc-input').value,
 		        permissions: JSON.stringify(perms)
 		    });

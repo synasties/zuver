@@ -183,14 +183,15 @@ func SyncDBExec(db *sql.DB, query string, args ...interface{}) (sql.Result, erro
 	return db.Exec(query, args...)
 }
 
-// permissionScopeForPath maps an HTTP route to (resource, action) used in API key JSON.
+// permissionScopeForPath maps an HTTP route to (resource, itemID, action).
 // Actions: "read" (GET), "write" (POST/PUT), "delete" (DELETE), "execute" (POST on run/chat).
-// Returns ("", "") if the route is allowed for any valid key.
-// Returns ("admin_only", "") to block all external API keys unconditionally.
-func permissionScopeForPath(method, path string) (resource string, action string) {
-	// Strip /api/v1/ prefix and take first two path segments.
+// itemID is non-empty only for routes that address a specific item (e.g. agents/{id}/run).
+// Returns ("", "", "") if the route is allowed for any valid key.
+// Returns ("admin_only", "", "") to block all external API keys unconditionally.
+func permissionScopeForPath(method, path string) (resource string, itemID string, action string) {
+	// Strip /api/v1/ prefix and split into up to 4 segments.
 	trimmed := strings.TrimPrefix(path, "/api/v1/")
-	parts := strings.SplitN(trimmed, "/", 3)
+	parts := strings.SplitN(trimmed, "/", 4)
 	seg := parts[0]
 
 	// Normalize HTTP method to semantic action for permission checks.
@@ -211,44 +212,51 @@ func permissionScopeForPath(method, path string) (resource string, action string
 
 	switch seg {
 	case "agents":
-		// agents/{id}/run is an execute action.
+		// agents/{id}/run — execute on a specific agent.
 		if len(parts) >= 3 && parts[2] == "run" {
-			return "agents", "execute"
+			return "agents", parts[1], "execute"
 		}
-		return "agents", toAction(method)
+		// agents/{id} — scoped read/write/delete on a specific agent.
+		if len(parts) >= 2 && parts[1] != "" {
+			return "agents", parts[1], toAction(method)
+		}
+		return "agents", "", toAction(method)
 	case "chat":
-		// Chat invocation is a special "execute" action on agents.
-		return "agents", "execute"
+		// Chat: agent_id comes from the request body; checked post-parse in handleChat.
+		// We return "*" as a sentinel — middleware will pass, handleChat enforces per-agent.
+		return "agents", "*", "execute"
 	case "history":
-		return "agents", "read"
+		return "agents", "", "read"
 	case "skills":
-		return "skills", toAction(method)
+		return "skills", "", toAction(method)
 	case "sources":
-		// sources/update/{name} is a write-like push update.
 		if len(parts) >= 2 && parts[1] == "update" {
-			return "sources", "write"
+			return "sources", "", "write"
 		}
-		return "sources", toAction(method)
+		return "sources", "", toAction(method)
 	case "outputs":
-		return "outputs", toAction(method)
+		return "outputs", "", toAction(method)
 	case "mcp":
-		return "mcps", toAction(method)
+		return "mcps", "", toAction(method)
 	case "projects":
-		// projects/{id}/run is an execute action.
+		// projects/{id}/run — execute on a specific application.
 		if len(parts) >= 3 && parts[2] == "run" {
-			return "projects", "execute"
+			return "projects", parts[1], "execute"
 		}
-		return "projects", toAction(method)
+		if len(parts) >= 2 && parts[1] != "" {
+			return "projects", parts[1], toAction(method)
+		}
+		return "projects", "", toAction(method)
 	case "preferences":
-		return "preferences", toAction(method)
+		return "preferences", "", toAction(method)
 	case "rags":
-		return "rags", toAction(method)
+		return "rags", "", toAction(method)
 	case "providers", "apikeys", "settings", "wipe-database", "import":
 		// Admin-only: never accessible via external API keys.
-		return "admin_only", ""
+		return "admin_only", "", ""
 	default:
 		// stats, sysinfo, analytics, upload — permitted for any valid key.
-		return "", ""
+		return "", "", ""
 	}
 }
 
@@ -283,7 +291,7 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Determine required scope for this endpoint.
-		resource, action := permissionScopeForPath(r.Method, r.URL.Path)
+		resource, itemID, action := permissionScopeForPath(r.Method, r.URL.Path)
 
 		// Admin-only routes are never accessible via API keys.
 		if resource == "admin_only" {
@@ -298,7 +306,7 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Parse permissions and enforce resource + action-level check.
+		// Parse permissions document.
 		var perms map[string]interface{}
 		if json.Unmarshal([]byte(permJSON), &perms) != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -306,36 +314,68 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// checkActionMap returns true if actionMap ({"read":true,...}) grants action.
+		checkActionMap := func(actionMap map[string]interface{}) bool {
+			if b, ok := actionMap[action].(bool); ok {
+				return b
+			}
+			return false
+		}
+
 		allowed := false
 		if val, ok := perms[resource]; ok {
 			switch v := val.(type) {
 			case map[string]interface{}:
-				if resource == "preferences" {
-					// Preferences use a nested map {pref_id: ["read","write"]}.
-					// Any entry with the matching action grants access.
-					for _, actionsRaw := range v {
-						if actions, ok2 := actionsRaw.([]interface{}); ok2 {
-							for _, a := range actions {
-								if fmt.Sprintf("%v", a) == action {
-									allowed = true
-								}
+				switch resource {
+				case "preferences":
+					// preferences: {pref_id: {"read":true,"write":true}, ...}
+					// Any matching pref entry with the right action grants access.
+					for _, entryRaw := range v {
+						if entry, ok2 := entryRaw.(map[string]interface{}); ok2 {
+							if checkActionMap(entry) {
+								allowed = true
 							}
 						}
 					}
-				} else {
-					// Generic resource action map: {"read":true,"write":true,...}
-					if boolVal, ok2 := v[action]; ok2 {
-						if b, ok3 := boolVal.(bool); ok3 {
-							allowed = b
+
+				case "agents", "projects":
+					// Per-item permissions: {"*": {"execute":true}, "agent_id": {"execute":true}}
+					// Check wildcard "*" first, then the specific itemID.
+					if wildcardRaw, hasWild := v["*"]; hasWild {
+						if wm, ok2 := wildcardRaw.(map[string]interface{}); ok2 && checkActionMap(wm) {
+							allowed = true
 						}
 					}
+					// For list-level operations (itemID == ""), wildcard access is enough.
+					// For specific item operations, also check the exact item entry.
+					if !allowed && itemID != "" && itemID != "*" {
+						if itemRaw, hasItem := v[itemID]; hasItem {
+							if im, ok2 := itemRaw.(map[string]interface{}); ok2 && checkActionMap(im) {
+								allowed = true
+							}
+						}
+					}
+					// If itemID is empty (list endpoint), wildcard already checked above.
+					// Grant access to list endpoint if *any* item-level entry has the action.
+					if !allowed && itemID == "" {
+						for _, entryRaw := range v {
+							if em, ok2 := entryRaw.(map[string]interface{}); ok2 && checkActionMap(em) {
+								allowed = true
+								break
+							}
+						}
+					}
+
+				default:
+					// Flat action map: {"read":true,"write":true,...}
+					if checkActionMap(v) {
+						allowed = true
+					}
 				}
+
 			case []interface{}:
-				// Legacy list format: non-empty list grants read; write/delete require explicit flag.
-				if action == "read" && len(v) > 0 {
-					allowed = true
-				} else if (action == "write" || action == "delete" || action == "execute") && len(v) > 0 {
-					// For legacy keys without action maps, permit write if list is non-empty.
+				// Legacy list format: presence grants access.
+				if len(v) > 0 {
 					allowed = true
 				}
 			case bool:
@@ -802,7 +842,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.2",
+			"version":     "v1.1.3",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
