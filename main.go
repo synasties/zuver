@@ -842,7 +842,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.3",
+			"version":     "v1.1.4",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -949,16 +949,24 @@ func main() {
 
 	// ------------------------------------------------------------------
 	// /api/add — public confirmation page for one-click config import.
-	// Usage: /api/add?configURL=https://...&type=skill|agent
-	// The page fetches the remote JSON, shows a preview, and requires
-	// the admin password before committing the import.
+	// Usage: /api/add?configURL=https://example.com/agent.json
+	//        Everything after "configURL=" is treated as the target URL,
+	//        so query parameters inside that URL are preserved verbatim.
+	//        The item type (agent/skill) is auto-detected from the JSON.
 	// ------------------------------------------------------------------
 	mux.HandleFunc("GET /api/add", func(w http.ResponseWriter, r *http.Request) {
-		configURL := r.URL.Query().Get("configURL")
-		itemType := r.URL.Query().Get("type")
-		if configURL == "" || (itemType != "skill" && itemType != "agent") {
-			http.Error(w, "Missing or invalid configURL / type parameter.", http.StatusBadRequest)
+		// Extract everything after "configURL=" from the raw query string so
+		// that any "?" or "&" inside the remote URL is preserved intact.
+		rawQuery := r.URL.RawQuery
+		_, after, found := strings.Cut(rawQuery, "configURL=")
+		if !found || after == "" {
+			http.Error(w, "Missing configURL parameter. Usage: /api/add?configURL=https://...", http.StatusBadRequest)
 			return
+		}
+		// URL-decode the value (browsers encode special chars when building the link).
+		configURL, decErr := url.QueryUnescape(after)
+		if decErr != nil {
+			configURL = after // fall back to raw value if decoding fails
 		}
 
 		// SSRF guard: configURL must be a valid https URL pointing to a public host.
@@ -993,6 +1001,18 @@ func main() {
 			return
 		}
 
+		// Auto-detect item type from the JSON content.
+		// Agents: have system_prompt, model, or user_prompt_prefix.
+		// Skills: have type field matching known skill types, or instruction field.
+		itemType := "agent" // default
+		if t, ok := preview["type"].(string); ok && allowedSkillTypes[t] {
+			itemType = "skill"
+		} else if _, hasInstruction := preview["instruction"]; hasInstruction {
+			if _, hasSystemPrompt := preview["system_prompt"]; !hasSystemPrompt {
+				itemType = "skill"
+			}
+		}
+
 		// Validate structure and sanitize the remote payload before displaying or importing.
 		if err := validateImportPayload(itemType, preview); err != nil {
 			http.Error(w, "Remote config failed validation: "+err.Error(), http.StatusUnprocessableEntity)
@@ -1014,7 +1034,6 @@ func main() {
 		// Inline HTML confirmation page — no external dependencies on this host.
 		escapedTitle := strings.ReplaceAll(title, `"`, `&quot;`)
 		escapedDesc := strings.ReplaceAll(desc, `"`, `&quot;`)
-		escapedType := itemType
 		escapedConfigURL := configURL
 
 		html := `<!DOCTYPE html>
@@ -1022,7 +1041,7 @@ func main() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Import ` + escapedType + ` — Zuver</title>
+<title>Import ` + itemType + ` — Zuver</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -1059,9 +1078,9 @@ func main() {
 <body>
 <div class="card">
   <div class="header">
-    <span class="badge ` + escapedType + `">
+    <span class="badge ` + itemType + `">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-      ` + escapedType + `
+      ` + itemType + `
     </span>
     <h1>` + escapedTitle + `</h1>
     <p class="desc">` + escapedDesc + `</p>
@@ -1074,17 +1093,17 @@ func main() {
       <label>Admin Password</label>
       <input type="password" id="pw" placeholder="Enter admin password to confirm" required autofocus>
       <div class="actions">
-        <button type="submit" class="btn btn-primary" id="confirm-btn">Import ` + escapedType + `</button>
+        <button type="submit" class="btn btn-primary" id="confirm-btn">Import ` + itemType + `</button>
         <button type="button" class="btn btn-danger" onclick="window.close()">Cancel</button>
       </div>
       <div id="msg" class="msg"></div>
     </form>
   </div>
-  <div class="footer">Zuver Framework &mdash; Importing will add this ` + escapedType + ` to your instance permanently.</div>
+  <div class="footer">Zuver Framework &mdash; Importing will add this ` + itemType + ` to your instance permanently.</div>
 </div>
 <script>
 const RAW_JSON = ` + "`" + safeJSONStr + "`" + `;
-const ITEM_TYPE = "` + escapedType + `";
+const ITEM_TYPE = "` + itemType + `";
 const CONFIG_URL = "` + escapedConfigURL + `";
 document.getElementById('json-preview').textContent = RAW_JSON;
 async function doImport(e) {
@@ -1117,14 +1136,14 @@ async function doImport(e) {
       const e = await importResp.json().catch(()=>({error:'Import failed'}));
       throw new Error(e.error || 'Import failed');
     }
-    msg.textContent = '` + escapedType + ` imported successfully. You can close this page.';
+    msg.textContent = '` + itemType + ` imported successfully. You can close this page.';
     msg.className = 'msg success';
     btn.textContent = 'Imported';
   } catch(err) {
     msg.textContent = err.message;
     msg.className = 'msg error';
     btn.disabled = false;
-    btn.textContent = 'Import ` + escapedType + `';
+    btn.textContent = 'Import ` + itemType + `';
   }
 }
 </script>
