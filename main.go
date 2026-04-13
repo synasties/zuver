@@ -1307,7 +1307,7 @@ async function doImport(e) {
 
 // allowedSkillTypes is the closed set of values the "type" field may hold.
 var allowedSkillTypes = map[string]bool{
-	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true,
+	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true, "MD": true,
 }
 
 // dangerousPatterns lists substrings that must not appear inside any string
