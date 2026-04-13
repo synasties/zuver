@@ -999,6 +999,7 @@
 					<option value="Go">Go Native Code</option>
 					<option value="API">API Request</option>
 					<option value="MD">Markdown Docs</option>
+					<option value="Agent">Agent Call</option>
 				</select>
 			</div>
 			<input type="text" id="skill-inst-input" placeholder="Instruction to Agent" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
@@ -1015,6 +1016,22 @@
 				</div>
 				<textarea id="skill-api-headers" rows="2" placeholder='Headers (JSON)' class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
 				<textarea id="skill-api-body" rows="3" placeholder='Body Payload (JSON or Text)' class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
+			</div>
+			<div id="skill-agent-ui" class="hidden flex-col gap-3">
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">Target Agent</label>
+					<select id="skill-agent-id" class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+						<!-- populated by toggleSkillUI -->
+					</select>
+				</div>
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">System Prompt Override <span class="font-normal text-gray-400">(leave blank to use agent default)</span></label>
+					<textarea id="skill-agent-system-prompt" rows="3" placeholder="Override the target agent's system prompt..." class="w-full border dark:border-gray-700 bg-transparent p-2 rounded font-mono text-xs"></textarea>
+				</div>
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1">User Prompt Prefix Override <span class="font-normal text-gray-400">(leave blank to use agent default)</span></label>
+					<input type="text" id="skill-agent-user-prefix" placeholder="Override the target agent's user prompt prefix..." class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm">
+				</div>
 			</div>
 			<div class="flex justify-end gap-2 pt-2 border-t dark:border-gray-800">
 				<button onclick="closeModal('modal-skill')" class="p-2 px-4 border dark:border-gray-700 rounded-lg text-sm">Cancel</button><button onclick="submitSkill()" class="p-2 px-4 bg-orange-500 text-white rounded-lg text-sm font-bold shadow-sm">Save Skill</button>
@@ -1403,17 +1420,30 @@
 		    document.querySelectorAll(`#${id} input[type="hidden"], #${id} input[type="text"], #${id} input[type="password"], #${id} textarea`).forEach(el => el.value = '');
 		}
 		
-		function toggleSkillUI() { 
-		    const t = document.getElementById('skill-type-input').value; 
-		    document.getElementById('skill-api-ui').style.display = (t==='API') ? 'flex' : 'none'; 
+		function toggleSkillUI() {
+		    const t = document.getElementById('skill-type-input').value;
+		    const isAPI   = t === 'API';
+		    const isAgent = t === 'Agent';
 		    const contentInput = document.getElementById('skill-content-input');
-		    contentInput.style.display = (t==='API') ? 'none' : 'block'; 
-		    
-		    // Dynamic UI adjustments for different skill types
+
+		    document.getElementById('skill-api-ui').style.display   = isAPI   ? 'flex'  : 'none';
+		    document.getElementById('skill-agent-ui').style.display  = isAgent ? 'flex'  : 'none';
+		    contentInput.style.display = (isAPI || isAgent) ? 'none' : 'block';
+
 		    if (t === 'MD') {
 		        contentInput.placeholder = "Markdown Content (No <placeholders> needed)";
 		    } else {
 		        contentInput.placeholder = "Code / Template. Use <placeholders> here.";
+		    }
+
+
+		    // Populate agent picker when Agent type is selected.
+		    if (isAgent) {
+		        const sel = document.getElementById('skill-agent-id');
+		        const current = sel.value;
+		        sel.innerHTML = dataStore.agents.map(a =>
+		            `<option value="${a.id}" ${a.id === current ? 'selected' : ''}>${a.name}</option>`
+		        ).join('');
 		    }
 		}
 		
@@ -2852,20 +2882,79 @@
 		// Skill entity controllers
 		window.openSkillModal = (id=null) => {
 		    openModal('modal-skill');
-		    if(id) {
+		    // Reset all fields first.
+		    document.getElementById('skill-id-input').value = '';
+		    document.getElementById('skill-name-input').value = '';
+		    document.getElementById('skill-type-input').value = 'Bash';
+		    document.getElementById('skill-inst-input').value = '';
+		    document.getElementById('skill-content-input').value = '';
+		    document.getElementById('skill-api-method').value = 'GET';
+		    document.getElementById('skill-api-url').value = '';
+		    document.getElementById('skill-api-headers').value = '';
+		    document.getElementById('skill-api-body').value = '';
+		    document.getElementById('skill-agent-id').value = '';
+		    document.getElementById('skill-agent-system-prompt').value = '';
+		    document.getElementById('skill-agent-user-prefix').value = '';
+		    toggleSkillUI();
+
+		    if (id) {
 		        const sk = dataStore.skills.find(x => x.id === id);
-		        if(sk) {
-		            document.getElementById('skill-id-input').value = sk.id; document.getElementById('skill-name-input').value = sk.name; document.getElementById('skill-type-input').value = sk.type; document.getElementById('skill-inst-input').value = sk.instruction; document.getElementById('skill-content-input').value = sk.content; document.getElementById('skill-api-method').value = sk.api_method || 'GET'; document.getElementById('skill-api-url').value = sk.api_url || ''; document.getElementById('skill-api-headers').value = sk.api_headers || ''; document.getElementById('skill-api-body').value = sk.api_body || ''; toggleSkillUI();
+		        if (sk) {
+		            document.getElementById('skill-id-input').value = sk.id;
+		            document.getElementById('skill-name-input').value = sk.name;
+		            document.getElementById('skill-type-input').value = sk.type;
+		            document.getElementById('skill-inst-input').value = sk.instruction || '';
+		            toggleSkillUI(); // re-run after type is set to populate agent picker
+
+		            if (sk.type === 'Agent') {
+		                // Parse the stored JSON config back into the Agent-type fields.
+		                try {
+		                    const cfg = JSON.parse(sk.content || '{}');
+		                    document.getElementById('skill-agent-id').value = cfg.agent_id || '';
+		                    document.getElementById('skill-agent-system-prompt').value = cfg.system_prompt || '';
+		                    document.getElementById('skill-agent-user-prefix').value = cfg.user_prompt_prefix || '';
+		                } catch(e) {}
+		            } else if (sk.type === 'API') {
+		                document.getElementById('skill-api-method').value = sk.api_method || 'GET';
+		                document.getElementById('skill-api-url').value = sk.api_url || '';
+		                document.getElementById('skill-api-headers').value = sk.api_headers || '';
+		                document.getElementById('skill-api-body').value = sk.api_body || '';
+		            } else {
+		                document.getElementById('skill-content-input').value = sk.content || '';
+		            }
 		        }
-		    } else {
-		        document.getElementById('skill-id-input').value = ''; document.getElementById('skill-name-input').value = ''; document.getElementById('skill-type-input').value = 'Bash'; document.getElementById('skill-inst-input').value = ''; document.getElementById('skill-content-input').value = ''; document.getElementById('skill-api-method').value = 'GET'; document.getElementById('skill-api-url').value = ''; document.getElementById('skill-api-headers').value = ''; document.getElementById('skill-api-body').value = ''; toggleSkillUI();
 		    }
 		};
 		window.editSkill = window.openSkillModal;
 		window.deleteSkill = async (id) => { if(await showConfirm('Delete Skill?', 'Delete')) { await api(`/skills/${id}`, 'DELETE'); loadAllData(); showToast('Skill deleted.', 'success'); } };
 		window.submitSkill = async () => {
 		    const id = document.getElementById('skill-id-input').value || 'sk_'+Date.now();
-		    await api(document.getElementById('skill-id-input').value ? `/skills/${id}` : '/skills', document.getElementById('skill-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('skill-name-input').value, type: document.getElementById('skill-type-input').value, instruction: document.getElementById('skill-inst-input').value, content: document.getElementById('skill-content-input').value, api_method: document.getElementById('skill-api-method').value, api_url: document.getElementById('skill-api-url').value, api_headers: document.getElementById('skill-api-headers').value, api_body: document.getElementById('skill-api-body').value });
+		    const type = document.getElementById('skill-type-input').value;
+
+		    // For Agent type, serialize config into the content field as JSON.
+		    let content = document.getElementById('skill-content-input').value;
+		    if (type === 'Agent') {
+		        const cfg = { agent_id: document.getElementById('skill-agent-id').value };
+		        const sp  = document.getElementById('skill-agent-system-prompt').value.trim();
+		        const upp = document.getElementById('skill-agent-user-prefix').value.trim();
+		        if (sp)  cfg.system_prompt       = sp;
+		        if (upp) cfg.user_prompt_prefix   = upp;
+		        content = JSON.stringify(cfg);
+		    }
+
+		    await api(document.getElementById('skill-id-input').value ? `/skills/${id}` : '/skills',
+		              document.getElementById('skill-id-input').value ? 'PUT' : 'POST',
+		              {
+		                id,
+		                name:        document.getElementById('skill-name-input').value,
+		                type,
+		                instruction: document.getElementById('skill-inst-input').value,
+		                content,
+		                api_method:  document.getElementById('skill-api-method').value,
+		                api_url:     document.getElementById('skill-api-url').value,
+		                api_headers: document.getElementById('skill-api-headers').value,
+		                api_body:    document.getElementById('skill-api-body').value,
+		              });
 		    closeModal('modal-skill'); loadAllData(); showToast('Skill saved.', 'success');
 		};
 		

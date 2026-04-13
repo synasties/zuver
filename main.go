@@ -842,7 +842,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.4",
+			"version":     "v1.1.5",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1307,7 +1307,7 @@ async function doImport(e) {
 
 // allowedSkillTypes is the closed set of values the "type" field may hold.
 var allowedSkillTypes = map[string]bool{
-	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true, "MD": true,
+	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true, "MD": true, "Agent": true,
 }
 
 // dangerousPatterns lists substrings that must not appear inside any string
@@ -1528,6 +1528,14 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 			"logs":  []string{"[Modality Shield]: Input rejected by agent config."},
 		})
 		return
+	}
+
+	// Apply prompt overrides injected by Agent-type skill sub-calls.
+	if ov := r.Header.Get("X-Agent-System-Prompt-Override"); ov != "" {
+		agent.SystemPrompt = ov
+	}
+	if ov := r.Header.Get("X-Agent-User-Prompt-Prefix-Override"); ov != "" {
+		agent.UserPromptPrefix = ov
 	}
 
 	// --- Load Provider ---
@@ -2380,6 +2388,82 @@ func jsonStr(v interface{}) string {
 	return string(b)
 }
 
+// callAgentSkill invokes a target agent synchronously (non-streaming) as a sub-call
+// and returns its reply string. skillContent is the JSON stored in the skill's content
+// field with the shape:
+//
+//	{"agent_id":"...", "system_prompt":"...(override)...", "user_prompt_prefix":"...(override)..."}
+//
+// The callerInput is the text passed by the calling agent to this skill as arguments.
+func (a *App) callAgentSkill(skillContent string, callerInput string) string {
+	var cfg struct {
+		AgentID          string `json:"agent_id"`
+		SystemPrompt     string `json:"system_prompt"`
+		UserPromptPrefix string `json:"user_prompt_prefix"`
+	}
+	if err := json.Unmarshal([]byte(skillContent), &cfg); err != nil || cfg.AgentID == "" {
+		return "[AGENT SKILL ERROR] Invalid config: 'agent_id' is required in skill content JSON."
+	}
+
+	// Load target agent from DB.
+	var target Agent
+	err := a.ConfigDB.QueryRow(
+		"SELECT id, name, provider_id, model, sources, skills, outputs, mcps, projects, system_prompt, token_usage, input_methods, output_methods, user_prompt_prefix, temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled FROM agents WHERE id=?",
+		cfg.AgentID,
+	).Scan(
+		&target.ID, &target.Name, &target.ProviderID, &target.Model,
+		&target.Sources, &target.Skills, &target.Outputs, &target.MCPs, &target.Projects,
+		&target.SystemPrompt, &target.TokenUsage, &target.InputMethods, &target.OutputMethods,
+		&target.UserPromptPrefix, &target.Temperature, &target.MaxTokens, &target.TopP,
+		&target.PrivacyEnabled, &target.CanCreateSkills, &target.StreamEnabled,
+	)
+	if err != nil {
+		return "[AGENT SKILL ERROR] Target agent not found: " + cfg.AgentID
+	}
+
+	// Apply overrides from the skill config.
+	if cfg.SystemPrompt != "" {
+		target.SystemPrompt = cfg.SystemPrompt
+	}
+	if cfg.UserPromptPrefix != "" {
+		target.UserPromptPrefix = cfg.UserPromptPrefix
+	}
+
+	// Build a synthetic non-streaming chat request for the target agent.
+	chatPayload, _ := json.Marshal(map[string]interface{}{
+		"agent_id": target.ID,
+		"message":  callerInput,
+		"stream":   false,
+	})
+	synReq, _ := http.NewRequest("POST", "/api/v1/chat", bytes.NewReader(chatPayload))
+	synReq.Header.Set("Content-Type", "application/json")
+	// Stamp the overrides as headers so handleChat can pick them up before
+	// the DB agent is loaded — we use X-Override headers and handle them below.
+	if cfg.SystemPrompt != "" {
+		synReq.Header.Set("X-Agent-System-Prompt-Override", cfg.SystemPrompt)
+	}
+	if cfg.UserPromptPrefix != "" {
+		synReq.Header.Set("X-Agent-User-Prompt-Prefix-Override", cfg.UserPromptPrefix)
+	}
+
+	rec := &responseRecorder{header: make(http.Header), code: http.StatusOK}
+	a.handleChat(rec, synReq)
+
+	// Parse the reply from the recorded response.
+	var result map[string]interface{}
+	if err := json.Unmarshal(rec.body, &result); err != nil {
+		return "[AGENT SKILL ERROR] Failed to parse sub-agent response."
+	}
+	if errMsg, ok := result["error"].(string); ok && errMsg != "" {
+		return "[AGENT SKILL ERROR] " + errMsg
+	}
+	reply, _ := result["reply"].(string)
+	if reply == "" {
+		return "[AGENT SKILL] Agent returned no content."
+	}
+	return reply
+}
+
 // executeCommand handles a single slash-command issued by the agent within the agentic loop.
 // It is safe to call concurrently.
 func (a *App) executeCommand(
@@ -2699,6 +2783,10 @@ func (a *App) executeCommand(
 				return "[SKILL ERROR] Skill not found."
 			}
 			switch sType {
+			case "Agent":
+				// Call a sub-agent synchronously; agentArgs become the input text.
+				input := strings.Join(agentArgs, " ")
+				return a.callAgentSkill(sContent, input)
 			case "MD":
 				return "[INSTRUCTION]\n" + sContent
 			case "Bash", "Go":
@@ -3676,6 +3764,19 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			}
 
 			switch sType {
+			case "Agent":
+				// Invoke the target agent as a sub-call; pass the current pipeline
+				// input (last result or the substituted content) as the message.
+				input := substituteSkill(sContent)
+				// If sContent is a JSON config (agent skill format), pass lastResult
+				// as the user message; otherwise fall back to substituted content.
+				var agentSkillCfg map[string]interface{}
+				agentInput := lastResult
+				if json.Unmarshal([]byte(sContent), &agentSkillCfg) != nil {
+					// sContent is not JSON — treat as plain input text.
+					agentInput = input
+				}
+				lastResult = a.callAgentSkill(sContent, agentInput)
 			case "MD":
 				lastResult = substituteSkill(sContent)
 			case "Bash", "Go":
