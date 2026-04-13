@@ -1704,7 +1704,9 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// --- Load chat history (last 40 messages) ---
-	messages := []map[string]interface{}{{"role": "system", "content": dynamicSysPrompt}}
+	// Base messages list — system prompt is added per-provider inside the loop
+	// because Claude requires it as a top-level key, not a messages entry.
+	var messages []map[string]interface{}
 	histRows, err := a.ConfigDB.Query(
 		"SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE agent_id=? ORDER BY id DESC LIMIT 40) ORDER BY id ASC",
 		agent.ID,
@@ -1716,11 +1718,12 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 			if role == "user" && agent.UserPromptPrefix != "" {
 				content = agent.UserPromptPrefix + "\n" + content
 			}
-			apiRole := role
+			// Skip system-tagged history rows — they were internal tool results
+			// injected as system messages. Re-inject them as assistant context.
 			if role == "system" {
-				apiRole = "user"
+				role = "assistant"
 			}
-			messages = append(messages, map[string]interface{}{"role": apiRole, "content": content})
+			messages = append(messages, map[string]interface{}{"role": role, "content": content})
 		}
 		histRows.Close()
 	}
@@ -1803,8 +1806,17 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		apiURL := strings.TrimRight(prov.Endpoint, "/")
 		pType := strings.ToLower(prov.Type)
 
-		currentMessages := make([]map[string]interface{}, len(messages))
-		copy(currentMessages, messages)
+		// Build currentMessages with the system prompt injected correctly per provider.
+		// Claude: system prompt is a top-level reqBody key — do NOT include it in messages.
+		// OpenAI / Ollama / compatible: prepend {"role":"system","content":"..."}.
+		var currentMessages []map[string]interface{}
+		if pType != "claude" {
+			currentMessages = append(currentMessages, map[string]interface{}{
+				"role":    "system",
+				"content": dynamicSysPrompt,
+			})
+		}
+		currentMessages = append(currentMessages, messages...)
 
 		// Build final user message (with file if applicable).
 		var finalUserMsg map[string]interface{}
@@ -1888,17 +1900,70 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Build request body.
+		// Build request body scoped per provider type.
 		reqBody := map[string]interface{}{
-			"model":       agent.Model,
-			"messages":    currentMessages,
-			"temperature": agent.Temperature,
-			"max_tokens":  agent.MaxTokens,
-			"top_p":       agent.TopP,
-			"stream":      useStream,
+			"model":    agent.Model,
+			"messages": currentMessages,
 		}
 
-		// Merge extra provider params (e.g., top_k, stop sequences).
+		switch pType {
+		case "claude":
+			// Anthropic messages API differences:
+			//   • system prompt is a top-level "system" string, NOT in messages
+			//   • max_tokens is REQUIRED (must be > 0)
+			//   • stream is omitted when false (sending stream:false is fine but
+			//     sending it is unnecessary; sending stream:true enables SSE)
+			//   • temperature and top_p are mutually exclusive
+			reqBody["system"] = dynamicSysPrompt
+			claudeMaxTokens := agent.MaxTokens
+			if claudeMaxTokens <= 0 {
+				claudeMaxTokens = 4096 // safe default; required by Anthropic
+			}
+			reqBody["max_tokens"] = claudeMaxTokens
+			if useStream {
+				reqBody["stream"] = true
+			}
+			// Only set one of temperature/top_p (Anthropic rejects both together).
+			if agent.TopP != 1.0 {
+				reqBody["top_p"] = agent.TopP
+			} else {
+				reqBody["temperature"] = agent.Temperature
+			}
+
+		case "ollama":
+			// Ollama /api/chat:
+			//   • always send stream so we control NDJSON vs single-object mode
+			//   • sampling params go inside "options"
+			reqBody["stream"] = useStream
+			options := map[string]interface{}{
+				"temperature": agent.Temperature,
+			}
+			if agent.MaxTokens > 0 {
+				options["num_predict"] = agent.MaxTokens
+			}
+			if agent.TopP != 1.0 {
+				options["top_p"] = agent.TopP
+			}
+			reqBody["options"] = options
+
+		default:
+			// OpenAI-compatible providers (OpenAI, Azure, Together, Groq, Qwen,
+			// DeepSeek, Mistral, etc.).
+			reqBody["stream"] = useStream
+			reqBody["temperature"] = agent.Temperature
+			if agent.MaxTokens > 0 {
+				reqBody["max_tokens"] = agent.MaxTokens
+			}
+			// Only send top_p when it deviates from the default; some providers
+			// (Qwen, ERNIE, etc.) return error 2013 when both temperature and
+			// top_p are present even at their default values.
+			if agent.TopP != 1.0 {
+				reqBody["top_p"] = agent.TopP
+			}
+		}
+
+		// Merge extra provider params from the provider's ExtraConfig JSON.
+		// These override the defaults above for advanced per-provider tuning.
 		var extras map[string]interface{}
 		if json.Unmarshal([]byte(prov.ExtraConfig), &extras) == nil {
 			for k, v := range extras {
@@ -2007,6 +2072,11 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
+					// Claude terminates with {"type":"message_stop"} — treat as done.
+					if chunkType, _ := chunk["type"].(string); chunkType == "message_stop" {
+						break
+					}
+
 					// Surface streaming-level error events from the provider.
 					if errObj, ok := chunk["error"].(map[string]interface{}); ok {
 						errMsg := "[Provider Error] Unknown streaming error."
@@ -2024,8 +2094,15 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 					var delta string
 					switch pType {
 					case "claude":
-						if deltaObj, ok := chunk["delta"].(map[string]interface{}); ok {
-							delta, _ = deltaObj["text"].(string)
+						// Claude SSE event types:
+						//   content_block_delta → delta.type="text_delta", delta.text="..."
+						//   message_delta       → contains stop_reason (no text)
+						//   message_start/stop, content_block_start/stop → no text
+						chunkType, _ := chunk["type"].(string)
+						if chunkType == "content_block_delta" {
+							if deltaObj, ok := chunk["delta"].(map[string]interface{}); ok {
+								delta, _ = deltaObj["text"].(string)
+							}
 						}
 					case "ollama":
 						if msg, ok := chunk["message"].(map[string]interface{}); ok {
@@ -3479,8 +3556,27 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			}
 
 			body := map[string]interface{}{
-				"model": agentModel, "messages": msgs,
-				"temperature": agentTemp, "max_tokens": agentMaxTokens, "stream": false,
+				"model":    agentModel,
+				"messages": msgs,
+				"stream":   false,
+			}
+			pTypeProj := strings.ToLower(provType)
+			switch pTypeProj {
+			case "claude":
+				body["max_tokens"] = agentMaxTokens
+				if agentTemp != 0.7 {
+					body["temperature"] = agentTemp
+				}
+			case "ollama":
+				body["options"] = map[string]interface{}{
+					"temperature": agentTemp,
+					"num_predict": agentMaxTokens,
+				}
+			default:
+				body["temperature"] = agentTemp
+				if agentMaxTokens > 0 {
+					body["max_tokens"] = agentMaxTokens
+				}
 			}
 			var extras map[string]interface{}
 			if json.Unmarshal([]byte(agentExtraConfig), &extras) == nil {
