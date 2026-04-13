@@ -1669,8 +1669,8 @@
 		                <p class="text-[10px] text-gray-400 mt-1">${k.description}</p>
 		            </div>
 		            <div class="mt-4 pt-3 border-t dark:border-gray-800 flex justify-between items-center">
-		                <code class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${k.token}</code>
-		                <i onclick="navigator.clipboard.writeText('${k.token}'); alert('Copied!')" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
+		                <code id="apikey-token-${k.id}" class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${k.token}</code>
+                <i onclick="window.copyAPIKeyToken('${k.id}')" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer" title="Copy token"></i>
 		            </div>
 		        </div>
 		    `).join(''));
@@ -3124,6 +3124,14 @@
 		/* --- Fine-Grained API Key Management --- */
 		window.deleteAPIKey = async (id) => { if(await showConfirm('Revoke this API Key?', 'Revoke')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); showToast('API key revoked.', 'success'); } };
 
+		window.copyAPIKeyToken = (id) => {
+		    const el = document.getElementById('apikey-token-' + id);
+		    if (!el) return;
+		    navigator.clipboard.writeText(el.textContent.trim())
+		        .then(() => showToast('Token copied.', 'success'))
+		        .catch(() => showToast('Copy failed — try selecting manually.', 'error'));
+		};
+		
 		// Flat shared resource rows (no per-item granularity needed).
 		const AK_FLAT_RESOURCES = [
 		    { key: 'skills',  label: 'Skills' },
