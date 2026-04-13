@@ -92,5 +92,5 @@ The **Zuver** name, logos (including the visual mark featured above), and relate
 Disclaimer: All trademarks, logos and brand names mentioned in this project are the property of their respective owners. All company, product and service names used in this repository are for identification purposes only. Use of these names, trademarks and brands does not imply endorsement, sponsorship, or affiliation.
 
 <div align="center">
-<em>Built with ❤️ by **[Synasties](https://oi.ms) and our [Global Contributors](https://zuver.cc/contributors).**</em>
+Built with ❤️ by [Synasties](https://oi.ms) and our [Global Contributors](https://zuver.cc/contributors).
 </div>
