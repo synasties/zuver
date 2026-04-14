@@ -21,13 +21,15 @@
 
 * 🌌 **Omniscient & Omnipotent.** Supports OpenAI-standard Skills, featuring Generative Skills, Workflows, Computer control, and more.
 
+* ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
+* 
 * 💻 **Bash for LLM.** Utilizing pseudo-terminals and natural-language-like programming, empowering your Agent to use Skills and APIs via LLMs out-of-the-box.
 
 * 🛡️ **Privacy by Design.** Leveraging a revolutionary Edge + Cloud hybrid model architecture to provide privacy-first desensitization and semantic obfuscation capabilities.
 
-* 🔐 **Granular Permission Control.** Let your Agent know what it can do, and respect what it cannot. Strictly manage the Agent's capability boundaries via the Sources and Outputs panels.
-
 * 🗜️ **Multi-level Context Compression.** Utilizing Generative RAG, Preferences and highly configurable parameters to grant your Agent a long-term, stable personality and memory.
+  
+* 🔐 **Granular Permission Control.** Let your Agent know what it can do, and respect what it cannot. Strictly manage the Agent's capability boundaries via the Sources and Outputs panels.
 
 * ☁️ **Privacy-First Cloud Features.** Access and download Skills, Workflows, and Agent presets for free via the companion **Matex Market**; allow authorized third-party apps to access data securely through the Sync mechanism.
 
@@ -36,8 +38,6 @@
 * 🔌 **Choose Your Favorite Provider.** Fully compatible with OpenAI-standard APIs, as well as mainstream model providers like Ollama, LM Studio, Phala, and more.
 
 * 📱 **Choose Your Favorite Client.** Use our open-source Agent clients, or interact with your Agent directly via Web GUI or [Telegram Bot](https://github.com/synasties/zuver_telegram).
-
-* ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
 
 * 🛠️ **Development Made Simple.** Comes with comprehensive API and SDK documentation for you to effortlessly add brand new capabilities and sensory data sources to your Agent.
 
