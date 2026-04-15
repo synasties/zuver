@@ -1381,6 +1381,7 @@
 				<select id="skill-type-input" onchange="toggleSkillUI()"
 					class="w-full border dark:border-gray-700 bg-transparent p-2 rounded text-sm font-bold text-orange-600">
 					<option value="Bash">Bash Script</option>
+					<option value="JavaScript">JavaScript (Node.js)</option>
 					<option value="Go">Go Native Code</option>
 					<option value="API">API Request</option>
 					<option value="MD">Markdown Docs</option>
@@ -1879,6 +1880,8 @@
 
 			if (t === 'MD') {
 				contentInput.placeholder = "Markdown Content (No <placeholders> needed)";
+			} else if (t === 'JavaScript') {
+				contentInput.placeholder = "// Node.js script. Use <placeholders> for dynamic args.\nconsole.log('hello from JS skill');";
 			} else {
 				contentInput.placeholder = "Code / Template. Use <placeholders> here.";
 			}

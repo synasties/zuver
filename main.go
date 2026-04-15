@@ -1098,7 +1098,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.6",
+			"version":     "v1.2.0",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1563,7 +1563,7 @@ async function doImport(e) {
 
 // allowedSkillTypes is the closed set of values the "type" field may hold.
 var allowedSkillTypes = map[string]bool{
-	"API": true, "Go": true, "Bash": true, "Python": true, "Text": true, "Prompt": true, "MD": true, "Agent": true,
+	"API": true, "Go": true, "Bash": true, "Python": true, "JavaScript": true, "Text": true, "Prompt": true, "MD": true, "Agent": true,
 }
 
 // dangerousPatterns lists substrings that must not appear inside any string
@@ -1617,7 +1617,7 @@ func validateImportPayload(itemType string, data map[string]interface{}) error {
 		// Validate skill-specific fields.
 		skillType, _ := data["type"].(string)
 		if skillType != "" && !allowedSkillTypes[skillType] {
-			return fmt.Errorf("skill type '%s' is not allowed; must be one of: API, Go, Bash, Python, Text, Prompt", skillType)
+			return fmt.Errorf("skill type '%s' is not allowed; must be one of: API, Go, Bash, Python, JavaScript, Text, Prompt", skillType)
 		}
 		if _, err := str("instruction", 32768); err != nil {
 			return err
@@ -3105,7 +3105,7 @@ func (a *App) executeCommand(
 				return a.callAgentSkill(sContent, input)
 			case "MD":
 				return "[INSTRUCTION]\n" + sContent
-			case "Bash", "Go":
+			case "Bash", "Go", "JavaScript":
 				fCode := sContent
 				ph := extractPlaceholders(sContent)
 				for i, arg := range agentArgs {
@@ -3114,13 +3114,27 @@ func (a *App) executeCommand(
 					}
 				}
 				var execCmd *exec.Cmd
-				if sType == "Bash" {
-					execCmd = exec.Command("sh", "-c", fCode)
-				} else {
-					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d.go", time.Now().UnixNano()))
-					os.WriteFile(tmp, []byte(fCode), 0644)
+				var tmpExt string
+				switch sType {
+				case "Bash":
+					tmpExt = ".sh"
+				case "JavaScript":
+					tmpExt = ".js"
+				default:
+					tmpExt = ".go"
+				}
+				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
+				if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
+					return "[SKILL ERROR] failed to write temp script"
+				}
+				defer os.Remove(tmp)
+				switch sType {
+				case "Bash":
+					execCmd = exec.Command("sh", tmp)
+				case "JavaScript":
+					execCmd = exec.Command("node", tmp)
+				default:
 					execCmd = exec.Command("go", "run", tmp)
-					defer os.Remove(tmp)
 				}
 				out, e := execCmd.CombinedOutput()
 				result := "[RESULT]\n" + string(out)
@@ -4227,13 +4241,18 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 				lastResult = a.callAgentSkill(sContent, agentInput)
 			case "MD":
 				lastResult = substituteSkill(sContent)
-			case "Bash", "Go":
+			case "Bash", "Go", "JavaScript":
 				code := substituteSkill(sContent)
 				var cmd *exec.Cmd
 				// Write skill content to a temp file and execute it directly rather
 				// than passing it to "sh -c" to avoid shell-expansion injection risks.
-				tmpExt := ".sh"
-				if sType == "Go" {
+				var tmpExt string
+				switch sType {
+				case "Bash":
+					tmpExt = ".sh"
+				case "JavaScript":
+					tmpExt = ".js"
+				default:
 					tmpExt = ".go"
 				}
 				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_sk_%d%s", time.Now().UnixNano(), tmpExt))
@@ -4242,9 +4261,12 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 					break
 				}
 				defer os.Remove(tmp)
-				if sType == "Bash" {
+				switch sType {
+				case "Bash":
 					cmd = exec.Command("sh", tmp)
-				} else {
+				case "JavaScript":
+					cmd = exec.Command("node", tmp)
+				default:
 					cmd = exec.Command("go", "run", tmp)
 				}
 				out, err := cmd.CombinedOutput()
