@@ -1,4 +1,4 @@
-module innomate
+module zuver
 
 go 1.25.0
 
