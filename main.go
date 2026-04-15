@@ -99,6 +99,7 @@ type Agent struct {
 	Skills           string  `json:"skills"`
 	Outputs          string  `json:"outputs"`
 	MCPs             string  `json:"mcps"`
+	MCPTools         string  `json:"mcp_tools"` // JSON array of {mcpId, tool} assigned MCP commands
 	Projects         string  `json:"projects"`
 	SystemPrompt     string  `json:"system_prompt"`
 	TokenUsage       int     `json:"token_usage"`
@@ -139,6 +140,7 @@ type MCPServer struct {
 	Name    string `json:"name"`
 	URL     string `json:"url"`
 	Command string `json:"command"`
+	Tools   string `json:"tools"` // JSON array of resolved tool/command names
 }
 
 // ChatMessage represents a single message exchange within an agent's history.
@@ -816,6 +818,8 @@ func main() {
 	autoMigrateColumn(db, "api_keys", "rate_limit", "INTEGER DEFAULT 0") // requests/minute, 0 = unlimited
 	autoMigrateColumn(db, "outputs", "type", "TEXT DEFAULT 'Command'")   // Command | Webhook
 	autoMigrateColumn(db, "outputs", "webhook_url", "TEXT DEFAULT ''")
+	autoMigrateColumn(db, "mcp_servers", "tools", "TEXT DEFAULT '[]'") // JSON array of resolved tool names
+	autoMigrateColumn(db, "agents", "mcp_tools", "TEXT DEFAULT '[]'")  // JSON array of {mcpId, tool} pairs assigned to this agent
 
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
 
@@ -1038,6 +1042,8 @@ func main() {
 	mux.HandleFunc("POST /api/v1/projects/{id}/run", app.handleRunProject)
 	mux.HandleFunc("GET /api/v1/mcp", app.handleGetMCP)
 	mux.HandleFunc("POST /api/v1/mcp", app.handleCreateMCP)
+	mux.HandleFunc("PUT /api/v1/mcp/{id}", app.handleUpdateMCP)
+	mux.HandleFunc("POST /api/v1/mcp/{id}/resolve", app.handleResolveMCP)
 	mux.HandleFunc("DELETE /api/v1/mcp/{id}", app.handleDeleteMCP)
 	mux.HandleFunc("GET /api/v1/settings", app.handleGetSettings)
 	mux.HandleFunc("POST /api/v1/settings", app.handleUpdateSettings)
@@ -1098,7 +1104,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.6",
+			"version":     "v1.2.1",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -3672,6 +3678,7 @@ func (a *App) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleGetAgents(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.ConfigDB.Query(`
 		SELECT id, name, provider_id, model, sources, skills, outputs, mcps,
+		       COALESCE(mcp_tools,'[]'),
 		       COALESCE(projects,'[]'), system_prompt, token_usage,
 		       COALESCE(input_methods,'["Text"]'), COALESCE(output_methods,'["Text"]'),
 		       COALESCE(user_prompt_prefix,''), COALESCE(temperature,0.7),
@@ -3689,7 +3696,7 @@ func (a *App) handleGetAgents(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var i Agent
 		rows.Scan(&i.ID, &i.Name, &i.ProviderID, &i.Model, &i.Sources, &i.Skills,
-			&i.Outputs, &i.MCPs, &i.Projects, &i.SystemPrompt, &i.TokenUsage,
+			&i.Outputs, &i.MCPs, &i.MCPTools, &i.Projects, &i.SystemPrompt, &i.TokenUsage,
 			&i.InputMethods, &i.OutputMethods, &i.UserPromptPrefix, &i.Temperature,
 			&i.MaxTokens, &i.TopP, &i.PrivacyEnabled, &i.CanCreateSkills, &i.StreamEnabled)
 		list = append(list, i)
@@ -3704,13 +3711,16 @@ func (a *App) handleGetAgents(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	var i Agent
 	json.NewDecoder(r.Body).Decode(&i)
+	if i.MCPTools == "" {
+		i.MCPTools = "[]"
+	}
 	a.ConfigDB.Exec(`INSERT INTO agents
-		(id, name, provider_id, model, sources, skills, outputs, mcps, projects,
+		(id, name, provider_id, model, sources, skills, outputs, mcps, mcp_tools, projects,
 		 system_prompt, input_methods, output_methods, user_prompt_prefix,
 		 temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.ID, i.Name, i.ProviderID, i.Model, i.Sources, i.Skills, i.Outputs,
-		i.MCPs, i.Projects, i.SystemPrompt, i.InputMethods, i.OutputMethods,
+		i.MCPs, i.MCPTools, i.Projects, i.SystemPrompt, i.InputMethods, i.OutputMethods,
 		i.UserPromptPrefix, i.Temperature, i.MaxTokens, i.TopP,
 		i.PrivacyEnabled, i.CanCreateSkills, i.StreamEnabled)
 	w.Header().Set("Content-Type", "application/json")
@@ -3720,14 +3730,17 @@ func (a *App) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	var i Agent
 	json.NewDecoder(r.Body).Decode(&i)
+	if i.MCPTools == "" {
+		i.MCPTools = "[]"
+	}
 	a.ConfigDB.Exec(`UPDATE agents SET
-		name=?, provider_id=?, model=?, sources=?, skills=?, outputs=?, mcps=?,
+		name=?, provider_id=?, model=?, sources=?, skills=?, outputs=?, mcps=?, mcp_tools=?,
 		projects=?, system_prompt=?, input_methods=?, output_methods=?,
 		user_prompt_prefix=?, temperature=?, max_tokens=?, top_p=?,
 		privacy_enabled=?, can_create_skills=?, stream_enabled=?
 		WHERE id=?`,
 		i.Name, i.ProviderID, i.Model, i.Sources, i.Skills, i.Outputs,
-		i.MCPs, i.Projects, i.SystemPrompt, i.InputMethods, i.OutputMethods,
+		i.MCPs, i.MCPTools, i.Projects, i.SystemPrompt, i.InputMethods, i.OutputMethods,
 		i.UserPromptPrefix, i.Temperature, i.MaxTokens, i.TopP,
 		i.PrivacyEnabled, i.CanCreateSkills, i.StreamEnabled, r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
@@ -3819,7 +3832,7 @@ func (a *App) handleRunProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetMCP(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, name, url, command FROM mcp_servers")
+	rows, err := a.ConfigDB.Query("SELECT id, name, url, command, COALESCE(tools,'[]') FROM mcp_servers")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]MCPServer{})
@@ -3829,7 +3842,7 @@ func (a *App) handleGetMCP(w http.ResponseWriter, r *http.Request) {
 	var list []MCPServer
 	for rows.Next() {
 		var i MCPServer
-		rows.Scan(&i.ID, &i.Name, &i.URL, &i.Command)
+		rows.Scan(&i.ID, &i.Name, &i.URL, &i.Command, &i.Tools)
 		list = append(list, i)
 	}
 	if list == nil {
@@ -3842,7 +3855,235 @@ func (a *App) handleGetMCP(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateMCP(w http.ResponseWriter, r *http.Request) {
 	var i MCPServer
 	json.NewDecoder(r.Body).Decode(&i)
-	a.ConfigDB.Exec("INSERT INTO mcp_servers (id, name, url, command) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.URL, i.Command)
+	i.ID = fmt.Sprintf("mcp_%d", time.Now().UnixNano())
+	a.ConfigDB.Exec("INSERT INTO mcp_servers (id, name, url, command, tools) VALUES (?, ?, ?, ?, '[]')", i.ID, i.Name, i.URL, i.Command)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": i.ID})
+}
+
+// mcpResolveHTTP calls tools/list via the HTTP/SSE JSON-RPC transport and returns tool names.
+func mcpResolveHTTP(mcpURL string) ([]string, error) {
+	parsed, err := url.ParseRequestURI(mcpURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("invalid MCP URL scheme")
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0", "id": 1,
+		"method": "tools/list", "params": map[string]interface{}{},
+	})
+	resp, err := (&http.Client{Timeout: 8 * time.Second}).Post(mcpURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var rpcResp struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
+		return nil, fmt.Errorf("invalid JSON-RPC response")
+	}
+	var tools []string
+	for _, t := range rpcResp.Result.Tools {
+		if t.Name != "" {
+			tools = append(tools, t.Name)
+		}
+	}
+	return tools, nil
+}
+
+// mcpResolveStdio launches a stdio MCP process, performs initialize + tools/list, and returns tool names.
+func mcpResolveStdio(mcpCmd string) ([]string, error) {
+	parts := strings.Fields(mcpCmd)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty MCP command")
+	}
+	cmd := exec.Command(parts[0], parts[1:]...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start MCP process: %w", err)
+	}
+	defer cmd.Process.Kill()
+
+	writeRPC := func(method string, params interface{}, msgID int) {
+		msg, _ := json.Marshal(map[string]interface{}{
+			"jsonrpc": "2.0", "id": msgID, "method": method, "params": params,
+		})
+		fmt.Fprintf(stdin, "Content-Length: %d\r\n\r\n%s", len(msg), msg)
+	}
+	writeRPC("initialize", map[string]interface{}{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]interface{}{},
+		"clientInfo":      map[string]interface{}{"name": "zuver", "version": "1.0"},
+	}, 1)
+	writeRPC("notifications/initialized", nil, 2)
+	writeRPC("tools/list", map[string]interface{}{}, 3)
+	stdin.Close()
+
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 65536)
+		n, err := io.ReadFull(stdout, buf)
+		if err != nil && n == 0 {
+			// Fall back to partial read
+			n2, _ := stdout.Read(buf)
+			ch <- readResult{buf[:n2], nil}
+			return
+		}
+		ch <- readResult{buf[:n], nil}
+	}()
+
+	var rawOut []byte
+	select {
+	case res := <-ch:
+		rawOut = res.data
+	case <-time.After(8 * time.Second):
+		return nil, fmt.Errorf("stdio process timed out")
+	}
+
+	// Parse LSP-style framed messages: "Content-Length: N\r\n\r\n{...}"
+	var rpcResp struct {
+		ID     int `json:"id"`
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	remaining := string(rawOut)
+	for len(remaining) > 0 {
+		idx := strings.Index(remaining, "\r\n\r\n")
+		if idx < 0 {
+			break
+		}
+		body := remaining[idx+4:]
+		remaining = ""
+		// Find the end of this JSON object
+		depth, end := 0, -1
+		for i, c := range body {
+			if c == '{' {
+				depth++
+			} else if c == '}' {
+				depth--
+				if depth == 0 {
+					end = i + 1
+					break
+				}
+			}
+		}
+		if end < 0 {
+			break
+		}
+		chunk := body[:end]
+		remaining = body[end:]
+		if err := json.Unmarshal([]byte(chunk), &rpcResp); err == nil && rpcResp.ID == 3 {
+			break
+		}
+	}
+	var tools []string
+	for _, t := range rpcResp.Result.Tools {
+		if t.Name != "" {
+			tools = append(tools, t.Name)
+		}
+	}
+	return tools, nil
+}
+
+// handleResolveMCP contacts the MCP server using ALL configured transports concurrently
+// (HTTP/SSE and stdio), merges the tool lists, deduplicates, and persists to DB.
+func (a *App) handleResolveMCP(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var mcpURL, mcpCmd string
+	if err := a.ConfigDB.QueryRow("SELECT url, command FROM mcp_servers WHERE id=?", id).Scan(&mcpURL, &mcpCmd); err != nil {
+		http.Error(w, `{"error":"MCP server not found"}`, http.StatusNotFound)
+		return
+	}
+	if mcpURL == "" && mcpCmd == "" {
+		http.Error(w, `{"error":"MCP server has neither URL nor command configured"}`, http.StatusBadRequest)
+		return
+	}
+
+	type result struct {
+		tools []string
+		err   error
+	}
+	ch := make(chan result, 2)
+
+	if mcpURL != "" {
+		go func() {
+			t, err := mcpResolveHTTP(mcpURL)
+			ch <- result{t, err}
+		}()
+	}
+	if mcpCmd != "" {
+		go func() {
+			t, err := mcpResolveStdio(mcpCmd)
+			ch <- result{t, err}
+		}()
+	}
+
+	// Collect results from however many goroutines were launched
+	expected := 0
+	if mcpURL != "" {
+		expected++
+	}
+	if mcpCmd != "" {
+		expected++
+	}
+
+	seen := map[string]bool{}
+	var tools []string
+	var errs []string
+	for i := 0; i < expected; i++ {
+		res := <-ch
+		if res.err != nil {
+			errs = append(errs, res.err.Error())
+			continue
+		}
+		for _, t := range res.tools {
+			if !seen[t] {
+				seen[t] = true
+				tools = append(tools, t)
+			}
+		}
+	}
+
+	// Only fail hard if every transport failed
+	if len(tools) == 0 && len(errs) == expected {
+		http.Error(w, `{"error":"all transports failed: `+strings.Join(errs, "; ")+`"}`, http.StatusBadGateway)
+		return
+	}
+
+	toolsJSON, _ := json.Marshal(tools)
+	a.ConfigDB.Exec("UPDATE mcp_servers SET tools=? WHERE id=?", string(toolsJSON), id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tools":    tools,
+		"status":   "ok",
+		"warnings": errs,
+	})
+}
+
+func (a *App) handleUpdateMCP(w http.ResponseWriter, r *http.Request) {
+	var i MCPServer
+	json.NewDecoder(r.Body).Decode(&i)
+	a.ConfigDB.Exec("UPDATE mcp_servers SET name=?, url=?, command=? WHERE id=?",
+		i.Name, i.URL, i.Command, r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
