@@ -3443,7 +3443,7 @@
 			window.activeAgentEditing = a;
 
 			if (a) {
-				document.getElementById('agent-id-input').value = a.id; document.getElementById('agent-name-input').value = a.name; document.getElementById('agent-model-input').value = a.model; document.getElementById('agent-system-prompt').value = a.system_prompt;
+				document.getElementById('agent-id-input').value = a.id; document.getElementById('agent-name-input').value = a.name; document.getElementById('agent-provider-input').value = a.provider_id; document.getElementById('agent-model-input').value = a.model; document.getElementById('agent-system-prompt').value = a.system_prompt;
 				document.getElementById('agent-temp').value = a.temperature || 0.7; document.getElementById('val-temp').innerText = a.temperature || 0.7; document.getElementById('agent-max-tokens').value = a.max_tokens || 4096; document.getElementById('val-max').innerText = a.max_tokens || 4096;
 				const ins = JSON.parse(a.input_methods || '["Text"]'); document.querySelectorAll('.in-cb').forEach(cb => cb.checked = ins.includes(cb.value));
 				const outs = JSON.parse(a.output_methods || '["Text"]'); document.querySelectorAll('.outm-cb').forEach(cb => cb.checked = outs.includes(cb.value));
