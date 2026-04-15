@@ -52,7 +52,9 @@ type Output struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Instruction string `json:"instruction"`
+	Type        string `json:"type"` // "Command" (default) or "Webhook"
 	CommandTpl  string `json:"command_tpl"`
+	WebhookURL  string `json:"webhook_url"`
 }
 
 // Skill represents a dynamic capability executable by the agent (Bash, Go, API, etc.).
@@ -158,6 +160,7 @@ type APIKey struct {
 	Description string `json:"description"`
 	Token       string `json:"token"`
 	Permissions string `json:"permissions"`
+	RateLimit   int    `json:"rate_limit"` // max requests/minute, 0 = unlimited
 }
 
 // DBTask encapsulates a database operation to be processed sequentially.
@@ -171,6 +174,83 @@ type DBTask struct {
 // contextKeyAPIKeyPerms is the context key under which authMiddleware stores the
 // raw permissions JSON string for an authenticated external API key request.
 type contextKeyAPIKeyPerms struct{}
+
+// safeTableNameRe matches only identifiers that are safe to interpolate into SQL
+// table/column names — alphanumerics and underscores only.
+var safeTableNameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
+// sanitizeTableName validates that a table name loaded from the DB is safe to
+// interpolate directly into a SQL query (no SQLi via a poisoned DB value).
+// Returns the name unchanged if valid, or an error otherwise.
+func sanitizeTableName(name string) (string, error) {
+	if name == "" || !safeTableNameRe.MatchString(name) {
+		return "", fmt.Errorf("unsafe table name: %q", name)
+	}
+	return name, nil
+}
+
+// allowedUploadExts is the explicit allowlist of file extensions accepted by
+// handleFileUpload. Extensions not in this map are rejected.
+var allowedUploadExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true,
+	".pdf": true, ".txt": true, ".md": true, ".csv": true,
+	".json": true, ".yaml": true, ".yml": true, ".html": true,
+	".mp3": true, ".wav": true, ".mp4": true,
+}
+
+// isPrivateHost returns true if the hostname/IP belongs to a loopback or
+// private-range address that should not be reachable via outbound HTTP calls
+// triggered by user-supplied URLs (SSRF prevention).
+func isPrivateHost(rawURL string) bool {
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return true // treat unparseable as unsafe
+	}
+	h := strings.ToLower(parsed.Hostname())
+	for _, blocked := range []string{
+		"localhost", "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.",
+		"172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+		"172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+		"::1", "0.0.0.0", "169.254.", "100.64.", "198.18.", "198.19.",
+	} {
+		if strings.HasPrefix(h, blocked) || h == strings.TrimSuffix(blocked, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+// securityHeadersMiddleware adds standard defensive HTTP response headers to
+// every response: X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
+// Content-Security-Policy (restrictive default), and Permissions-Policy.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// Allow inline scripts/styles only for the single-page UI served at "/".
+		// API and asset paths get the strictest policy.
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			w.Header().Set("Content-Security-Policy",
+				"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'")
+		} else {
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateBucket tracks per-API-key request counts for rate limiting.
+type rateBucket struct {
+	count     int
+	windowEnd time.Time
+}
+
+var (
+	rateBuckets   = make(map[string]*rateBucket)
+	rateBucketsMu sync.Mutex
+)
 
 var (
 	dbWriteQueue  = make(chan DBTask, 10000)
@@ -286,13 +366,34 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Validate external API key and load its permission document.
+		// Validate external API key and load its permission document + rate limit.
 		var permJSON string
-		err := a.ConfigDB.QueryRow("SELECT permissions FROM api_keys WHERE token=?", token).Scan(&permJSON)
+		var rateLimit int
+		err := a.ConfigDB.QueryRow("SELECT permissions, COALESCE(rate_limit,0) FROM api_keys WHERE token=?", token).Scan(&permJSON, &rateLimit)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
 			return
+		}
+
+		// Enforce per-minute rate limit when configured (0 = unlimited).
+		if rateLimit > 0 {
+			rateBucketsMu.Lock()
+			b, exists := rateBuckets[token]
+			now := time.Now()
+			if !exists || now.After(b.windowEnd) {
+				rateBuckets[token] = &rateBucket{count: 1, windowEnd: now.Add(time.Minute)}
+			} else {
+				b.count++
+				if b.count > rateLimit {
+					rateBucketsMu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", rateLimit))
+					http.Error(w, `{"error": "Rate limit exceeded"}`, http.StatusTooManyRequests)
+					return
+				}
+			}
+			rateBucketsMu.Unlock()
 		}
 
 		// Attach the raw permissions JSON to the context so downstream handlers
@@ -663,6 +764,9 @@ func main() {
 	autoMigrateColumn(db, "agents", "stream_enabled", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "projects", "tags", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "projects", "is_active", "INTEGER DEFAULT 1")
+	autoMigrateColumn(db, "api_keys", "rate_limit", "INTEGER DEFAULT 0") // requests/minute, 0 = unlimited
+	autoMigrateColumn(db, "outputs", "type", "TEXT DEFAULT 'Command'")   // Command | Webhook
+	autoMigrateColumn(db, "outputs", "webhook_url", "TEXT DEFAULT ''")
 
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
 
@@ -741,12 +845,95 @@ func main() {
 	mux.HandleFunc("PUT /api/v1/agents/{id}", app.handleUpdateAgent)
 	mux.HandleFunc("DELETE /api/v1/agents/{id}", app.handleDeleteAgent)
 
-	// ------------------------------------------------------------------
-	// POST /api/v1/agents/{id}/run — standalone execution endpoint.
-	// Accepts {"input":"..."} (or "message"), runs the agent pipeline
-	// synchronously without streaming, returns {"reply":"...","logs":[]}.
-	// Requires agents/execute scope for API key callers.
-	// ------------------------------------------------------------------
+	// POST /api/v1/agents/{id}/clone — duplicates an agent with a new ID.
+	mux.HandleFunc("POST /api/v1/agents/{id}/clone", func(w http.ResponseWriter, r *http.Request) {
+		srcID := r.PathValue("id")
+		var ag Agent
+		err := app.ConfigDB.QueryRow(
+			`SELECT name, provider_id, model, sources, skills, outputs, mcps, projects,
+			        system_prompt, token_usage, input_methods, output_methods, user_prompt_prefix,
+			        temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled
+			 FROM agents WHERE id=?`, srcID,
+		).Scan(&ag.Name, &ag.ProviderID, &ag.Model, &ag.Sources, &ag.Skills, &ag.Outputs,
+			&ag.MCPs, &ag.Projects, &ag.SystemPrompt, &ag.TokenUsage,
+			&ag.InputMethods, &ag.OutputMethods, &ag.UserPromptPrefix,
+			&ag.Temperature, &ag.MaxTokens, &ag.TopP,
+			&ag.PrivacyEnabled, &ag.CanCreateSkills, &ag.StreamEnabled)
+		if err != nil {
+			http.Error(w, `{"error":"agent not found"}`, http.StatusNotFound)
+			return
+		}
+		newID := fmt.Sprintf("ag_%d", time.Now().UnixNano())
+		newName := ag.Name + " (Copy)"
+		_, dbErr := SyncDBExec(app.ConfigDB,
+			`INSERT INTO agents (id, name, provider_id, model, sources, skills, outputs, mcps, projects,
+			  system_prompt, token_usage, input_methods, output_methods, user_prompt_prefix,
+			  temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled)
+			 VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
+			newID, newName, ag.ProviderID, ag.Model, ag.Sources, ag.Skills, ag.Outputs,
+			ag.MCPs, ag.Projects, ag.SystemPrompt,
+			ag.InputMethods, ag.OutputMethods, ag.UserPromptPrefix,
+			ag.Temperature, ag.MaxTokens, ag.TopP,
+			ag.PrivacyEnabled, ag.CanCreateSkills, ag.StreamEnabled)
+		if dbErr != nil {
+			http.Error(w, `{"error":"failed to clone agent"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": newID, "name": newName})
+	})
+
+	// GET /api/v1/providers/{id}/health — pings the provider's chat endpoint and returns latency.
+	mux.HandleFunc("GET /api/v1/providers/{id}/health", func(w http.ResponseWriter, r *http.Request) {
+		var endpoint, apiKey, pType string
+		if err := app.ConfigDB.QueryRow(
+			"SELECT endpoint, api_key, COALESCE(type,'OpenAI') FROM providers WHERE id=?",
+			r.PathValue("id"),
+		).Scan(&endpoint, &apiKey, &pType); err != nil {
+			http.Error(w, `{"error":"provider not found"}`, http.StatusNotFound)
+			return
+		}
+		// SSRF guard: Ollama and other local providers are intentionally local, so we skip
+		// the private-host check for those — but reject obviously non-HTTP(S) schemes.
+		parsedEP, epErr := url.ParseRequestURI(strings.TrimRight(endpoint, "/"))
+		if epErr != nil || (parsedEP.Scheme != "http" && parsedEP.Scheme != "https") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "invalid endpoint scheme"})
+			return
+		}
+		// Build a minimal models/ping request appropriate for the provider type.
+		pingURL := strings.TrimRight(endpoint, "/")
+		var pingReq *http.Request
+		switch strings.ToLower(pType) {
+		case "claude":
+			pingURL += "/v1/models"
+			pingReq, _ = http.NewRequest("GET", pingURL, nil)
+			pingReq.Header.Set("x-api-key", apiKey)
+			pingReq.Header.Set("anthropic-version", "2023-06-01")
+		case "ollama":
+			pingURL += "/api/tags"
+			pingReq, _ = http.NewRequest("GET", pingURL, nil)
+		default:
+			pingURL += "/models"
+			pingReq, _ = http.NewRequest("GET", pingURL, nil)
+			if apiKey != "" {
+				pingReq.Header.Set("Authorization", "Bearer "+apiKey)
+			}
+		}
+		client := &http.Client{Timeout: 8 * time.Second}
+		t0 := time.Now()
+		resp, err := client.Do(pingReq)
+		latency := time.Since(t0).Milliseconds()
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "latency_ms": latency, "error": err.Error()})
+			return
+		}
+		resp.Body.Close()
+		ok := resp.StatusCode < 500
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": ok, "latency_ms": latency, "status": resp.StatusCode})
+	})
+
 	mux.HandleFunc("POST /api/v1/agents/{id}/run", func(w http.ResponseWriter, r *http.Request) {
 		agentID := r.PathValue("id")
 		if agentID == "" {
@@ -810,7 +997,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/history/{agent_id}", app.handleClearChatHistory)
 
 	mux.HandleFunc("GET /api/v1/apikeys", func(w http.ResponseWriter, r *http.Request) {
-		rows, err := app.ConfigDB.Query("SELECT id, name, description, token, permissions FROM api_keys")
+		rows, err := app.ConfigDB.Query("SELECT id, name, description, token, permissions, COALESCE(rate_limit,0) FROM api_keys")
 		if err != nil {
 			json.NewEncoder(w).Encode([]APIKey{})
 			return
@@ -819,7 +1006,7 @@ func main() {
 		var list []APIKey
 		for rows.Next() {
 			var i APIKey
-			rows.Scan(&i.ID, &i.Name, &i.Description, &i.Token, &i.Permissions)
+			rows.Scan(&i.ID, &i.Name, &i.Description, &i.Token, &i.Permissions, &i.RateLimit)
 			list = append(list, i)
 		}
 		if list == nil {
@@ -837,7 +1024,7 @@ func main() {
 		}
 		i.ID = fmt.Sprintf("ak_%d", time.Now().UnixNano())
 		i.Token = "zuv-" + hex.EncodeToString([]byte(i.ID))
-		app.ConfigDB.Exec("INSERT INTO api_keys (id, name, description, token, permissions) VALUES (?, ?, ?, ?, ?)", i.ID, i.Name, i.Description, i.Token, i.Permissions)
+		app.ConfigDB.Exec("INSERT INTO api_keys (id, name, description, token, permissions, rate_limit) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Description, i.Token, i.Permissions, i.RateLimit)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
@@ -845,7 +1032,7 @@ func main() {
 	mux.HandleFunc("PUT /api/v1/apikeys/{id}", func(w http.ResponseWriter, r *http.Request) {
 		var i APIKey
 		json.NewDecoder(r.Body).Decode(&i)
-		app.ConfigDB.Exec("UPDATE api_keys SET name=?, description=?, permissions=? WHERE id=?", i.Name, i.Description, i.Permissions, r.PathValue("id"))
+		app.ConfigDB.Exec("UPDATE api_keys SET name=?, description=?, permissions=?, rate_limit=? WHERE id=?", i.Name, i.Description, i.Permissions, i.RateLimit, r.PathValue("id"))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
@@ -862,7 +1049,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.1.6",
+			"version":     "v1.2.0",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1316,7 +1503,7 @@ async function doImport(e) {
 		port = "18806"
 	}
 	log.Printf("Starting Zuver OS Framework on port %s", port)
-	http.ListenAndServe(":"+port, loggingMiddleware(app.authMiddleware(mux)))
+	http.ListenAndServe(":"+port, securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux))))
 }
 
 // --------------------------------------------------------------------------
@@ -1722,9 +1909,14 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		if userVector := getEmbedding(processedUserMsg, a.ConfigDB); userVector != nil {
 			activeInjections += "\n[RAG Auto-Retrieved Memory]\n"
 			for ragID := range allowedRAGs {
-				var tName string
-				a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&tName)
-				if tName == "" {
+				var rawAutoTName string
+				a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&rawAutoTName)
+				if rawAutoTName == "" {
+					continue
+				}
+				tName, tErr := sanitizeTableName(rawAutoTName)
+				if tErr != nil {
+					log.Printf("[Security] RAG auto-retrieval: table name failed sanitization for ragID %q: %v", ragID, tErr)
 					continue
 				}
 				rows, err := a.MemoryDB.Query(fmt.Sprintf("SELECT record_name, data, vector FROM %s", tName))
@@ -2410,6 +2602,9 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		a.logAnalytics("agent", agent.ID, totalTokensUsed, true)
 		a.logAnalytics("provider", agent.ProviderID, totalTokensUsed, true)
 
+		// Dispatch webhook outputs asynchronously.
+		go a.dispatchWebhookOutputs(agent, replyContent)
+
 		if useStream {
 			sseEmit(map[string]interface{}{"done": true, "logs": executionLogs})
 		} else {
@@ -2621,10 +2816,15 @@ func (a *App) executeCommand(
 		if !allowedPreferences[prefID] {
 			return "[SYSTEM ERROR] Unauthorized."
 		}
-		var tName string
-		a.ConfigDB.QueryRow("SELECT table_name FROM preferences WHERE id=?", prefID).Scan(&tName)
-		if tName == "" {
+		var rawTName string
+		a.ConfigDB.QueryRow("SELECT table_name FROM preferences WHERE id=?", prefID).Scan(&rawTName)
+		if rawTName == "" {
 			return "[SYSTEM ERROR] Preference DB not found."
+		}
+		tName, tErr := sanitizeTableName(rawTName)
+		if tErr != nil {
+			log.Printf("[Security] Pref table name failed sanitization: %v", tErr)
+			return "[SYSTEM ERROR] Invalid preference table."
 		}
 		switch cmd {
 		case "/getPrefDataList":
@@ -2681,10 +2881,15 @@ func (a *App) executeCommand(
 		if !allowedRAGs[ragID] {
 			return "[SYSTEM ERROR] Unauthorized."
 		}
-		var tName string
-		a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&tName)
-		if tName == "" {
+		var rawTNameRAG string
+		a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&rawTNameRAG)
+		if rawTNameRAG == "" {
 			return "[SYSTEM ERROR] RAG not found."
+		}
+		tName, tErr := sanitizeTableName(rawTNameRAG)
+		if tErr != nil {
+			log.Printf("[Security] RAG table name failed sanitization: %v", tErr)
+			return "[SYSTEM ERROR] Invalid RAG table."
 		}
 		switch cmd {
 		case "/getRAGDataList":
@@ -2911,15 +3116,65 @@ func (a *App) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Sanitize agentID: only allow alphanumerics, hyphens, and underscores.
 	agentID := r.FormValue("agent_id")
 	if agentID == "" {
 		agentID = "global_temp"
 	}
+	if !regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`).MatchString(agentID) {
+		http.Error(w, `{"error":"invalid agent_id"}`, http.StatusBadRequest)
+		return
+	}
 
-	// Security: sanitize original filename.
+	// Extension allowlist — reject anything not in the approved set.
 	safeBase := filepath.Base(filepath.Clean(header.Filename))
+	ext := strings.ToLower(filepath.Ext(safeBase))
+	if !allowedUploadExts[ext] {
+		http.Error(w, `{"error":"file type not allowed"}`, http.StatusUnsupportedMediaType)
+		return
+	}
+
+	// Read the first 512 bytes for magic-byte MIME detection.
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	detectedMIME := http.DetectContentType(buf[:n])
+
+	// Map allowed MIME prefixes to their permitted extensions to catch disguised files
+	// (e.g. an .jpg that is actually a ZIP). Only allow content that truly matches.
+	allowedMIMEForExt := map[string]string{
+		".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+		".webp": "image/", ".gif": "image/gif",
+		".pdf": "application/pdf",
+		".txt": "text/plain", ".md": "text/plain", ".csv": "text/plain",
+		".json": "text/plain", ".yaml": "text/plain", ".yml": "text/plain",
+		".html": "text/html",
+		".mp3":  "audio/", ".wav": "audio/",
+		".mp4": "video/",
+	}
+	if expectedMIMEPrefix, ok := allowedMIMEForExt[ext]; ok {
+		if !strings.HasPrefix(detectedMIME, expectedMIMEPrefix) {
+			// Plain text files often detect as text/plain regardless of extension — allow that.
+			if expectedMIMEPrefix != "text/plain" || !strings.HasPrefix(detectedMIME, "text/") {
+				http.Error(w, `{"error":"file content does not match declared extension"}`, http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+	}
+
+	// Rewind to start so the full file is written to disk.
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		// Seek may not be available on all multipart readers; fall back to prepending.
+	}
+
 	fileName := fmt.Sprintf("%s___%d___%s", agentID, time.Now().UnixNano(), safeBase)
-	path := filepath.Join("uploads", fileName)
+	uploadsDir, _ := filepath.Abs("uploads")
+	path := filepath.Join(uploadsDir, fileName)
+
+	// Confirm the resolved path is still inside the uploads directory.
+	if !strings.HasPrefix(path, uploadsDir+string(filepath.Separator)) {
+		http.Error(w, `{"error":"invalid file path"}`, http.StatusBadRequest)
+		return
+	}
 
 	dst, err := os.Create(path)
 	if err != nil {
@@ -2927,10 +3182,14 @@ func (a *App) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer dst.Close()
+	// Write the already-read 512 bytes first, then stream the remainder.
+	dst.Write(buf[:n])
 	io.Copy(dst, file)
 
+	// Return a relative path for portability.
+	relPath := filepath.Join("uploads", fileName)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"path": path, "status": "ok"})
+	json.NewEncoder(w).Encode(map[string]string{"path": relPath, "status": "ok"})
 }
 
 // autoMigrateColumn safely ensures column schema synchronization without truncating data.
@@ -3196,9 +3455,13 @@ func (a *App) handleGetRAGs(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateRAG(w http.ResponseWriter, r *http.Request) {
 	var i RAG
 	json.NewDecoder(r.Body).Decode(&i)
+	// Generate table name server-side using only safe characters — never trust client input for this.
 	i.TableName = fmt.Sprintf("rag_tbl_%d", time.Now().UnixNano())
 	a.ConfigDB.Exec("INSERT INTO rags (id, name, description, table_name) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.Description, i.TableName)
-	a.MemoryDB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY AUTOINCREMENT, record_name TEXT UNIQUE, data TEXT, vector TEXT DEFAULT '[]')", i.TableName))
+	// sanitizeTableName is called here as a belt-and-suspenders check on our own generated name.
+	if safeTbl, err := sanitizeTableName(i.TableName); err == nil {
+		a.MemoryDB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY AUTOINCREMENT, record_name TEXT UNIQUE, data TEXT, vector TEXT DEFAULT '[]')", safeTbl))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3214,14 +3477,75 @@ func (a *App) handleUpdateRAG(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleDeleteRAG(w http.ResponseWriter, r *http.Request) {
 	var t string
 	a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", r.PathValue("id")).Scan(&t)
-	a.MemoryDB.Exec("DROP TABLE IF EXISTS " + t)
+	if safeTbl, err := sanitizeTableName(t); err == nil {
+		a.MemoryDB.Exec("DROP TABLE IF EXISTS " + safeTbl)
+	}
 	a.ConfigDB.Exec("DELETE FROM rags WHERE id=?", r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// dispatchWebhookOutputs fires any Webhook-type outputs assigned to the agent, sending the
+// reply as a JSON POST payload to each configured URL. Runs in a background goroutine.
+func (a *App) dispatchWebhookOutputs(agent Agent, reply string) {
+	var assignedOutputs []string
+	if err := json.Unmarshal([]byte(agent.Outputs), &assignedOutputs); err != nil || len(assignedOutputs) == 0 {
+		return
+	}
+	if len(assignedOutputs) == 0 {
+		return
+	}
+	placeholders := make([]string, len(assignedOutputs))
+	args := make([]interface{}, len(assignedOutputs))
+	for i, id := range assignedOutputs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf("SELECT id, name, type, webhook_url FROM outputs WHERE type='Webhook' AND id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := a.ConfigDB.Query(query, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	type whOut struct{ id, name, typ, url string }
+	var hooks []whOut
+	for rows.Next() {
+		var h whOut
+		rows.Scan(&h.id, &h.name, &h.typ, &h.url)
+		if h.url != "" {
+			hooks = append(hooks, h)
+		}
+	}
+	rows.Close()
+	for _, h := range hooks {
+		// SSRF guard: refuse to POST to private/loopback addresses.
+		if isPrivateHost(h.url) {
+			log.Printf("[Security] Webhook output %q blocked: URL %q resolves to a private host", h.id, h.url)
+			continue
+		}
+		payload, _ := json.Marshal(map[string]interface{}{
+			"agent_id":   agent.ID,
+			"agent_name": agent.Name,
+			"reply":      reply,
+			"output_id":  h.id,
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		})
+		req, err := http.NewRequest("POST", h.url, bytes.NewReader(payload))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", "Zuver-Webhook/1.0")
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}
+}
+
 func (a *App) handleGetOutputs(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, name, instruction, command_tpl FROM outputs")
+	rows, err := a.ConfigDB.Query("SELECT id, name, instruction, COALESCE(type,'Command'), COALESCE(command_tpl,''), COALESCE(webhook_url,'') FROM outputs")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]Output{})
@@ -3231,7 +3555,10 @@ func (a *App) handleGetOutputs(w http.ResponseWriter, r *http.Request) {
 	var list []Output
 	for rows.Next() {
 		var i Output
-		rows.Scan(&i.ID, &i.Name, &i.Instruction, &i.CommandTpl)
+		rows.Scan(&i.ID, &i.Name, &i.Instruction, &i.Type, &i.CommandTpl, &i.WebhookURL)
+		if i.Type == "" {
+			i.Type = "Command"
+		}
 		list = append(list, i)
 	}
 	if list == nil {
@@ -3247,7 +3574,10 @@ func (a *App) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 	if i.ID == "" {
 		i.ID = fmt.Sprintf("out_%d", time.Now().UnixNano())
 	}
-	a.ConfigDB.Exec("INSERT INTO outputs (id, name, instruction, command_tpl) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.Instruction, i.CommandTpl)
+	if i.Type == "" {
+		i.Type = "Command"
+	}
+	a.ConfigDB.Exec("INSERT INTO outputs (id, name, instruction, type, command_tpl, webhook_url) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Instruction, i.Type, i.CommandTpl, i.WebhookURL)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3255,7 +3585,7 @@ func (a *App) handleCreateOutput(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateOutput(w http.ResponseWriter, r *http.Request) {
 	var i Output
 	json.NewDecoder(r.Body).Decode(&i)
-	a.ConfigDB.Exec("UPDATE outputs SET name=?, instruction=?, command_tpl=? WHERE id=?", i.Name, i.Instruction, i.CommandTpl, r.PathValue("id"))
+	a.ConfigDB.Exec("UPDATE outputs SET name=?, instruction=?, type=?, command_tpl=?, webhook_url=? WHERE id=?", i.Name, i.Instruction, i.Type, i.CommandTpl, i.WebhookURL, r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3476,7 +3806,9 @@ func (a *App) handleCreatePreference(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&i)
 	i.TableName = fmt.Sprintf("pref_tbl_%d", time.Now().UnixNano())
 	a.ConfigDB.Exec("INSERT INTO preferences (id, name, description, table_name) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.Description, i.TableName)
-	a.MemoryDB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY AUTOINCREMENT, record_name TEXT UNIQUE, data TEXT)", i.TableName))
+	if safeTbl, err := sanitizeTableName(i.TableName); err == nil {
+		a.MemoryDB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id INTEGER PRIMARY KEY AUTOINCREMENT, record_name TEXT UNIQUE, data TEXT)", safeTbl))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3492,7 +3824,9 @@ func (a *App) handleUpdatePreference(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleDeletePreference(w http.ResponseWriter, r *http.Request) {
 	var t string
 	a.ConfigDB.QueryRow("SELECT table_name FROM preferences WHERE id=?", r.PathValue("id")).Scan(&t)
-	a.MemoryDB.Exec("DROP TABLE IF EXISTS " + t)
+	if safeTbl, err := sanitizeTableName(t); err == nil {
+		a.MemoryDB.Exec("DROP TABLE IF EXISTS " + safeTbl)
+	}
 	a.ConfigDB.Exec("DELETE FROM preferences WHERE id=?", r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -4046,13 +4380,21 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 
 // extractFilePayload analyzes and extracts base64 representations and MIME headers from local binaries.
 func extractFilePayload(path string) (mime string, pureB64 string, ok bool) {
-	b, err := os.ReadFile(path)
+	// Confine reads to the uploads directory to prevent path traversal.
+	uploadsAbs, _ := filepath.Abs("uploads")
+	absPath, err := filepath.Abs(path)
+	if err != nil || !strings.HasPrefix(absPath, uploadsAbs+string(filepath.Separator)) {
+		log.Printf("[Security] extractFilePayload rejected path outside uploads: %q", path)
+		return "", "", false
+	}
+
+	b, err := os.ReadFile(absPath)
 	if err != nil {
 		log.Printf("[I/O Error] Failed to read file: %v", err)
 		return "", "", false
 	}
 
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(absPath))
 	mime = "application/octet-stream"
 	switch ext {
 	case ".png":
