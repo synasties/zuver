@@ -22,7 +22,7 @@
 * 🌌 **Omniscient & Omnipotent.** Supports OpenAI-standard Skills, featuring Generative Skills, Workflows, Computer control, and more.
 
 * ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
-* 
+  
 * 💻 **Bash for LLM.** Utilizing pseudo-terminals and natural-language-like programming, empowering your Agent to use Skills and APIs via LLMs out-of-the-box.
 
 * 🛡️ **Privacy by Design.** Leveraging a revolutionary Edge + Cloud hybrid model architecture to provide privacy-first desensitization and semantic obfuscation capabilities.
