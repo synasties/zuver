@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -23,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	_ "modernc.org/sqlite"
 )
@@ -175,6 +178,20 @@ type DBTask struct {
 // raw permissions JSON string for an authenticated external API key request.
 type contextKeyAPIKeyPerms struct{}
 
+// bcryptHash returns a bcrypt hash of the given password at the default cost.
+func bcryptHash(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// bcryptCompare returns true if the plaintext password matches the stored bcrypt hash.
+func bcryptCompare(hash, password string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
 // safeTableNameRe matches only identifiers that are safe to interpolate into SQL
 // table/column names — alphanumerics and underscores only.
 var safeTableNameRe = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
@@ -233,7 +250,13 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		// API and asset paths get the strictest policy.
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			w.Header().Set("Content-Security-Policy",
-				"default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'")
+				"default-src 'self'; "+
+					"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://unpkg.com; "+
+					"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://unpkg.com https://cdn.tailwindcss.com; "+
+					"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com; "+
+					"img-src 'self' data: blob: https:; "+
+					"connect-src 'self' https:; "+
+					"frame-ancestors 'self'")
 		} else {
 			w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		}
@@ -550,17 +573,43 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var dbHash string
 	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='admin_password'").Scan(&dbHash)
 
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(req.Password)))
-
-	// First boot: initialise the admin password.
+	// First boot: initialise the admin password with a bcrypt hash.
 	if dbHash == "" {
-		SyncDBExec(a.ConfigDB, "INSERT INTO settings (key, value) VALUES ('admin_password', ?)", hash)
-		dbHash = hash
+		newHash, err := bcryptHash(req.Password)
+		if err != nil {
+			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+			return
+		}
+		SyncDBExec(a.ConfigDB, "INSERT INTO settings (key, value) VALUES ('admin_password', ?)", newHash)
+		dbHash = newHash
 	}
 
-	if hash == dbHash {
+	// Migrate legacy plain SHA-256 hashes on first successful login.
+	// A bcrypt hash always starts with "$2"; SHA-256 hex is 64 hex chars.
+	if !strings.HasPrefix(dbHash, "$2") {
+		// Verify against old SHA-256 hash for backward compat.
+		oldHash := fmt.Sprintf("%x", sha256.Sum256([]byte(req.Password)))
+		if oldHash != dbHash {
+			loginAttempts[ip]++
+			if loginAttempts[ip] >= 5 {
+				lockoutTime[ip] = time.Now().Add(1 * time.Minute)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Invalid password. Access Denied."}`, http.StatusUnauthorized)
+			return
+		}
+		// Upgrade to bcrypt.
+		newHash, _ := bcryptHash(req.Password)
+		SyncDBExec(a.ConfigDB, "UPDATE settings SET value=? WHERE key='admin_password'", newHash)
+		dbHash = newHash
+	}
+
+	if bcryptCompare(dbHash, req.Password) {
 		loginAttempts[ip] = 0
-		adminToken = fmt.Sprintf("tok_%d", time.Now().UnixNano())
+		// Use crypto/rand for an unpredictable session token.
+		b := make([]byte, 32)
+		rand.Read(b)
+		adminToken = "tok_" + hex.EncodeToString(b)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"token": adminToken})
 	} else {
@@ -1049,7 +1098,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.2.0",
+			"version":     "v1.1.6",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1795,6 +1844,14 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	// --- Presidio PII Masking ---
 	if agent.PrivacyEnabled && req.PresidioEnabled {
 		executionLogs = append(executionLogs, "[Privacy]: Calling Presidio Engine...")
+		// SSRF guard: Presidio URLs come from the request body; validate scheme only
+		// (Presidio is typically local, so private hosts are allowed, but non-HTTP schemes are not).
+		for _, rawU := range []string{req.AnalyzerURL, req.AnonymizerURL} {
+			if p, err := url.ParseRequestURI(rawU); err != nil || (p.Scheme != "http" && p.Scheme != "https") {
+				executionLogs = append(executionLogs, "[Privacy Error]: Invalid Presidio URL scheme — skipping PII masking.")
+				goto skipPresidio
+			}
+		}
 		analyzerEndpoint := strings.TrimRight(req.AnalyzerURL, "/") + "/analyze"
 		anonymizerEndpoint := strings.TrimRight(req.AnonymizerURL, "/") + "/anonymize"
 
@@ -1824,6 +1881,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 			executionLogs = append(executionLogs, "[Privacy]: Presidio Container Unreachable. Skipping protection layer.")
 		}
 	}
+skipPresidio:
 
 	AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", agent.ID, "user", processedUserMsg)
 
@@ -3455,7 +3513,8 @@ func (a *App) handleGetRAGs(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateRAG(w http.ResponseWriter, r *http.Request) {
 	var i RAG
 	json.NewDecoder(r.Body).Decode(&i)
-	// Generate table name server-side using only safe characters — never trust client input for this.
+	// Always generate ID and table name server-side — never trust client-supplied values.
+	i.ID = fmt.Sprintf("rag_%d", time.Now().UnixNano())
 	i.TableName = fmt.Sprintf("rag_tbl_%d", time.Now().UnixNano())
 	a.ConfigDB.Exec("INSERT INTO rags (id, name, description, table_name) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.Description, i.TableName)
 	// sanitizeTableName is called here as a belt-and-suspenders check on our own generated name.
@@ -3804,6 +3863,8 @@ func (a *App) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreatePreference(w http.ResponseWriter, r *http.Request) {
 	var i Preference
 	json.NewDecoder(r.Body).Decode(&i)
+	// Always generate ID and table name server-side — never trust client-supplied values.
+	i.ID = fmt.Sprintf("pref_%d", time.Now().UnixNano())
 	i.TableName = fmt.Sprintf("pref_tbl_%d", time.Now().UnixNano())
 	a.ConfigDB.Exec("INSERT INTO preferences (id, name, description, table_name) VALUES (?, ?, ?, ?)", i.ID, i.Name, i.Description, i.TableName)
 	if safeTbl, err := sanitizeTableName(i.TableName); err == nil {
@@ -4169,13 +4230,22 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			case "Bash", "Go":
 				code := substituteSkill(sContent)
 				var cmd *exec.Cmd
+				// Write skill content to a temp file and execute it directly rather
+				// than passing it to "sh -c" to avoid shell-expansion injection risks.
+				tmpExt := ".sh"
+				if sType == "Go" {
+					tmpExt = ".go"
+				}
+				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_sk_%d%s", time.Now().UnixNano(), tmpExt))
+				if err := os.WriteFile(tmp, []byte(code), 0700); err != nil {
+					lastResult = "[SKILL ERROR] failed to write temp script"
+					break
+				}
+				defer os.Remove(tmp)
 				if sType == "Bash" {
-					cmd = exec.Command("sh", "-c", code)
+					cmd = exec.Command("sh", tmp)
 				} else {
-					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_sk_%d.go", time.Now().UnixNano()))
-					os.WriteFile(tmp, []byte(code), 0644)
 					cmd = exec.Command("go", "run", tmp)
-					defer os.Remove(tmp)
 				}
 				out, err := cmd.CombinedOutput()
 				if err != nil {
@@ -4186,20 +4256,25 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			case "API":
 				fUrl := substituteSkill(sUrl)
 				fBody := substituteSkill(sBody)
-				apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
-				var hm map[string]string
-				if json.Unmarshal([]byte(sHeaders), &hm) == nil {
-					for k, v := range hm {
-						apiR.Header.Set(k, v)
-					}
-				}
-				extResp, e := (&http.Client{Timeout: 15 * time.Second}).Do(apiR)
-				if e != nil {
-					lastResult = "[SKILL API ERROR] " + e.Error()
+				// SSRF guard: reject private/loopback destinations in API skills.
+				if isPrivateHost(fUrl) {
+					lastResult = "[SKILL API ERROR] URL targets a private/loopback address and is blocked."
 				} else {
-					b, _ := io.ReadAll(extResp.Body)
-					extResp.Body.Close()
-					lastResult = string(b)
+					apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
+					var hm map[string]string
+					if json.Unmarshal([]byte(sHeaders), &hm) == nil {
+						for k, v := range hm {
+							apiR.Header.Set(k, v)
+						}
+					}
+					extResp, e := (&http.Client{Timeout: 15 * time.Second}).Do(apiR)
+					if e != nil {
+						lastResult = "[SKILL API ERROR] " + e.Error()
+					} else {
+						b, _ := io.ReadAll(extResp.Body)
+						extResp.Body.Close()
+						lastResult = string(b)
+					}
 				}
 			}
 			vars["skill_"+sID] = lastResult
@@ -4233,21 +4308,26 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			url = interpolate(url)
 			body = interpolate(body)
 
-			req, _ := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
-			req.Header.Set("Content-Type", "application/json")
-			var hm map[string]string
-			if json.Unmarshal([]byte(headersRaw), &hm) == nil {
-				for k, v := range hm {
-					req.Header.Set(k, v)
-				}
-			}
-			resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-			if err != nil {
-				lastResult = "[HTTP ERROR] " + err.Error()
+			// SSRF guard: reject private/loopback destinations in pipeline HTTP nodes.
+			if isPrivateHost(url) {
+				lastResult = "[HTTP ERROR] URL targets a private/loopback address and is blocked."
 			} else {
-				b, _ := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				lastResult = string(b)
+				req, _ := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
+				req.Header.Set("Content-Type", "application/json")
+				var hm map[string]string
+				if json.Unmarshal([]byte(headersRaw), &hm) == nil {
+					for k, v := range hm {
+						req.Header.Set(k, v)
+					}
+				}
+				resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+				if err != nil {
+					lastResult = "[HTTP ERROR] " + err.Error()
+				} else {
+					b, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
+					lastResult = string(b)
+				}
 			}
 			vars["http_result"] = lastResult
 			logf("HTTP %s %s → %d chars", method, url, len(lastResult))

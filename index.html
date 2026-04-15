@@ -644,10 +644,6 @@
 				<div class="nav-icon-box"><i data-lucide="key" class="w-5 h-5"></i></div>
 				<span class="nav-text" data-i18n="API Keys">API Keys</span>
 			</div>
-			<div data-target="analytics" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="bar-chart-2" class="w-5 h-5"></i></div>
-				<span class="nav-text">Analytics</span>
-			</div>
 			<div data-target="settings" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="settings" class="w-5 h-5"></i></div>
 				<span class="nav-text">Settings</span>
@@ -712,23 +708,63 @@
 				<!-- View: Statistics -->
 				<div id="view-statistics" class="page-view hidden space-y-6">
 					<div>
-						<h2 class="text-xl font-bold">System Analytics</h2>
-						<p class="text-sm text-gray-500 mt-1">Monitor comprehensive token consumption and API invocations.</p>
+						<h2 class="text-xl font-bold">Analytics</h2>
+						<p class="text-sm text-gray-500 mt-1">Token consumption, call volume, and per-agent breakdown.</p>
 					</div>
-					<div
-						class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm w-full">
+					<!-- Summary cards -->
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-[10px] font-bold text-gray-400 uppercase">Tokens (24h)</p>
+							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">—</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-[10px] font-bold text-gray-400 uppercase">Calls (24h)</p>
+							<h3 id="an-global-calls" class="text-2xl font-black mt-1">—</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-[10px] font-bold text-gray-400 uppercase">Active Agents</p>
+							<h3 id="an-active-agents" class="text-2xl font-black mt-1">—</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-[10px] font-bold text-gray-400 uppercase">Avg Success Rate</p>
+							<h3 id="an-avg-success" class="text-2xl font-black mt-1">—</h3>
+						</div>
+					</div>
+					<!-- Usage trend chart (merged: global / agent / provider filter) -->
+					<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm w-full">
 						<div class="flex justify-between items-center mb-6">
-							<h3 class="font-bold flex items-center gap-2 text-lg"><i data-lucide="bar-chart-2"
-									class="w-5 h-5 text-indigo-500"></i> Usage Trends (7 Days)</h3>
+							<h3 class="font-bold flex items-center gap-2 text-lg">
+								<i data-lucide="bar-chart-2" class="w-5 h-5 text-indigo-500"></i> Usage Trends (7 Days)
+							</h3>
 							<select id="chart-filter" onchange="window.loadChartData(this.value)"
 								class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none font-bold text-gray-700 dark:text-gray-300 shadow-sm focus:ring-2 focus:ring-indigo-500/20 transition-all">
-								<option value="global">🌍 Global Analytics</option>
+								<option value="global">Global</option>
 								<optgroup label="Filter by Agent" id="chart-filter-agents"></optgroup>
 								<optgroup label="Filter by Provider" id="chart-filter-providers"></optgroup>
 							</select>
 						</div>
-						<div class="relative h-[400px] w-full">
+						<div class="relative h-[340px] w-full">
 							<canvas id="mainChart"></canvas>
+						</div>
+					</div>
+					<!-- Per-agent breakdown table -->
+					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm overflow-hidden">
+						<div class="px-5 py-3 border-b dark:border-gray-800">
+							<p class="text-sm font-bold">Per-Agent Breakdown</p>
+						</div>
+						<div class="overflow-x-auto">
+							<table class="w-full text-xs">
+								<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+									<tr>
+										<th class="text-left px-5 py-3 font-semibold text-gray-500">Agent</th>
+										<th class="px-5 py-3 text-right font-semibold text-indigo-500">Tokens (24h)</th>
+										<th class="px-5 py-3 text-right font-semibold text-blue-500">Calls (24h)</th>
+										<th class="px-5 py-3 text-right font-semibold text-green-500">Success Rate</th>
+										<th class="px-5 py-3 text-right font-semibold text-gray-500">Last Call</th>
+									</tr>
+								</thead>
+								<tbody id="an-agent-table" class="divide-y dark:divide-gray-800"></tbody>
+							</table>
 						</div>
 					</div>
 				</div>
@@ -1125,60 +1161,6 @@
 					</div>
 				</div>
 				<!-- View: Settings -->
-				<!-- View: Analytics -->
-				<div id="view-analytics" class="page-view hidden space-y-6">
-					<p class="text-sm text-gray-500 mt-1">Token usage and call volume per agent over the last 7 days.</p>
-					<!-- Global 7-day summary bar -->
-					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
-							<p class="text-[10px] font-bold text-gray-400 uppercase">Tokens (24h)</p>
-							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">0</h3>
-						</div>
-						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
-							<p class="text-[10px] font-bold text-gray-400 uppercase">Calls (24h)</p>
-							<h3 id="an-global-calls" class="text-2xl font-black mt-1">0</h3>
-						</div>
-						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
-							<p class="text-[10px] font-bold text-gray-400 uppercase">Active Agents</p>
-							<h3 id="an-active-agents" class="text-2xl font-black mt-1">0</h3>
-						</div>
-						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
-							<p class="text-[10px] font-bold text-gray-400 uppercase">Avg Success Rate</p>
-							<h3 id="an-avg-success" class="text-2xl font-black mt-1">-</h3>
-						</div>
-					</div>
-					<!-- Chart -->
-					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg p-5 shadow-sm">
-						<div class="flex items-center justify-between mb-4">
-							<p class="text-sm font-bold">Token Usage (7 days)</p>
-							<select id="an-agent-select" onchange="loadAnalyticsChart()" class="text-xs bg-transparent border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 outline-none">
-								<option value="global">All Agents</option>
-							</select>
-						</div>
-						<canvas id="an-chart" height="80"></canvas>
-					</div>
-					<!-- Per-agent table -->
-					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm overflow-hidden">
-						<div class="px-5 py-3 border-b dark:border-gray-800">
-							<p class="text-sm font-bold">Per-Agent Breakdown</p>
-						</div>
-						<div class="overflow-x-auto">
-							<table class="w-full text-xs">
-								<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
-									<tr>
-										<th class="text-left px-5 py-3 font-semibold text-gray-500">Agent</th>
-										<th class="px-5 py-3 text-right font-semibold text-indigo-500">Tokens (24h)</th>
-										<th class="px-5 py-3 text-right font-semibold text-blue-500">Calls (24h)</th>
-										<th class="px-5 py-3 text-right font-semibold text-green-500">Success Rate</th>
-										<th class="px-5 py-3 text-right font-semibold text-gray-500">Last Call</th>
-									</tr>
-								</thead>
-								<tbody id="an-agent-table" class="divide-y dark:divide-gray-800"></tbody>
-							</table>
-						</div>
-					</div>
-				</div>
-
 				<div id="view-settings" class="page-view hidden space-y-6">
 					<div>
 						<p class="text-sm text-gray-500 mt-1">Manage system-wide configurations.</p>
@@ -3969,10 +3951,8 @@
 				const navEl = document.querySelector(`.nav-item[data-target="${target}"] .nav-text`);
 				if (pageTitleEl && navEl) pageTitleEl.innerText = navEl.innerText;
 
-				// Lazy-load chart when statistics tab is opened.
-				if (target === 'statistics') window.loadChartData('global');
-				// Lazy-load analytics dashboard when analytics tab is opened.
-				if (target === 'analytics') window.loadAnalyticsDashboard();
+				// Lazy-load analytics dashboard (summary cards, chart, per-agent table) when statistics tab is opened.
+				if (target === 'statistics') window.loadAnalyticsDashboard();
 
 				// Load chat history when switching to console.
 				if (target === 'chat') { if (typeof loadChatHistory === 'function') loadChatHistory(); }
@@ -4067,19 +4047,12 @@
 		/* =============================================
 		 * ANALYTICS DASHBOARD
 		 * ============================================= */
-		let anChartObj = null;
-
 		window.loadAnalyticsDashboard = async () => {
 			try {
 				const summary = await api('/analytics/summary');
 				const entities = summary.entities || {};
 
-				// Populate agent selector
-				const sel = document.getElementById('an-agent-select');
-				sel.innerHTML = '<option value="global">All Agents</option>' +
-					dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-
-				// Global summary cards
+				// Summary cards
 				const globalTokens = summary.global_tokens_24h || 0;
 				let totalCalls = 0, totalSuccessSum = 0, successCount = 0, activeAgents = 0;
 				dataStore.agents.forEach(a => {
@@ -4096,8 +4069,16 @@
 				document.getElementById('an-active-agents').textContent = activeAgents;
 				document.getElementById('an-avg-success').textContent = successCount > 0 ? (totalSuccessSum / successCount).toFixed(1) + '%' : '-';
 
-				// Per-agent table
+				// Populate the unified chart-filter select with agents and providers, then render chart.
+				const agentsOptgroup = document.getElementById('chart-filter-agents');
+				const providersOptgroup = document.getElementById('chart-filter-providers');
+				if (agentsOptgroup) agentsOptgroup.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+				if (providersOptgroup) providersOptgroup.innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+				window.loadChartData('global');
+
+				// Per-agent breakdown table
 				const tbody = document.getElementById('an-agent-table');
+				if (!tbody) return;
 				if (dataStore.agents.length === 0) {
 					tbody.innerHTML = '<tr><td colspan="5" class="px-5 py-6 text-center text-gray-400">No agents found.</td></tr>';
 				} else {
@@ -4119,52 +4100,7 @@
 						</tr>`;
 					}).join('');
 				}
-
-				// Load chart for the currently selected agent/global
-				await window.loadAnalyticsChart();
 			} catch(e) { console.error('Analytics dashboard error', e); }
-		};
-
-		window.loadAnalyticsChart = async () => {
-			const filterId = document.getElementById('an-agent-select')?.value || 'global';
-			try {
-				const chartData = await api(`/analytics/chart?id=${filterId}`);
-				const ctx = document.getElementById('an-chart')?.getContext('2d');
-				if (!ctx) return;
-				if (anChartObj) anChartObj.destroy();
-				const isDark = document.documentElement.classList.contains('dark');
-				const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-				anChartObj = new Chart(ctx, {
-					type: 'bar',
-					data: {
-						labels: chartData.labels.map(l => l.split('-').slice(1).join('/')),
-						datasets: [{
-							label: 'Tokens',
-							data: chartData.tokens,
-							backgroundColor: 'rgba(99,102,241,0.7)',
-							borderRadius: 4,
-							yAxisID: 'y'
-						}, {
-							label: 'Calls',
-							data: chartData.calls,
-							backgroundColor: 'rgba(59,130,246,0.5)',
-							borderRadius: 4,
-							yAxisID: 'y1'
-						}]
-					},
-					options: {
-						responsive: true,
-						maintainAspectRatio: true,
-						interaction: { mode: 'index', intersect: false },
-						plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 6 } } },
-						scales: {
-							x: { grid: { color: gridColor } },
-							y: { type: 'linear', position: 'left', title: { display: true, text: 'Tokens' }, grid: { color: gridColor } },
-							y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Calls' } }
-						}
-					}
-				});
-			} catch(e) { console.error('Analytics chart error', e); }
 		};
 
 		/** Validates authentication payloads and issues session tokens */
