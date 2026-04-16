@@ -14,7 +14,9 @@
 [![GitHub Release](https://img.shields.io/github/v/release/synasties/zuver)](https://github.com/synasties/zuver/releases)
 [![GitHub stars](https://img.shields.io/github/stars/synasties/zuver?style=social)](https://github.com/synasties/zuver/stargazers)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#)
-
+<a href="https://twitter.com/intent/follow?screen_name=zuver_ai" target="_blank">
+        <img src="https://img.shields.io/twitter/follow/zuver_ai?logo=X&color=%20%23f5f5f5"
+            alt="follow us on X(Twitter)"></a>
 </div>
 
 ## ✨ Features
