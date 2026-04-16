@@ -5,7 +5,7 @@
 
 # Zuver
 
-*Empower next gen of Agentic/Companion AI via an unified, ease of use framework.*
+*Lightweight, scalable, reliable agentic AI framework, built for imaginations.*
 
 **[Website](https://zuver.cc) • [Documentations](https://github.com/synasties/zuver/wiki) • [Market](https://matex.oi.ms) • [Telegram Community](https://t.me/zuver_guthib) • [YouTube](https://youtube.com/@zuver_ai)**
 
