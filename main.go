@@ -242,8 +242,26 @@ func isPrivateHost(rawURL string) bool {
 // securityHeadersMiddleware adds standard defensive HTTP response headers to
 // every response: X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
 // Content-Security-Policy (restrictive default), and Permissions-Policy.
-func securityHeadersMiddleware(next http.Handler) http.Handler {
+// When cors_enabled is 'true' in the settings table it also adds
+// Access-Control-Allow-Origin: * and handles OPTIONS preflight requests.
+func (a *App) securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read CORS setting live so changes take effect without restart.
+		var corsVal string
+		a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='cors_enabled'").Scan(&corsVal)
+		corsEnabled := corsVal == "true"
+
+		if corsEnabled {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+			// Short-circuit OPTIONS preflight — no further processing needed.
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -822,6 +840,7 @@ func main() {
 	autoMigrateColumn(db, "agents", "mcp_tools", "TEXT DEFAULT '[]'")  // JSON array of {mcpId, tool} pairs assigned to this agent
 
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cors_enabled', 'false')")
 
 	var pCount int
 	db.QueryRow("SELECT COUNT(*) FROM projects").Scan(&pCount)
@@ -1104,7 +1123,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.2.1",
+			"version":     "v1.2.2",
 			"description": "Next-gen Generative AI Framework, built for secure.",
 		})
 	})
@@ -1558,7 +1577,7 @@ async function doImport(e) {
 		port = "18806"
 	}
 	log.Printf("Starting Zuver OS Framework on port %s", port)
-	http.ListenAndServe(":"+port, securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux))))
+	http.ListenAndServe(":"+port, app.securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux))))
 }
 
 // --------------------------------------------------------------------------

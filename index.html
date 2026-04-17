@@ -731,7 +731,8 @@
 						</div>
 					</div>
 					<!-- Usage trend chart (merged: global / agent / provider filter) -->
-					<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm w-full">
+					<div
+						class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800 shadow-sm w-full">
 						<div class="flex justify-between items-center mb-6">
 							<h3 class="font-bold flex items-center gap-2 text-lg">
 								<i data-lucide="bar-chart-2" class="w-5 h-5 text-indigo-500"></i> Usage Trends (7 Days)
@@ -748,7 +749,8 @@
 						</div>
 					</div>
 					<!-- Per-agent breakdown table -->
-					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm overflow-hidden">
+					<div
+						class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm overflow-hidden">
 						<div class="px-5 py-3 border-b dark:border-gray-800">
 							<p class="text-sm font-bold">Per-Agent Breakdown</p>
 						</div>
@@ -1179,6 +1181,16 @@
 						<div
 							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
 							<div>
+								<span class="font-bold flex items-center gap-2"><i data-lucide="share-2"
+										class="w-4 h-4 text-orange-500"></i> CORS — Cross-Origin Resource Sharing</span>
+								<p class="text-xs text-gray-500 mt-1">Adds <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">Access-Control-Allow-Origin: *</code> to all API responses. Enable when accessing the API from a browser on a different origin.</p>
+							</div>
+							<input type="checkbox" id="toggle-cors" onchange="saveSettings()"
+								class="w-4 h-4 cursor-pointer accent-orange-500 shrink-0 ml-4">
+						</div>
+						<div
+							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
+							<div>
 								<span class="font-bold flex items-center gap-2"><i data-lucide="globe"
 										class="w-4 h-4 text-blue-500"></i> Interface Language</span>
 								<p class="text-xs text-gray-500 mt-1">Change OS display language (EN/ZH/DE).</p>
@@ -1371,14 +1383,20 @@
 		</div>
 	</div>
 	<!-- Modal: Skill -->
-	<div id="modal-skill" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col" style="max-height:92vh">
+	<div id="modal-skill"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col"
+			style="max-height:92vh">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 shrink-0 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4 text-orange-500"></i> Omni Skill</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="zap"
+							class="w-4 h-4 text-orange-500"></i> Omni Skill</h3>
 					<p class="text-xs text-gray-500 mt-0.5">Define a callable skill for your agents.</p>
 				</div>
-				<button onclick="closeModal('modal-skill')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-skill')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 				<input type="hidden" id="skill-id-input">
@@ -1413,8 +1431,12 @@
 				</div>
 				<div id="skill-api-ui" class="hidden flex-col gap-3">
 					<div class="grid grid-cols-4 gap-2">
-						<select id="skill-api-method" class="border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-semibold focus:outline-none">
-							<option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>
+						<select id="skill-api-method"
+							class="border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-semibold focus:outline-none">
+							<option>GET</option>
+							<option>POST</option>
+							<option>PUT</option>
+							<option>DELETE</option>
 						</select>
 						<input type="text" id="skill-api-url" placeholder="https://api.example.com/<param>"
 							class="border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg col-span-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/30">
@@ -1427,36 +1449,47 @@
 				<div id="skill-agent-ui" class="hidden flex-col gap-3">
 					<div class="space-y-1">
 						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Target Agent</label>
-						<select id="skill-agent-id" class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm focus:outline-none"></select>
+						<select id="skill-agent-id"
+							class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm focus:outline-none"></select>
 					</div>
 					<div class="space-y-1">
-						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">System Prompt Override <span class="font-normal text-gray-400 normal-case">(optional)</span></label>
+						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">System Prompt Override <span
+								class="font-normal text-gray-400 normal-case">(optional)</span></label>
 						<textarea id="skill-agent-system-prompt" rows="3" placeholder="Leave blank to use the agent's default..."
 							class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/30 resize-none"></textarea>
 					</div>
 					<div class="space-y-1">
-						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">User Prompt Prefix Override <span class="font-normal text-gray-400 normal-case">(optional)</span></label>
+						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">User Prompt Prefix Override
+							<span class="font-normal text-gray-400 normal-case">(optional)</span></label>
 						<input type="text" id="skill-agent-user-prefix" placeholder="Leave blank to use the agent's default..."
 							class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30">
 					</div>
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 shrink-0 flex justify-end gap-2">
-				<button onclick="closeModal('modal-skill')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitSkill()" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Skill</button>
+				<button onclick="closeModal('modal-skill')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitSkill()"
+					class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save
+					Skill</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: Provider -->
-	<div id="modal-provider" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-provider"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4 text-blue-500"></i> AI Provider</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="cpu"
+							class="w-4 h-4 text-blue-500"></i> AI Provider</h3>
 					<p class="text-xs text-gray-500 mt-0.5">Configure an LLM endpoint for your agents.</p>
 				</div>
-				<button onclick="closeModal('modal-provider')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-provider')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="provider-id-input">
@@ -1487,27 +1520,37 @@
 						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition">
 				</div>
 				<div class="space-y-1">
-					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Extra Params <span class="font-normal text-gray-400 normal-case">(JSON, optional)</span></label>
+					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Extra Params <span
+							class="font-normal text-gray-400 normal-case">(JSON, optional)</span></label>
 					<textarea id="provider-config-input" rows="3" placeholder='{"max_tokens": 8192}'
 						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"></textarea>
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-provider')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitProvider()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Provider</button>
+				<button onclick="closeModal('modal-provider')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitProvider()"
+					class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save
+					Provider</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: MCP Server -->
-	<div id="modal-mcp" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-mcp"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-yellow-500"></i> MCP Server</h3>
-					<p class="text-xs text-gray-500 mt-0.5">Configure an MCP endpoint. Both transports can be active simultaneously.</p>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="plug"
+							class="w-4 h-4 text-yellow-500"></i> MCP Server</h3>
+					<p class="text-xs text-gray-500 mt-0.5">Configure an MCP endpoint. Both transports can be active
+						simultaneously.</p>
 				</div>
-				<button onclick="closeModal('modal-mcp')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-mcp')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="mcp-id-input">
@@ -1518,9 +1561,11 @@
 				</div>
 				<!-- HTTP/SSE transport -->
 				<div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-					<div class="px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+					<div
+						class="px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
 						<i data-lucide="globe" class="w-3.5 h-3.5 text-yellow-500"></i>
-						<span class="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest">HTTP / SSE Transport</span>
+						<span class="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest">HTTP / SSE
+							Transport</span>
 					</div>
 					<div class="p-4 space-y-1">
 						<label class="text-[10px] text-gray-500">JSON-RPC endpoint URL</label>
@@ -1530,9 +1575,11 @@
 				</div>
 				<!-- Stdio transport -->
 				<div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-					<div class="px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
+					<div
+						class="px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] flex items-center gap-2 border-b border-gray-200 dark:border-gray-700">
 						<i data-lucide="terminal" class="w-3.5 h-3.5 text-yellow-500"></i>
-						<span class="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest">Stdio Transport</span>
+						<span class="text-[11px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest">Stdio
+							Transport</span>
 					</div>
 					<div class="p-4 space-y-1">
 						<label class="text-[10px] text-gray-500">Shell command to launch the MCP process</label>
@@ -1540,24 +1587,33 @@
 							class="w-full border dark:border-gray-700 bg-white dark:bg-[#111] px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-yellow-500/30 transition">
 					</div>
 				</div>
-				<p class="text-[10px] text-gray-400">Fill in one or both transports. When both are set, Resolve will query them simultaneously and merge the tool lists.</p>
+				<p class="text-[10px] text-gray-400">Fill in one or both transports. When both are set, Resolve will query them
+					simultaneously and merge the tool lists.</p>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-mcp')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitMCP()" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Server</button>
+				<button onclick="closeModal('modal-mcp')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitMCP()"
+					class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save
+					Server</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: Vector RAG -->
-	<div id="modal-rag" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-rag"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="database" class="w-4 h-4 text-indigo-500"></i> Vector RAG</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="database"
+							class="w-4 h-4 text-indigo-500"></i> Vector RAG</h3>
 					<p class="text-xs text-gray-500 mt-0.5">Create a new semantic retrieval database for your agents.</p>
 				</div>
-				<button onclick="closeModal('modal-rag')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-rag')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="rag-id-input">
@@ -1573,21 +1629,29 @@
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-rag')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitRAG()" class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Create RAG</button>
+				<button onclick="closeModal('modal-rag')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitRAG()"
+					class="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Create
+					RAG</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: Preferences Memory -->
-	<div id="modal-preferences" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-preferences"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="brain" class="w-4 h-4 text-teal-500"></i> Preferences Memory</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="brain"
+							class="w-4 h-4 text-teal-500"></i> Preferences Memory</h3>
 					<p class="text-xs text-gray-500 mt-0.5">A key-value store that lets agents remember user preferences.</p>
 				</div>
-				<button onclick="closeModal('modal-preferences')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-preferences')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="preferences-id-input">
@@ -1603,21 +1667,29 @@
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-preferences')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitPreferences()" class="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Create Store</button>
+				<button onclick="closeModal('modal-preferences')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitPreferences()"
+					class="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Create
+					Store</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: Source Mount -->
-	<div id="modal-source" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-source"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="hard-drive" class="w-4 h-4 text-gray-600 dark:text-gray-300"></i> Source Mount</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="hard-drive"
+							class="w-4 h-4 text-gray-600 dark:text-gray-300"></i> Source Mount</h3>
 					<p class="text-xs text-gray-500 mt-0.5">Attach an external data source to your agents.</p>
 				</div>
-				<button onclick="closeModal('modal-source')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-source')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="source-id-input">
@@ -1630,8 +1702,12 @@
 					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Type</label>
 					<select id="source-type-input" onchange="toggleSourceUI()"
 						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-semibold text-blue-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 transition">
-						<option>Text</option><option>JSON</option><option>Image</option>
-						<option>Video</option><option>Audio</option><option>Local File</option>
+						<option>Text</option>
+						<option>JSON</option>
+						<option>Image</option>
+						<option>Video</option>
+						<option>Audio</option>
+						<option>Local File</option>
 					</select>
 				</div>
 				<div id="source-api-box" class="space-y-1">
@@ -1646,21 +1722,29 @@
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-source')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitSource()" class="px-4 py-2 bg-gray-900 dark:bg-white dark:text-gray-900 hover:bg-black dark:hover:bg-gray-100 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Source</button>
+				<button onclick="closeModal('modal-source')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitSource()"
+					class="px-4 py-2 bg-gray-900 dark:bg-white dark:text-gray-900 hover:bg-black dark:hover:bg-gray-100 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save
+					Source</button>
 			</div>
 		</div>
 	</div>
 
 	<!-- Modal: Output Tool -->
-	<div id="modal-output" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-		<div class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
+	<div id="modal-output"
+		class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+		<div
+			class="bg-white dark:bg-[#111] rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 dark:border-gray-800 flex flex-col">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-start justify-between">
 				<div>
-					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="send" class="w-4 h-4 text-purple-500"></i> Output Tool</h3>
+					<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="send"
+							class="w-4 h-4 text-purple-500"></i> Output Tool</h3>
 					<p class="text-xs text-gray-500 mt-0.5">Route agent replies to an external command or webhook.</p>
 				</div>
-				<button onclick="closeModal('modal-output')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+				<button onclick="closeModal('modal-output')"
+					class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"><i data-lucide="x"
+						class="w-5 h-5"></i></button>
 			</div>
 			<div class="px-6 py-5 space-y-4">
 				<input type="hidden" id="output-id-input">
@@ -1691,12 +1775,17 @@
 					<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Webhook URL</label>
 					<input type="url" id="output-webhook-input" placeholder="https://hooks.example.com/..."
 						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition">
-					<p class="text-[10px] text-gray-400">Zuver will POST <code class="bg-gray-100 dark:bg-[#222] px-1 rounded">{"agent_id","agent_name","reply","timestamp"}</code> after each response.</p>
+					<p class="text-[10px] text-gray-400">Zuver will POST <code
+							class="bg-gray-100 dark:bg-[#222] px-1 rounded">{"agent_id","agent_name","reply","timestamp"}</code> after
+						each response.</p>
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
-				<button onclick="closeModal('modal-output')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-				<button onclick="submitOutput()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save Output</button>
+				<button onclick="closeModal('modal-output')"
+					class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
+				<button onclick="submitOutput()"
+					class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Save
+					Output</button>
 			</div>
 		</div>
 	</div>
@@ -2081,13 +2170,14 @@
 					if (window.loadChartData) window.loadChartData(document.getElementById('chart-filter').value);
 				}
 
-				// Initialize Presidio privacy controls from remote settings
+				// Initialize settings controls from remote settings
 				const set = await api('/settings');
 				if (set.presidio_enabled) {
 					document.getElementById('toggle-presidio').checked = (set.presidio_enabled === 'true');
 					document.getElementById('presidio-analyzer-url').value = set.presidio_analyzer;
 					document.getElementById('presidio-anonymizer-url').value = set.presidio_anonymizer;
 				}
+				document.getElementById('toggle-cors').checked = (set.cors_enabled === 'true');
 				updatePresidioUI();
 
 				const sel = document.getElementById('chat-agent-select'); const old = sel.value;
@@ -3426,13 +3516,13 @@
 			const type = document.getElementById('output-type-input').value;
 			await api(document.getElementById('output-id-input').value ? `/outputs/${id}` : '/outputs',
 				document.getElementById('output-id-input').value ? 'PUT' : 'POST', {
-					id,
-					name: document.getElementById('output-name-input').value,
-					instruction: document.getElementById('output-inst-input').value,
-					type,
-					command_tpl: document.getElementById('output-cmd-input').value,
-					webhook_url: document.getElementById('output-webhook-input').value
-				});
+				id,
+				name: document.getElementById('output-name-input').value,
+				instruction: document.getElementById('output-inst-input').value,
+				type,
+				command_tpl: document.getElementById('output-cmd-input').value,
+				webhook_url: document.getElementById('output-webhook-input').value
+			});
 			closeModal('modal-output');
 			loadAllData();
 		};
@@ -3451,104 +3541,104 @@
 					: `Offline (HTTP ${res.status})`;
 				const color = res.ok ? 'text-emerald-500' : 'text-red-500';
 				if (badge) { badge.textContent = label; badge.className = `text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 border ${res.ok ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50'} ${color}`; }
-			} catch(e) {
+			} catch (e) {
 				if (badge) { badge.textContent = 'Ping failed'; badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 border bg-red-50 dark:bg-red-900/20 border-red-200 text-red-500'; }
 			} finally {
 				if (iconEl) iconEl.style.animation = '';
 			}
 		};
-			window.editMCP = (id) => { const x = dataStore.mcp.find(i => i.id === id); if (x) { document.getElementById('mcp-id-input').value = x.id; document.getElementById('mcp-name-input').value = x.name; document.getElementById('mcp-url-input').value = x.url; document.getElementById('mcp-cmd-input').value = x.command || ''; openModal('modal-mcp'); } };
-			window.deleteMCP = async (id) => { if (confirm('Delete MCP?')) { await api(`/mcp/${id}`, 'DELETE'); loadAllData(); } };
+		window.editMCP = (id) => { const x = dataStore.mcp.find(i => i.id === id); if (x) { document.getElementById('mcp-id-input').value = x.id; document.getElementById('mcp-name-input').value = x.name; document.getElementById('mcp-url-input').value = x.url; document.getElementById('mcp-cmd-input').value = x.command || ''; openModal('modal-mcp'); } };
+		window.deleteMCP = async (id) => { if (confirm('Delete MCP?')) { await api(`/mcp/${id}`, 'DELETE'); loadAllData(); } };
 
-			// Renders a removable chip inside the agent editor drop zone.
-			function makeMCPToolTag(mcpId, mcpName, tool) {
-				const tag = document.createElement('span');
-				tag.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-300 border border-yellow-400 dark:border-yellow-600';
-				tag.dataset.mcpId = mcpId;
-				tag.dataset.tool = tool;
-				tag.innerHTML = `<i data-lucide="terminal" class="w-2.5 h-2.5 shrink-0"></i><span>${mcpName}: ${tool}</span><button onclick="this.parentElement.remove(); window.updateMCPDropHint();" class="ml-0.5 text-yellow-600 hover:text-red-500 leading-none">&times;</button>`;
-				return tag;
+		// Renders a removable chip inside the agent editor drop zone.
+		function makeMCPToolTag(mcpId, mcpName, tool) {
+			const tag = document.createElement('span');
+			tag.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-300 border border-yellow-400 dark:border-yellow-600';
+			tag.dataset.mcpId = mcpId;
+			tag.dataset.tool = tool;
+			tag.innerHTML = `<i data-lucide="terminal" class="w-2.5 h-2.5 shrink-0"></i><span>${mcpName}: ${tool}</span><button onclick="this.parentElement.remove(); window.updateMCPDropHint();" class="ml-0.5 text-yellow-600 hover:text-red-500 leading-none">&times;</button>`;
+			return tag;
+		}
+
+		window.updateMCPDropHint = () => {
+			const zone = document.getElementById('mcp-tools-drop-zone');
+			const hint = document.getElementById('mcp-drop-hint');
+			if (!zone || !hint) return;
+			const hasTags = zone.querySelectorAll('[data-tool]').length > 0;
+			hint.classList.toggle('hidden', hasTags);
+		};
+
+		window.dropMCPTool = (e) => {
+			e.preventDefault();
+			const zone = e.currentTarget;
+			zone.classList.remove('border-yellow-500', 'bg-yellow-100/60', 'dark:bg-yellow-800/20');
+			let data;
+			try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
+			if (!data || !data.tool) return;
+			// Avoid duplicates
+			const existing = zone.querySelectorAll('[data-tool]');
+			for (const el of existing) {
+				if (el.dataset.mcpId === data.mcpId && el.dataset.tool === data.tool) return;
 			}
+			const tag = makeMCPToolTag(data.mcpId, data.mcpName, data.tool);
+			zone.appendChild(tag);
+			lucide.createIcons({ nodes: [tag] });
+			window.updateMCPDropHint();
+			if (typeof window.markDirty === 'function') window.markDirty('agent');
+		};
 
-			window.updateMCPDropHint = () => {
-				const zone = document.getElementById('mcp-tools-drop-zone');
-				const hint = document.getElementById('mcp-drop-hint');
-				if (!zone || !hint) return;
-				const hasTags = zone.querySelectorAll('[data-tool]').length > 0;
-				hint.classList.toggle('hidden', hasTags);
-			};
-
-			window.dropMCPTool = (e) => {
-				e.preventDefault();
-				const zone = e.currentTarget;
-				zone.classList.remove('border-yellow-500', 'bg-yellow-100/60', 'dark:bg-yellow-800/20');
-				let data;
-				try { data = JSON.parse(e.dataTransfer.getData('application/json')); } catch { return; }
-				if (!data || !data.tool) return;
-				// Avoid duplicates
-				const existing = zone.querySelectorAll('[data-tool]');
-				for (const el of existing) {
-					if (el.dataset.mcpId === data.mcpId && el.dataset.tool === data.tool) return;
-				}
-				const tag = makeMCPToolTag(data.mcpId, data.mcpName, data.tool);
+		window.restoreMCPTools = (mcpToolsJSON) => {
+			const zone = document.getElementById('mcp-tools-drop-zone');
+			if (!zone) return;
+			// Clear existing tags
+			zone.querySelectorAll('[data-tool]').forEach(el => el.remove());
+			let tools = [];
+			try { tools = JSON.parse(mcpToolsJSON || '[]'); } catch { }
+			tools.forEach(({ mcpId, mcpName, tool }) => {
+				if (!mcpId || !tool) return;
+				const name = mcpName || (dataStore.mcp.find(m => m.id === mcpId) || {}).name || mcpId;
+				const tag = makeMCPToolTag(mcpId, name, tool);
 				zone.appendChild(tag);
-				lucide.createIcons({ nodes: [tag] });
-				window.updateMCPDropHint();
-				if (typeof window.markDirty === 'function') window.markDirty('agent');
-			};
-
-			window.restoreMCPTools = (mcpToolsJSON) => {
-				const zone = document.getElementById('mcp-tools-drop-zone');
-				if (!zone) return;
-				// Clear existing tags
-				zone.querySelectorAll('[data-tool]').forEach(el => el.remove());
-				let tools = [];
-				try { tools = JSON.parse(mcpToolsJSON || '[]'); } catch { }
-				tools.forEach(({ mcpId, mcpName, tool }) => {
-					if (!mcpId || !tool) return;
-					const name = mcpName || (dataStore.mcp.find(m => m.id === mcpId) || {}).name || mcpId;
-					const tag = makeMCPToolTag(mcpId, name, tool);
-					zone.appendChild(tag);
-				});
-				lucide.createIcons({ nodes: [zone] });
-				window.updateMCPDropHint();
-			};
-
-			window.getAssignedMCPTools = () => {
-				const zone = document.getElementById('mcp-tools-drop-zone');
-				if (!zone) return [];
-				return Array.from(zone.querySelectorAll('[data-tool]')).map(el => ({
-					mcpId:   el.dataset.mcpId,
-					mcpName: (dataStore.mcp.find(m => m.id === el.dataset.mcpId) || {}).name || el.dataset.mcpId,
-					tool:    el.dataset.tool
-				}));
-			};
-
-			window.resolveMCP = async (id) => {
-				const btn = document.getElementById(`resolve-btn-${id}`);
-				if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline"></i> Resolving...'; lucide.createIcons(); }
-				try {
-					const res = await api(`/mcp/${id}/resolve`, 'POST');
-					await loadAllData();
-					showToast(`Resolved ${(res.tools || []).length} tool(s).`, 'success');
-				} catch(e) {
-					showToast('Could not resolve MCP server.', 'error');
-					if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw" class="w-3 h-3 inline"></i> Resolve'; lucide.createIcons(); }
-				}
-			};
-
-			// Global dragstart handler for MCP tool chips — sets transfer data so the
-			// agent editor drop zone knows which server and tool are being dragged.
-			document.addEventListener('dragstart', (e) => {
-				const chip = e.target.closest('.mcp-tool-chip');
-				if (!chip) return;
-				e.dataTransfer.effectAllowed = 'copy';
-				e.dataTransfer.setData('application/json', JSON.stringify({
-					mcpId:   chip.dataset.mcpId,
-					mcpName: chip.dataset.mcpName,
-					tool:    chip.dataset.tool
-				}));
 			});
+			lucide.createIcons({ nodes: [zone] });
+			window.updateMCPDropHint();
+		};
+
+		window.getAssignedMCPTools = () => {
+			const zone = document.getElementById('mcp-tools-drop-zone');
+			if (!zone) return [];
+			return Array.from(zone.querySelectorAll('[data-tool]')).map(el => ({
+				mcpId: el.dataset.mcpId,
+				mcpName: (dataStore.mcp.find(m => m.id === el.dataset.mcpId) || {}).name || el.dataset.mcpId,
+				tool: el.dataset.tool
+			}));
+		};
+
+		window.resolveMCP = async (id) => {
+			const btn = document.getElementById(`resolve-btn-${id}`);
+			if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin inline"></i> Resolving...'; lucide.createIcons(); }
+			try {
+				const res = await api(`/mcp/${id}/resolve`, 'POST');
+				await loadAllData();
+				showToast(`Resolved ${(res.tools || []).length} tool(s).`, 'success');
+			} catch (e) {
+				showToast('Could not resolve MCP server.', 'error');
+				if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="refresh-cw" class="w-3 h-3 inline"></i> Resolve'; lucide.createIcons(); }
+			}
+		};
+
+		// Global dragstart handler for MCP tool chips — sets transfer data so the
+		// agent editor drop zone knows which server and tool are being dragged.
+		document.addEventListener('dragstart', (e) => {
+			const chip = e.target.closest('.mcp-tool-chip');
+			if (!chip) return;
+			e.dataTransfer.effectAllowed = 'copy';
+			e.dataTransfer.setData('application/json', JSON.stringify({
+				mcpId: chip.dataset.mcpId,
+				mcpName: chip.dataset.mcpName,
+				tool: chip.dataset.tool
+			}));
+		});
 
 		window.openSourceModal = (id = null) => {
 			openModal('modal-source');
@@ -3711,7 +3801,7 @@
 				const res = await api(`/agents/${id}/clone`, 'POST');
 				await loadAllData();
 				showToast(`Cloned as "${res.name}".`, 'success');
-			} catch(e) { showToast('Clone failed.', 'error'); }
+			} catch (e) { showToast('Clone failed.', 'error'); }
 		};
 
 		// Track dirty state for any input/change inside #modal-agent or #view-agent-editor.
@@ -3742,7 +3832,8 @@
 			await api('/settings', 'POST', {
 				presidio_enabled: document.getElementById('toggle-presidio').checked.toString(),
 				presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
-				presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value
+				presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
+				cors_enabled: document.getElementById('toggle-cors').checked.toString()
 			});
 		}
 
@@ -4363,7 +4454,7 @@
 						</tr>`;
 					}).join('');
 				}
-			} catch(e) { console.error('Analytics dashboard error', e); }
+			} catch (e) { console.error('Analytics dashboard error', e); }
 		};
 
 		/** Validates authentication payloads and issues session tokens */
