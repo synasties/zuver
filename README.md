@@ -1,7 +1,7 @@
 
 <div align="center">
   
-<img width="3840" height="1400" alt="image" src="https://github.com/user-attachments/assets/e89a67e1-1a4c-4144-a011-587a18cf03c4" alt="Zuver Logo" />
+<img width="2800" alt="image" src="https://github.com/user-attachments/assets/e89a67e1-1a4c-4144-a011-587a18cf03c4" alt="Zuver Logo" />
 
 # Zuver
 
