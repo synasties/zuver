@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,6 +73,7 @@ type Skill struct {
 	APIURL      string `json:"api_url"`
 	APIHeaders  string `json:"api_headers"`
 	APIBody     string `json:"api_body"`
+	UseDocker   bool   `json:"use_docker"`
 }
 
 // RAG represents a retrieval-augmented generation vector database configuration.
@@ -180,6 +183,16 @@ type DBTask struct {
 // raw permissions JSON string for an authenticated external API key request.
 type contextKeyAPIKeyPerms struct{}
 
+type contextKeyReauthVerified struct{}
+
+type SecurityEvent struct {
+	Timestamp string `json:"timestamp"`
+	Action    string `json:"action"`
+	Path      string `json:"path"`
+	Actor     string `json:"actor"`
+	Detail    string `json:"detail"`
+}
+
 // bcryptHash returns a bcrypt hash of the given password at the default cost.
 func bcryptHash(password string) (string, error) {
 	b, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -192,6 +205,19 @@ func bcryptHash(password string) (string, error) {
 // bcryptCompare returns true if the plaintext password matches the stored bcrypt hash.
 func bcryptCompare(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+// generateRandomPassword generates a cryptographically random 24-character password.
+func generateRandomPassword() (string, error) {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = chars[int(b[i])%len(chars)]
+	}
+	return string(b), nil
 }
 
 // safeTableNameRe matches only identifiers that are safe to interpolate into SQL
@@ -226,15 +252,65 @@ func isPrivateHost(rawURL string) bool {
 		return true // treat unparseable as unsafe
 	}
 	h := strings.ToLower(parsed.Hostname())
+
+	// Check DNS A/AAAA records to prevent DNS rebinding attacks.
+	if ips, err := net.LookupIP(h); err == nil && len(ips) > 0 {
+		for _, ip := range ips {
+			if isPrivateIP(ip.String()) {
+				return true
+			}
+		}
+		// Use first IPv4 for prefix matching below.
+		for _, ip := range ips {
+			if v4 := ip.To4(); v4 != nil {
+				h = v4.String()
+				break
+			}
+		}
+	}
+
 	for _, blocked := range []string{
 		"localhost", "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.",
 		"172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
 		"172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
-		"::1", "0.0.0.0", "169.254.", "100.64.", "198.18.", "198.19.",
+		"0.0.0.0", "169.254.", "100.64.", "198.18.", "198.19.",
 	} {
 		if strings.HasPrefix(h, blocked) || h == strings.TrimSuffix(blocked, ".") {
 			return true
 		}
+	}
+	return false
+}
+
+// isPrivateIP checks if an IP address is in private, loopback, or reserved ranges.
+func isPrivateIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	// Check loopback.
+	if ip.IsLoopback() {
+		return true
+	}
+	// Check private ranges (10/8, 172.16/12, 192.168/16).
+	private := net.ParseIP("10.0.0.0")
+	if ip.Equal(private) || ip.To4() != nil && ip[0] == 10 {
+		return true
+	}
+	if ip.To4() != nil {
+		b := ip.To4()
+		// 172.16.0.0 - 172.31.255.255
+		if b[0] == 172 && b[1] >= 16 && b[1] <= 31 {
+			return true
+		}
+		// 192.168.0.0 - 192.168.255.255
+		if b[0] == 192 && b[1] == 168 {
+			return true
+		}
+	}
+	// Check IPv6 unique local (fc00::/7) and link-local (fe80::/10).
+	if ip.IsGlobalUnicast() == false {
+		return true
 	}
 	return false
 }
@@ -293,6 +369,8 @@ type rateBucket struct {
 var (
 	rateBuckets   = make(map[string]*rateBucket)
 	rateBucketsMu sync.Mutex
+	securityLogMu sync.Mutex
+	securityLogs  []SecurityEvent
 )
 
 var (
@@ -303,6 +381,55 @@ var (
 	authMu        sync.Mutex
 	dbWriteMu     sync.Mutex
 )
+
+// CSRF token store: token → timestamp
+var (
+	csrfTokens   = make(map[string]time.Time)
+	csrfTokensMu sync.Mutex
+)
+
+// generateCSRFToken creates a single-use CSRF token valid for 10 minutes.
+func generateCSRFToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("[Security] CSRF token generation failed: %v", err)
+		return ""
+	}
+	token := hex.EncodeToString(b)
+	csrfTokensMu.Lock()
+	csrfTokens[token] = time.Now().Add(10 * time.Minute)
+	csrfTokensMu.Unlock()
+	return token
+}
+
+// validateCSRFToken checks and consumes a CSRF token.
+// Returns true if valid and removes it from the store (one-time use).
+func validateCSRFToken(token string) bool {
+	csrfTokensMu.Lock()
+	defer csrfTokensMu.Unlock()
+	expiresAt, ok := csrfTokens[token]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expiresAt) {
+		delete(csrfTokens, token)
+		return false
+	}
+	delete(csrfTokens, token)
+	return true
+}
+
+// cleanupCSRFTokens removes expired tokens periodically.
+func cleanupCSRFTokens() {
+	csrfTokensMu.Lock()
+	defer csrfTokensMu.Unlock()
+	now := time.Now()
+	for token, expiresAt := range csrfTokens {
+		if now.After(expiresAt) {
+			delete(csrfTokens, token)
+		}
+	}
+}
 
 // SyncDBExec executes a synchronous database write protected by a global mutex.
 func SyncDBExec(db *sql.DB, query string, args ...interface{}) (sql.Result, error) {
@@ -371,6 +498,10 @@ func permissionScopeForPath(method, path string) (resource string, itemID string
 		if len(parts) >= 3 && parts[2] == "run" {
 			return "projects", parts[1], "execute"
 		}
+		// projects/{id}/trigger — webhook trigger (execute permission).
+		if len(parts) >= 3 && parts[2] == "trigger" {
+			return "projects", parts[1], "execute"
+		}
 		if len(parts) >= 2 && parts[1] != "" {
 			return "projects", parts[1], toAction(method)
 		}
@@ -386,6 +517,58 @@ func permissionScopeForPath(method, path string) (resource string, itemID string
 		// stats, sysinfo, analytics, upload — permitted for any valid key.
 		return "", "", ""
 	}
+}
+
+func (a *App) appendSecurityEvent(action, path, actor, detail string) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	// Write to DB for persistence.
+	AsyncDBExec(a.ConfigDB, "INSERT INTO security_logs (timestamp, action, path, actor, detail) VALUES (?, ?, ?, ?, ?)", ts, action, path, actor, detail)
+	// Prune DB to keep only the latest 200 records.
+	AsyncDBExec(a.ConfigDB, "DELETE FROM security_logs WHERE id NOT IN (SELECT id FROM security_logs ORDER BY id DESC LIMIT 200)")
+
+	// Keep in-memory buffer for fast API reads (capped at 200).
+	securityLogMu.Lock()
+	defer securityLogMu.Unlock()
+	securityLogs = append(securityLogs, SecurityEvent{
+		Timestamp: ts,
+		Action:    action,
+		Path:      path,
+		Actor:     actor,
+		Detail:    detail,
+	})
+	if len(securityLogs) > 200 {
+		securityLogs = append([]SecurityEvent(nil), securityLogs[len(securityLogs)-200:]...)
+	}
+}
+
+func requiresRecentReauth(r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodOptions {
+		return false
+	}
+	for _, prefix := range []string{
+		"/api/v1/providers",
+		"/api/v1/sources",
+		"/api/v1/apikeys",
+		"/api/v1/wipe-database",
+	} {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) verifyAdminPassword(password string) bool {
+	var dbHash string
+	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='admin_password'").Scan(&dbHash)
+	if dbHash == "" {
+		return false
+	}
+	if !strings.HasPrefix(dbHash, "$2") {
+		legacy := fmt.Sprintf("%x", sha256.Sum256([]byte(password)))
+		return legacy == dbHash
+	}
+	return bcryptCompare(dbHash, password)
 }
 
 // authMiddleware enforces API security and authenticates administrative or API requests.
@@ -405,6 +588,22 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 
 		// Admin token always passes without scope restriction.
 		if adminToken != "" && token == adminToken {
+			if requiresRecentReauth(r) {
+				reauthOK := false
+				if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Reauth-Verified")), "true") {
+					reauthOK = true
+				} else if pw := r.Header.Get("X-Reauth-Password"); pw != "" {
+					reauthOK = a.verifyAdminPassword(pw)
+				}
+				if !reauthOK {
+					a.appendSecurityEvent("reauth_required", r.URL.Path, "admin", "sensitive action blocked until reauthentication")
+					w.Header().Set("Content-Type", "application/json")
+					http.Error(w, `{"error": "Reauthentication required"}`, http.StatusUnauthorized)
+					return
+				}
+				a.appendSecurityEvent("reauth_success", r.URL.Path, "admin", "recent reauthentication accepted")
+				r = r.WithContext(context.WithValue(r.Context(), contextKeyReauthVerified{}, true))
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -557,6 +756,24 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// isLoopbackRemoteAddr reports whether the request appears to originate from the same host.
+// This is used to restrict first-time admin password initialization to local access only.
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	if host == "::1" || host == "127.0.0.1" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // handleLogin manages system authentication and rate-limiting against brute force attacks.
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Security: limit body size to prevent DoS.
@@ -593,43 +810,79 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var dbHash string
 	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='admin_password'").Scan(&dbHash)
 
-	// First boot: initialise the admin password with a bcrypt hash.
+	// First boot: generate a random password automatically.
+	// Security: only allow bootstrap from a local loopback request so a remotely
+	// exposed fresh instance cannot be claimed by the first network caller.
 	if dbHash == "" {
-		newHash, err := bcryptHash(req.Password)
-		if err != nil {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			a.appendSecurityEvent("remote_init_denied", r.URL.Path, ip, "remote first-time admin initialization blocked")
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Admin password has not been initialized yet. Complete first-time setup from localhost."}`, http.StatusForbidden)
+			return
+		}
+		// Generate random password for first boot.
+		generatedPassword, genErr := generateRandomPassword()
+		if genErr != nil {
+			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+			return
+		}
+		newHash, hashErr := bcryptHash(generatedPassword)
+		if hashErr != nil {
 			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
 			return
 		}
 		SyncDBExec(a.ConfigDB, "INSERT INTO settings (key, value) VALUES ('admin_password', ?)", newHash)
 		dbHash = newHash
+		// Return the generated password so the user can see it.
+		loginAttempts[ip] = 0
+		b := make([]byte, 32)
+		rand.Read(b)
+		adminToken = "tok_" + hex.EncodeToString(b)
+		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login - auto-generated password")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"token":         adminToken,
+			"password":      generatedPassword,
+			"password_set":  "true",
+		})
+		return
 	}
 
 	// Migrate legacy plain SHA-256 hashes on first successful login.
 	// A bcrypt hash always starts with "$2"; SHA-256 hex is 64 hex chars.
 	if !strings.HasPrefix(dbHash, "$2") {
+		// Legacy SHA-256 hash detected — log security event and enforce stricter lockout.
+		a.appendSecurityEvent("legacy_password", r.URL.Path, ip, "legacy SHA-256 admin hash detected — upgrade recommended")
 		// Verify against old SHA-256 hash for backward compat.
 		oldHash := fmt.Sprintf("%x", sha256.Sum256([]byte(req.Password)))
 		if oldHash != dbHash {
 			loginAttempts[ip]++
-			if loginAttempts[ip] >= 5 {
-				lockoutTime[ip] = time.Now().Add(1 * time.Minute)
+			// Stricter lockout for legacy SHA-256: 3 attempts instead of 5.
+			if loginAttempts[ip] >= 3 {
+				lockoutTime[ip] = time.Now().Add(5 * time.Minute)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Invalid password. Access Denied."}`, http.StatusUnauthorized)
 			return
 		}
-		// Upgrade to bcrypt.
+		// Upgrade to bcrypt immediately.
 		newHash, _ := bcryptHash(req.Password)
 		SyncDBExec(a.ConfigDB, "UPDATE settings SET value=? WHERE key='admin_password'", newHash)
 		dbHash = newHash
+		a.appendSecurityEvent("password_upgrade", r.URL.Path, ip, "legacy SHA-256 hash upgraded to bcrypt")
 	}
 
 	if bcryptCompare(dbHash, req.Password) {
 		loginAttempts[ip] = 0
 		// Use crypto/rand for an unpredictable session token.
 		b := make([]byte, 32)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			log.Printf("[Security] Admin token generation failed: %v", err)
+			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+			return
+		}
 		adminToken = "tok_" + hex.EncodeToString(b)
+		a.appendSecurityEvent("login_success", r.URL.Path, ip, "admin login succeeded")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"token": adminToken})
 	} else {
@@ -637,6 +890,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if loginAttempts[ip] >= 5 {
 			lockoutTime[ip] = time.Now().Add(1 * time.Minute)
 		}
+		a.appendSecurityEvent("login_failure", r.URL.Path, ip, "invalid admin password")
 		w.Header().Set("Content-Type", "application/json")
 		http.Error(w, `{"error": "Invalid password. Access Denied."}`, http.StatusUnauthorized)
 	}
@@ -814,6 +1068,7 @@ func main() {
 		`CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, agent_id TEXT, regex TEXT, command TEXT, repeat INTEGER DEFAULT 0, active INTEGER DEFAULT 1)`,
 		`CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT, description TEXT, token TEXT, permissions TEXT)`,
 		`CREATE TABLE IF NOT EXISTS analytics_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, entity_type TEXT, entity_id TEXT, tokens INT, is_success BOOLEAN)`,
+		`CREATE TABLE IF NOT EXISTS security_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, action TEXT, path TEXT, actor TEXT, detail TEXT)`,
 	}
 	for _, q := range tables {
 		if _, err := db.Exec(q); err != nil {
@@ -838,9 +1093,11 @@ func main() {
 	autoMigrateColumn(db, "outputs", "webhook_url", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "mcp_servers", "tools", "TEXT DEFAULT '[]'") // JSON array of resolved tool names
 	autoMigrateColumn(db, "agents", "mcp_tools", "TEXT DEFAULT '[]'")  // JSON array of {mcpId, tool} pairs assigned to this agent
+	autoMigrateColumn(db, "skills", "use_docker", "INTEGER DEFAULT 0")  // Run skill inside Docker container
 
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cors_enabled', 'false')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('docker_enabled', 'false'), ('docker_host', 'tcp://localhost:2375'), ('docker_image', 'zuver-skill:latest')")
 
 	var pCount int
 	db.QueryRow("SELECT COUNT(*) FROM projects").Scan(&pCount)
@@ -850,6 +1107,12 @@ func main() {
 	}
 
 	go startDBWorker()
+	go func() {
+		for {
+			time.Sleep(5 * time.Minute)
+			cleanupCSRFTokens()
+		}
+	}()
 
 	// Background task monitor — starts AFTER ListenAndServe would block, so we run it before.
 	go func() {
@@ -1059,6 +1322,7 @@ func main() {
 	mux.HandleFunc("PUT /api/v1/projects/{id}", app.handleUpdateProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{id}", app.handleDeleteProject)
 	mux.HandleFunc("POST /api/v1/projects/{id}/run", app.handleRunProject)
+	mux.HandleFunc("POST /api/v1/projects/{id}/trigger", app.handleTriggerProject)
 	mux.HandleFunc("GET /api/v1/mcp", app.handleGetMCP)
 	mux.HandleFunc("POST /api/v1/mcp", app.handleCreateMCP)
 	mux.HandleFunc("PUT /api/v1/mcp/{id}", app.handleUpdateMCP)
@@ -1066,9 +1330,16 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/mcp/{id}", app.handleDeleteMCP)
 	mux.HandleFunc("GET /api/v1/settings", app.handleGetSettings)
 	mux.HandleFunc("POST /api/v1/settings", app.handleUpdateSettings)
+	mux.HandleFunc("POST /api/v1/settings/password", app.handleChangePassword)
 	mux.HandleFunc("POST /api/v1/chat", app.handleChat)
 	mux.HandleFunc("GET /api/v1/history/{agent_id}", app.handleGetChatHistory)
 	mux.HandleFunc("DELETE /api/v1/history/{agent_id}", app.handleClearChatHistory)
+	mux.HandleFunc("GET /api/v1/history/{agent_id}/export", app.handleExportChatHistory)
+
+	mux.HandleFunc("GET /api/v1/tasks", app.handleGetTasks)
+	mux.HandleFunc("POST /api/v1/tasks", app.handleCreateTask)
+	mux.HandleFunc("PUT /api/v1/tasks/{id}", app.handleUpdateTask)
+	mux.HandleFunc("DELETE /api/v1/tasks/{id}", app.handleDeleteTask)
 
 	mux.HandleFunc("GET /api/v1/apikeys", func(w http.ResponseWriter, r *http.Request) {
 		rows, err := app.ConfigDB.Query("SELECT id, name, description, token, permissions, COALESCE(rate_limit,0) FROM api_keys")
@@ -1081,6 +1352,7 @@ func main() {
 		for rows.Next() {
 			var i APIKey
 			rows.Scan(&i.ID, &i.Name, &i.Description, &i.Token, &i.Permissions, &i.RateLimit)
+			i.Token = maskSecret(i.Token)
 			list = append(list, i)
 		}
 		if list == nil {
@@ -1098,7 +1370,13 @@ func main() {
 		}
 		i.ID = fmt.Sprintf("ak_%d", time.Now().UnixNano())
 		i.Token = "zuv-" + hex.EncodeToString([]byte(i.ID))
+		// Enforce a default minimum rate limit of 60 req/min for new API keys
+		// to prevent accidental unlimited access. Set to 0 for unlimited (admin only).
+		if i.RateLimit == 0 {
+			i.RateLimit = 60
+		}
 		app.ConfigDB.Exec("INSERT INTO api_keys (id, name, description, token, permissions, rate_limit) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Description, i.Token, i.Permissions, i.RateLimit)
+		app.appendSecurityEvent("apikey_create", r.URL.Path, "admin", fmt.Sprintf("created API key %s (%s)", i.ID, i.Name))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
@@ -1107,24 +1385,71 @@ func main() {
 		var i APIKey
 		json.NewDecoder(r.Body).Decode(&i)
 		app.ConfigDB.Exec("UPDATE api_keys SET name=?, description=?, permissions=?, rate_limit=? WHERE id=?", i.Name, i.Description, i.Permissions, i.RateLimit, r.PathValue("id"))
+		app.appendSecurityEvent("apikey_update", r.URL.Path, "admin", fmt.Sprintf("updated API key %s", r.PathValue("id")))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	mux.HandleFunc("DELETE /api/v1/apikeys/{id}", func(w http.ResponseWriter, r *http.Request) {
 		app.ConfigDB.Exec("DELETE FROM api_keys WHERE id=?", r.PathValue("id"))
+		app.appendSecurityEvent("apikey_delete", r.URL.Path, "admin", fmt.Sprintf("deleted API key %s", r.PathValue("id")))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	mux.HandleFunc("POST /api/v1/login", app.handleLogin)
+	mux.HandleFunc("GET /api/v1/security/logs", func(w http.ResponseWriter, r *http.Request) {
+		limit := 100
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 500 {
+				limit = parsed
+			}
+		}
+		offset := 0
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+				offset = parsed
+			}
+		}
+		action := r.URL.Query().Get("action")
+		var rows *sql.Rows
+		var err error
+		if action != "" {
+			rows, err = app.ConfigDB.Query("SELECT id, timestamp, action, path, actor, detail FROM security_logs WHERE action=? ORDER BY id DESC LIMIT ? OFFSET ?", action, limit, offset)
+		} else {
+			rows, err = app.ConfigDB.Query("SELECT id, timestamp, action, path, actor, detail FROM security_logs ORDER BY id DESC LIMIT ? OFFSET ?", limit, offset)
+		}
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"events": []SecurityEvent{}, "total": 0})
+			return
+		}
+		defer rows.Close()
+		var events []SecurityEvent
+		for rows.Next() {
+			var e SecurityEvent
+			rows.Scan(&e.Timestamp, &e.Timestamp, &e.Action, &e.Path, &e.Actor, &e.Detail)
+			events = append(events, e)
+		}
+		if events == nil {
+			events = []SecurityEvent{}
+		}
+		var total int
+		if action != "" {
+			app.ConfigDB.QueryRow("SELECT COUNT(*) FROM security_logs WHERE action=?", action).Scan(&total)
+		} else {
+			app.ConfigDB.QueryRow("SELECT COUNT(*) FROM security_logs").Scan(&total)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"events": events, "total": total, "limit": limit, "offset": offset})
+	})
 
 	mux.HandleFunc("GET /api/v1/sysinfo", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.2.2",
-			"description": "Next-gen Generative AI Framework, built for secure.",
+			"version":     "v1.3.0",
+			"description": "Next-gen Generative AI Framework, built for possibilities.",
 		})
 	})
 
@@ -1219,6 +1544,11 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/v1/wipe-database", func(w http.ResponseWriter, r *http.Request) {
+		actor := r.RemoteAddr
+		if _, ok := r.Context().Value(contextKeyReauthVerified{}).(bool); ok {
+			actor = "admin"
+		}
+		app.appendSecurityEvent("wipe_database", r.URL.Path, actor, "database wipe requested")
 		tableNames := []string{"agents", "skills", "sources", "source_logs", "projects", "rags", "outputs", "mcp_servers", "chat_history", "tasks", "response_cache"}
 		for _, t := range tableNames {
 			// Security: table names are hardcoded — safe from injection.
@@ -1264,6 +1594,9 @@ func main() {
 				return
 			}
 		}
+
+		// Generate CSRF token for this import session.
+		csrfToken := generateCSRFToken()
 
 		// Fetch the remote config JSON (timeout 10 s).
 		client := &http.Client{Timeout: 10 * time.Second}
@@ -1386,6 +1719,7 @@ func main() {
 const RAW_JSON = ` + "`" + safeJSONStr + "`" + `;
 const ITEM_TYPE = "` + itemType + `";
 const CONFIG_URL = "` + escapedConfigURL + `";
+const CSRF_TOKEN = "` + csrfToken + `";
 document.getElementById('json-preview').textContent = RAW_JSON;
 async function doImport(e) {
   e.preventDefault();
@@ -1407,10 +1741,10 @@ async function doImport(e) {
       throw new Error(e.error || 'Authentication failed');
     }
     const {token} = await loginResp.json();
-    // Step 2: import via the API.
+    // Step 2: import via the API with CSRF token.
     const importResp = await fetch('/api/v1/import', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':'Bearer '+token},
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+token,'X-CSRF-Token':CSRF_TOKEN},
       body: JSON.stringify({type: ITEM_TYPE, data: JSON.parse(RAW_JSON)})
     });
     if (!importResp.ok) {
@@ -1439,6 +1773,13 @@ async function doImport(e) {
 	// Body: {"type":"skill"|"agent", "data":{...config object...}}
 	// ------------------------------------------------------------------
 	mux.HandleFunc("POST /api/v1/import", func(w http.ResponseWriter, r *http.Request) {
+		// CSRF validation: require valid one-time CSRF token from /api/add page.
+		csrfToken := r.Header.Get("X-CSRF-Token")
+		if csrfToken == "" || !validateCSRFToken(csrfToken) {
+			http.Error(w, `{"error":"invalid or missing CSRF token"}`, http.StatusForbidden)
+			return
+		}
+
 		// Enforce body size limit — 256 KB is more than enough for a config object.
 		r.Body = http.MaxBytesReader(w, r.Body, 256<<10)
 
@@ -1576,8 +1917,23 @@ async function doImport(e) {
 	if port == "" {
 		port = "18806"
 	}
+
+	handler := app.securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux)))
+	server := &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		// Keep WriteTimeout long enough for streamed chat/SSE responses and large model replies.
+		WriteTimeout:   10 * time.Minute,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
 	log.Printf("Starting Zuver OS Framework on port %s", port)
-	http.ListenAndServe(":"+port, app.securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux))))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatal("HTTP server failed:", err)
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -2300,10 +2656,14 @@ skipPresidio:
 
 		// Merge extra provider params from the provider's ExtraConfig JSON.
 		// These override the defaults above for advanced per-provider tuning.
+		// Protected parameters cannot be overridden by ExtraConfig.
+		protectedParams := map[string]bool{"model": true, "messages": true, "stream": true, "temperature": true, "max_tokens": true, "top_p": true, "system": true}
 		var extras map[string]interface{}
 		if json.Unmarshal([]byte(prov.ExtraConfig), &extras) == nil {
 			for k, v := range extras {
-				reqBody[k] = v
+				if !protectedParams[k] {
+					reqBody[k] = v
+				}
 			}
 		}
 
@@ -3098,7 +3458,13 @@ func (a *App) executeCommand(
 				resp.Body.Close()
 				return fmt.Sprintf("[MCP %s Response]\n%s", mcpName, string(b))
 			} else if mCmd != "" {
-				execCmd := exec.Command("sh", "-c", mCmd)
+				// Parse command into executable + args without shell interpretation
+				// to prevent command injection via poisoned DB values.
+				parts := strings.Fields(mCmd)
+				if len(parts) == 0 {
+					return "[MCP ERROR] Empty command for " + mcpName
+				}
+				execCmd := exec.Command(parts[0], parts[1:]...)
 				stdin, _ := execCmd.StdinPipe()
 				stdout, _ := execCmd.StdoutPipe()
 				execCmd.Start()
@@ -3119,8 +3485,9 @@ func (a *App) executeCommand(
 		if allowedDynamicTools[toolName] {
 			agentArgs := parts[1:]
 			var sType, sContent, sMethod, sUrl, sHeaders, sBody string
-			if err := a.ConfigDB.QueryRow("SELECT type, content, api_method, api_url, api_headers, api_body FROM skills WHERE name=?", toolName).
-				Scan(&sType, &sContent, &sMethod, &sUrl, &sHeaders, &sBody); err != nil {
+			var useDocker bool
+			if err := a.ConfigDB.QueryRow("SELECT type, content, api_method, api_url, api_headers, api_body, COALESCE(use_docker,0) FROM skills WHERE name=?", toolName).
+				Scan(&sType, &sContent, &sMethod, &sUrl, &sHeaders, &sBody, &useDocker); err != nil {
 				return "[SKILL ERROR] Skill not found."
 			}
 			switch sType {
@@ -3138,33 +3505,46 @@ func (a *App) executeCommand(
 						fCode = strings.ReplaceAll(fCode, ph[i], arg)
 					}
 				}
-				var execCmd *exec.Cmd
-				var tmpExt string
-				switch sType {
-				case "Bash":
-					tmpExt = ".sh"
-				case "JavaScript":
-					tmpExt = ".js"
-				default:
-					tmpExt = ".go"
-				}
-				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
-				if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
-					return "[SKILL ERROR] failed to write temp script"
-				}
-				defer os.Remove(tmp)
-				switch sType {
-				case "Bash":
-					execCmd = exec.Command("sh", tmp)
-				case "JavaScript":
-					execCmd = exec.Command("node", tmp)
-				default:
-					execCmd = exec.Command("go", "run", tmp)
-				}
-				out, e := execCmd.CombinedOutput()
-				result := "[RESULT]\n" + string(out)
-				if e != nil {
-					result += "\nErr: " + e.Error()
+				var result string
+				if useDocker {
+					dockerOut, dockerErr := executeInDocker(a.ConfigDB, fCode, sType, agentArgs)
+					if dockerErr != nil {
+						result = "[DOCKER ERROR] " + dockerErr.Error()
+						if dockerOut != "" {
+							result += "\nOutput: " + dockerOut
+						}
+					} else {
+						result = "[RESULT (Docker)]\n" + dockerOut
+					}
+				} else {
+					var execCmd *exec.Cmd
+					var tmpExt string
+					switch sType {
+					case "Bash":
+						tmpExt = ".sh"
+					case "JavaScript":
+						tmpExt = ".js"
+					default:
+						tmpExt = ".go"
+					}
+					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
+					if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
+						return "[SKILL ERROR] failed to write temp script"
+					}
+					defer os.Remove(tmp)
+					switch sType {
+					case "Bash":
+						execCmd = exec.Command("sh", tmp)
+					case "JavaScript":
+						execCmd = exec.Command("node", tmp)
+					default:
+						execCmd = exec.Command("go", "run", tmp)
+					}
+					out, e := execCmd.CombinedOutput()
+					result = "[RESULT]\n" + string(out)
+					if e != nil {
+						result += "\nErr: " + e.Error()
+					}
 				}
 				return result
 			case "API":
@@ -3347,6 +3727,120 @@ func (a *App) handleClearChatHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// handleExportChatHistory exports conversation history as JSON or Markdown.
+func (a *App) handleExportChatHistory(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agent_id")
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "json"
+	}
+	rows, err := a.ConfigDB.Query("SELECT role, content, timestamp FROM chat_history WHERE agent_id=? ORDER BY id ASC", agentID)
+	if err != nil {
+		http.Error(w, `{"error":"db error"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	type msg struct {
+		Role      string `json:"role"`
+		Content   string `json:"content"`
+		Timestamp string `json:"timestamp"`
+	}
+	var messages []msg
+	for rows.Next() {
+		var m msg
+		rows.Scan(&m.Role, &m.Content, &m.Timestamp)
+		messages = append(messages, m)
+	}
+	if messages == nil {
+		messages = []msg{}
+	}
+
+	if format == "markdown" {
+		var md strings.Builder
+		fmt.Fprintf(&md, "# Chat History — Agent: %s\n\n", agentID)
+		for _, m := range messages {
+			role := strings.Title(m.Role)
+			fmt.Fprintf(&md, "### %s (%s)\n\n%s\n\n---\n\n", role, m.Timestamp, m.Content)
+		}
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.md"`, agentID))
+		w.Write([]byte(md.String()))
+		return
+	}
+
+	out, _ := json.MarshalIndent(messages, "", "  ")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.json"`, agentID))
+	w.Write(out)
+}
+
+func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.ConfigDB.Query("SELECT id, agent_id, regex, command, COALESCE(repeat,0), COALESCE(active,1) FROM tasks ORDER BY id DESC")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]Task{})
+		return
+	}
+	defer rows.Close()
+	var list []Task
+	for rows.Next() {
+		var t Task
+		var repeat, active int
+		rows.Scan(&t.ID, &t.AgentID, &t.Regex, &t.Command, &repeat, &active)
+		t.Repeat = repeat == 1
+		t.Active = active == 1
+		list = append(list, t)
+	}
+	if list == nil {
+		list = []Task{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func (a *App) handleCreateTask(w http.ResponseWriter, r *http.Request) {
+	var t Task
+	json.NewDecoder(r.Body).Decode(&t)
+	if t.ID == "" {
+		t.ID = fmt.Sprintf("tsk_%d", time.Now().UnixNano())
+	}
+	repeat := 0
+	if t.Repeat {
+		repeat = 1
+	}
+	active := 1
+	if !t.Active {
+		active = 0
+	}
+	a.ConfigDB.Exec("INSERT INTO tasks (id, agent_id, regex, command, repeat, active) VALUES (?, ?, ?, ?, ?, ?)", t.ID, t.AgentID, t.Regex, t.Command, repeat, active)
+	a.appendSecurityEvent("task_create", r.URL.Path, "admin", fmt.Sprintf("created task %s for agent %s", t.ID, t.AgentID))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": t.ID})
+}
+
+func (a *App) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
+	var t Task
+	json.NewDecoder(r.Body).Decode(&t)
+	repeat := 0
+	if t.Repeat {
+		repeat = 1
+	}
+	active := 1
+	if !t.Active {
+		active = 0
+	}
+	a.ConfigDB.Exec("UPDATE tasks SET agent_id=?, regex=?, command=?, repeat=?, active=? WHERE id=?", t.AgentID, t.Regex, t.Command, repeat, active, r.PathValue("id"))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (a *App) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	a.ConfigDB.Exec("DELETE FROM tasks WHERE id=?", r.PathValue("id"))
+	a.appendSecurityEvent("task_delete", r.URL.Path, "admin", fmt.Sprintf("deleted task %s", r.PathValue("id")))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func (a *App) handleGetStats(w http.ResponseWriter, r *http.Request) {
 	var ag, sk, rg, tk int
 	a.ConfigDB.QueryRow("SELECT COUNT(*) FROM agents").Scan(&ag)
@@ -3355,6 +3849,17 @@ func (a *App) handleGetStats(w http.ResponseWriter, r *http.Request) {
 	a.ConfigDB.QueryRow("SELECT COALESCE(SUM(token_usage), 0) FROM providers").Scan(&tk)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"agents": ag, "skills": sk, "rags": rg, "tokens": tk})
+}
+
+func maskSecret(secret string) string {
+	if strings.TrimSpace(secret) == "" {
+		return ""
+	}
+	// Mask short secrets completely to avoid leaking length information.
+	if len(secret) <= 12 {
+		return strings.Repeat("•", 8)
+	}
+	return secret[:4] + strings.Repeat("•", len(secret)-8) + secret[len(secret)-4:]
 }
 
 func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
@@ -3369,6 +3874,7 @@ func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var i Provider
 		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Endpoint, &i.APIKey, &i.ExtraConfig, &i.TokenUsage)
+		i.APIKey = maskSecret(i.APIKey)
 		list = append(list, i)
 	}
 	if list == nil {
@@ -3382,6 +3888,7 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	var i Provider
 	json.NewDecoder(r.Body).Decode(&i)
 	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig)
+	a.appendSecurityEvent("provider_create", r.URL.Path, "admin", fmt.Sprintf("created provider %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3389,24 +3896,36 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	var i Provider
 	json.NewDecoder(r.Body).Decode(&i)
-	a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, r.PathValue("id"))
+	if strings.TrimSpace(i.APIKey) == "" {
+		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, r.PathValue("id"))
+	} else {
+		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, r.PathValue("id"))
+	}
+	a.appendSecurityEvent("provider_update", r.URL.Path, "admin", fmt.Sprintf("updated provider %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (a *App) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	a.ConfigDB.Exec("DELETE FROM providers WHERE id=?", r.PathValue("id"))
+	a.appendSecurityEvent("provider_delete", r.URL.Path, "admin", fmt.Sprintf("deleted provider %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (a *App) handleGetSources(w http.ResponseWriter, r *http.Request) {
-	rows, _ := a.ConfigDB.Query("SELECT id, name, type, COALESCE(api_key,''), COALESCE(file_path,'') FROM sources")
+	rows, err := a.ConfigDB.Query("SELECT id, name, type, COALESCE(api_key,''), COALESCE(file_path,'') FROM sources")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]Source{})
+		return
+	}
 	defer rows.Close()
 	var list []Source
 	for rows.Next() {
 		var i Source
 		rows.Scan(&i.ID, &i.Name, &i.Type, &i.APIKey, &i.FilePath)
+		i.APIKey = maskSecret(i.APIKey)
 		list = append(list, i)
 	}
 	if list == nil {
@@ -3426,6 +3945,7 @@ func (a *App) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 		i.APIKey = fmt.Sprintf("sk_src_%d", time.Now().UnixNano())
 	}
 	a.ConfigDB.Exec("INSERT INTO sources (id, name, type, api_key, file_path) VALUES (?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.APIKey, i.FilePath)
+	a.appendSecurityEvent("source_create", r.URL.Path, "admin", fmt.Sprintf("created source %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3433,16 +3953,19 @@ func (a *App) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	var i Source
 	json.NewDecoder(r.Body).Decode(&i)
-	if i.Type != "Local File" && i.APIKey == "" {
-		i.APIKey = fmt.Sprintf("sk_src_%d", time.Now().UnixNano())
+	if i.Type != "Local File" && strings.TrimSpace(i.APIKey) == "" {
+		a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, file_path=? WHERE id=?", i.Name, i.Type, i.FilePath, r.PathValue("id"))
+	} else {
+		a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, api_key=?, file_path=? WHERE id=?", i.Name, i.Type, i.APIKey, i.FilePath, r.PathValue("id"))
 	}
-	a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, api_key=?, file_path=? WHERE id=?", i.Name, i.Type, i.APIKey, i.FilePath, r.PathValue("id"))
+	a.appendSecurityEvent("source_update", r.URL.Path, "admin", fmt.Sprintf("updated source %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (a *App) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	a.ConfigDB.Exec("DELETE FROM sources WHERE id=?", r.PathValue("id"))
+	a.appendSecurityEvent("source_delete", r.URL.Path, "admin", fmt.Sprintf("deleted source %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3486,7 +4009,7 @@ func (a *App) handleSourceUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetSkills(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, name, type, instruction, content, api_method, api_url, api_headers, api_body FROM skills")
+	rows, err := a.ConfigDB.Query("SELECT id, name, type, instruction, content, api_method, api_url, api_headers, api_body, COALESCE(use_docker,0) FROM skills")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]Skill{})
@@ -3496,7 +4019,7 @@ func (a *App) handleGetSkills(w http.ResponseWriter, r *http.Request) {
 	var list []Skill
 	for rows.Next() {
 		var i Skill
-		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Instruction, &i.Content, &i.APIMethod, &i.APIURL, &i.APIHeaders, &i.APIBody)
+		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Instruction, &i.Content, &i.APIMethod, &i.APIURL, &i.APIHeaders, &i.APIBody, &i.UseDocker)
 		list = append(list, i)
 	}
 	if list == nil {
@@ -3509,7 +4032,10 @@ func (a *App) handleGetSkills(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 	var i Skill
 	json.NewDecoder(r.Body).Decode(&i)
-	a.ConfigDB.Exec("INSERT INTO skills (id, name, type, instruction, content, api_method, api_url, api_headers, api_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Instruction, i.Content, i.APIMethod, i.APIURL, i.APIHeaders, i.APIBody)
+	if i.Type != "Bash" && i.Type != "JavaScript" && i.Type != "Go" {
+		i.UseDocker = false
+	}
+	a.ConfigDB.Exec("INSERT INTO skills (id, name, type, instruction, content, api_method, api_url, api_headers, api_body, use_docker) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Instruction, i.Content, i.APIMethod, i.APIURL, i.APIHeaders, i.APIBody, i.UseDocker)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3517,7 +4043,10 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
 	var i Skill
 	json.NewDecoder(r.Body).Decode(&i)
-	a.ConfigDB.Exec("UPDATE skills SET name=?, type=?, instruction=?, content=?, api_method=?, api_url=?, api_headers=?, api_body=? WHERE id=?", i.Name, i.Type, i.Instruction, i.Content, i.APIMethod, i.APIURL, i.APIHeaders, i.APIBody, r.PathValue("id"))
+	if i.Type != "Bash" && i.Type != "JavaScript" && i.Type != "Go" {
+		i.UseDocker = false
+	}
+	a.ConfigDB.Exec("UPDATE skills SET name=?, type=?, instruction=?, content=?, api_method=?, api_url=?, api_headers=?, api_body=?, use_docker=? WHERE id=?", i.Name, i.Type, i.Instruction, i.Content, i.APIMethod, i.APIURL, i.APIHeaders, i.APIBody, i.UseDocker, r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -3848,6 +4377,31 @@ func (a *App) handleRunProject(w http.ResponseWriter, r *http.Request) {
 	result, logs := a.runProjectPipelineVerbose(id, req.AgentID, req.Input)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"result": result, "logs": logs})
+}
+
+// handleTriggerProject is a webhook-friendly endpoint for external systems to trigger pipelines.
+// Accepts optional JSON body with "input" field. Returns the pipeline result.
+func (a *App) handleTriggerProject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	// Verify project exists.
+	var name string
+	if err := a.ConfigDB.QueryRow("SELECT name FROM projects WHERE id=?", id).Scan(&name); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, `{"error":"project not found"}`, http.StatusNotFound)
+		return
+	}
+	var req struct {
+		Input   string `json:"input"`
+		AgentID string `json:"agent_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Input == "" {
+		req.Input = "[Webhook Trigger]"
+	}
+	a.appendSecurityEvent("webhook_trigger", r.URL.Path, "api_key", fmt.Sprintf("triggered project %s (%s)", id, name))
+	result, logs := a.runProjectPipelineVerbose(id, req.AgentID, req.Input)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"result": result, "logs": logs, "project_id": id, "project_name": name})
 }
 
 func (a *App) handleGetMCP(w http.ResponseWriter, r *http.Request) {
@@ -4190,6 +4744,47 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.NewPassword) < 8 {
+		http.Error(w, `{"error": "New password must be at least 8 characters"}`, http.StatusBadRequest)
+		return
+	}
+
+	var dbHash string
+	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='admin_password'").Scan(&dbHash)
+	if dbHash == "" {
+		http.Error(w, `{"error": "Admin password not initialized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Verify current password.
+	if !bcryptCompare(dbHash, req.CurrentPassword) {
+		a.appendSecurityEvent("password_change_failure", r.URL.Path, r.RemoteAddr, "invalid current password")
+		http.Error(w, `{"error": "Current password is incorrect"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Hash and store new password.
+	newHash, err := bcryptHash(req.NewPassword)
+	if err != nil {
+		http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+		return
+	}
+	SyncDBExec(a.ConfigDB, "UPDATE settings SET value=? WHERE key='admin_password'", newHash)
+	a.appendSecurityEvent("password_changed", r.URL.Path, r.RemoteAddr, "admin password updated")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func (a *App) logAnalytics(entityType, entityID string, tokens int, success bool) {
 	go func() {
 		a.ConfigDB.Exec("INSERT INTO analytics_logs (entity_type, entity_id, tokens, is_success) VALUES (?, ?, ?, ?)", entityType, entityID, tokens, success)
@@ -4388,10 +4983,13 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 					body["max_tokens"] = agentMaxTokens
 				}
 			}
-			var extras map[string]interface{}
-			if json.Unmarshal([]byte(agentExtraConfig), &extras) == nil {
-				for k, v := range extras {
-					body[k] = v
+			protectedBodyParams := map[string]bool{"model": true, "messages": true, "stream": true, "temperature": true, "max_tokens": true, "top_p": true, "system": true, "options": true}
+			var extras2 map[string]interface{}
+			if json.Unmarshal([]byte(agentExtraConfig), &extras2) == nil {
+				for k, v := range extras2 {
+					if !protectedBodyParams[k] {
+						body[k] = v
+					}
 				}
 			}
 
@@ -4454,8 +5052,9 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 				break
 			}
 			var sType, sContent, sMethod, sUrl, sHeaders, sBody string
-			a.ConfigDB.QueryRow("SELECT type, content, api_method, api_url, api_headers, api_body FROM skills WHERE id=?", sID).
-				Scan(&sType, &sContent, &sMethod, &sUrl, &sHeaders, &sBody)
+			var useDocker bool
+			a.ConfigDB.QueryRow("SELECT type, content, api_method, api_url, api_headers, api_body, COALESCE(use_docker,0) FROM skills WHERE id=?", sID).
+				Scan(&sType, &sContent, &sMethod, &sUrl, &sHeaders, &sBody, &useDocker)
 
 			// Build a full substitution function that resolves:
 			// 1. Named <paramName> placeholders bound via node["paramBindings"] map.
@@ -4503,9 +5102,6 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 				lastResult = substituteSkill(sContent)
 			case "Bash", "Go", "JavaScript":
 				code := substituteSkill(sContent)
-				var cmd *exec.Cmd
-				// Write skill content to a temp file and execute it directly rather
-				// than passing it to "sh -c" to avoid shell-expansion injection risks.
 				var tmpExt string
 				switch sType {
 				case "Bash":
@@ -4515,25 +5111,38 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 				default:
 					tmpExt = ".go"
 				}
-				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_sk_%d%s", time.Now().UnixNano(), tmpExt))
-				if err := os.WriteFile(tmp, []byte(code), 0700); err != nil {
-					lastResult = "[SKILL ERROR] failed to write temp script"
-					break
-				}
-				defer os.Remove(tmp)
-				switch sType {
-				case "Bash":
-					cmd = exec.Command("sh", tmp)
-				case "JavaScript":
-					cmd = exec.Command("node", tmp)
-				default:
-					cmd = exec.Command("go", "run", tmp)
-				}
-				out, err := cmd.CombinedOutput()
-				if err != nil {
-					lastResult = fmt.Sprintf("[SKILL ERROR] %s\n%s", err.Error(), string(out))
+				if useDocker {
+					dockerOut, dockerErr := executeInDocker(a.ConfigDB, code, sType, nil)
+					if dockerErr != nil {
+						lastResult = "[DOCKER ERROR] " + dockerErr.Error()
+						if dockerOut != "" {
+							lastResult += "\nOutput: " + dockerOut
+						}
+					} else {
+						lastResult = strings.TrimSpace(dockerOut)
+					}
 				} else {
-					lastResult = strings.TrimSpace(string(out))
+					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_sk_%d%s", time.Now().UnixNano(), tmpExt))
+					if err := os.WriteFile(tmp, []byte(code), 0700); err != nil {
+						lastResult = "[SKILL ERROR] failed to write temp script"
+						break
+					}
+					defer os.Remove(tmp)
+					var cmd *exec.Cmd
+					switch sType {
+					case "Bash":
+						cmd = exec.Command("sh", tmp)
+					case "JavaScript":
+						cmd = exec.Command("node", tmp)
+					default:
+						cmd = exec.Command("go", "run", tmp)
+					}
+					out, err := cmd.CombinedOutput()
+					if err != nil {
+						lastResult = fmt.Sprintf("[SKILL ERROR] %s\n%s", err.Error(), string(out))
+					} else {
+						lastResult = strings.TrimSpace(string(out))
+					}
 				}
 			case "API":
 				fUrl := substituteSkill(sUrl)
@@ -4634,8 +5243,26 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			case "notContains":
 				condMet = !strings.Contains(lastResult, value)
 			case "regex":
-				if re, err := regexp.Compile(value); err == nil {
-					condMet = re.MatchString(lastResult)
+				if len(value) > 100 {
+					condMet = false
+					break
+				}
+				re, err := regexp.Compile(value)
+				if err != nil {
+					condMet = false
+					break
+				}
+				// Execute regex with 100ms timeout to prevent ReDoS.
+				type result struct { val bool }
+				ch := make(chan result, 1)
+				go func() {
+					ch <- result{re.MatchString(lastResult)}
+				}()
+				select {
+				case r := <-ch:
+					condMet = r.val
+				case <-time.After(100 * time.Millisecond):
+					condMet = false
 				}
 			default:
 				condMet = lastResult != ""
@@ -4794,4 +5421,59 @@ func fileToBase64(path string) string {
 		mimeType = "image/webp"
 	}
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(data))
+}
+
+// executeInDocker runs skill code inside a Docker container and returns the output.
+func executeInDocker(db *sql.DB, code string, language string, args []string) (string, error) {
+	var dockerEnabled, dockerHost, dockerImage string
+	db.QueryRow("SELECT value FROM settings WHERE key='docker_enabled'").Scan(&dockerEnabled)
+	if dockerEnabled != "true" {
+		return "", fmt.Errorf("docker execution is disabled")
+	}
+	db.QueryRow("SELECT value FROM settings WHERE key='docker_host'").Scan(&dockerHost)
+	db.QueryRow("SELECT value FROM settings WHERE key='docker_image'").Scan(&dockerImage)
+	if dockerHost == "" || dockerImage == "" {
+		return "", fmt.Errorf("docker host or image not configured")
+	}
+
+	var ext, entryCmd string
+	switch language {
+	case "Bash":
+		ext = ".sh"
+		entryCmd = "sh /code/skill" + ext
+	case "Go":
+		ext = ".go"
+		entryCmd = "go run /code/skill" + ext
+	case "JavaScript":
+		ext = ".js"
+		entryCmd = "node /code/skill" + ext
+	default:
+		return "", fmt.Errorf("unsupported language for docker: %s", language)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "zuver_docker_")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	codeFile := filepath.Join(tmpDir, "skill"+ext)
+	if err := os.WriteFile(codeFile, []byte(code), 0700); err != nil {
+		return "", fmt.Errorf("failed to write skill file: %w", err)
+	}
+
+	argsSlice := []string{
+		"-H", dockerHost,
+		"run", "--rm",
+		"-v", tmpDir + ":/code:ro",
+		dockerImage,
+		"sh", "-c", entryCmd,
+	}
+
+	cmd := exec.Command("docker", argsSlice...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("docker execution failed: %w", err)
+	}
+	return string(out), nil
 }

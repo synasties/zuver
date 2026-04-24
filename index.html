@@ -15,6 +15,7 @@
 	<!-- Vendor Libraries -->
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.1/dist/purify.min.js"></script>
 	<!-- Fonts -->
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -575,6 +576,8 @@
 
 <body
 	class="bg-[#f6f9fc] dark:bg-[#0a0a0a] text-gray-900 dark:text-gray-100 flex h-screen w-full overflow-hidden transition-colors duration-300">
+	<!-- Loading Progress Bar -->
+	<div id="loading-bar" class="fixed top-0 left-0 h-1 bg-blue-500 z-[200] transition-all duration-300" style="width: 0%; opacity: 0"></div>
 	<!-- Mobile Overlay -->
 	<div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden transition-opacity"
 		onclick="toggleMobileMenu()"></div>
@@ -596,7 +599,7 @@
 					class="w-5 h-5"></i></button>
 		</div>
 		<nav class="flex-1 overflow-y-auto p-3 hide-scrollbar">
-			<div class="nav-section-title">Overview</div>
+			<div class="nav-section-title">Dashboard</div>
 			<div data-target="home" class="nav-item active">
 				<div class="nav-icon-box"><i data-lucide="layout-dashboard" class="w-5 h-5"></i></div>
 				<span class="nav-text">Home</span>
@@ -605,11 +608,7 @@
 				<div class="nav-icon-box"><i data-lucide="bar-chart-3" class="w-5 h-5"></i></div>
 				<span class="nav-text">Statistics</span>
 			</div>
-			<div data-target="projects" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="workflow" class="w-5 h-5"></i></div>
-				<span class="nav-text">Applications</span>
-			</div>
-			<div class="nav-section-title">Armory</div>
+			<div class="nav-section-title">Build</div>
 			<div data-target="agents" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="bot" class="w-5 h-5"></i></div>
 				<span class="nav-text">Agents</span>
@@ -618,11 +617,19 @@
 				<div class="nav-icon-box"><i data-lucide="zap" class="w-5 h-5"></i></div>
 				<span class="nav-text">Skills</span>
 			</div>
+			<div data-target="projects" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="workflow" class="w-5 h-5"></i></div>
+				<span class="nav-text">Applications</span>
+			</div>
+			<div data-target="outputs" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="send" class="w-5 h-5"></i></div>
+				<span class="nav-text">Outputs</span>
+			</div>
+			<div class="nav-section-title">Data</div>
 			<div data-target="sources" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="database" class="w-5 h-5"></i></div>
 				<span class="nav-text">Sources</span>
 			</div>
-			<div class="nav-section-title">Studio</div>
 			<div data-target="rags" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="brain-circuit" class="w-5 h-5"></i></div>
 				<span class="nav-text">Vector RAGs</span>
@@ -631,22 +638,31 @@
 				<div class="nav-icon-box"><i data-lucide="brain" class="w-5 h-5"></i></div>
 				<span class="nav-text">Preferences</span>
 			</div>
-			<div class="nav-section-title">Config</div>
-			<div data-target="mcp" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="blocks" class="w-5 h-5"></i></div>
-				<span class="nav-text">MCP Servers</span>
-			</div>
+			<div class="nav-section-title">Connect</div>
 			<div data-target="providers" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="server" class="w-5 h-5"></i></div>
 				<span class="nav-text">Providers</span>
+			</div>
+			<div data-target="mcp" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="blocks" class="w-5 h-5"></i></div>
+				<span class="nav-text">MCP Servers</span>
 			</div>
 			<div data-target="apikeys" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="key" class="w-5 h-5"></i></div>
 				<span class="nav-text" data-i18n="API Keys">API Keys</span>
 			</div>
+			<div class="nav-section-title">System</div>
 			<div data-target="settings" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="settings" class="w-5 h-5"></i></div>
 				<span class="nav-text">Settings</span>
+			</div>
+			<div data-target="tasks" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="clock" class="w-5 h-5"></i></div>
+				<span class="nav-text" data-i18n="Tasks">Tasks</span>
+			</div>
+			<div data-target="audit" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
+				<span class="nav-text" data-i18n="Audit Log">Audit Log</span>
 			</div>
 		</nav>
 		<div class="p-3 border-t border-gray-200 dark:border-gray-800">
@@ -746,6 +762,34 @@
 						</div>
 						<div class="relative h-[340px] w-full">
 							<canvas id="mainChart"></canvas>
+						</div>
+					</div>
+					<div
+						class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg shadow-sm overflow-hidden">
+						<div class="px-5 py-3 border-b dark:border-gray-800 flex items-center justify-between gap-3">
+							<p class="text-sm font-bold">Recent Security Events</p>
+							<select id="security-event-filter" onchange="window.loadAnalyticsDashboard()" class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 text-xs outline-none font-semibold text-gray-700 dark:text-gray-300">
+								<option value="all">All events</option>
+								<option value="login">Login / Init</option>
+								<option value="reauth">Reauth</option>
+								<option value="provider">Providers</option>
+								<option value="source">Sources</option>
+								<option value="apikey">API Keys</option>
+								<option value="destructive">Destructive</option>
+							</select>
+						</div>
+						<div class="overflow-x-auto">
+							<table class="w-full text-xs">
+								<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+									<tr>
+										<th class="text-left px-4 py-3 font-semibold text-gray-500">Time</th>
+										<th class="text-left px-4 py-3 font-semibold text-gray-500">Action</th>
+										<th class="text-left px-4 py-3 font-semibold text-gray-500">Actor</th>
+										<th class="text-left px-4 py-3 font-semibold text-gray-500">Detail</th>
+									</tr>
+								</thead>
+								<tbody id="an-security-events" class="divide-y dark:divide-gray-800"></tbody>
+							</table>
 						</div>
 					</div>
 					<!-- Per-agent breakdown table -->
@@ -916,7 +960,17 @@
 								Agent</button>
 						</div>
 					</div>
+					<div class="flex items-center gap-3 mb-4">
+						<input type="text" id="agents-search" placeholder="Search agents..." oninput="filterAgents()"
+							class="flex-1 border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
+						<select id="agents-type-filter" onchange="filterAgents()" class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+							<option value="">All Types</option>
+							<option value="Stream">Stream</option>
+							<option value="Batch">Batch</option>
+						</select>
+					</div>
 					<div id="agents-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+					<div id="agents-pagination" class="flex items-center justify-center gap-2 mt-4"></div>
 				</div>
 				<div id="view-agent-editor" class="page-view hidden h-[calc(100vh-140px)] flex-col space-y-4">
 					<div class="flex justify-between items-center shrink-0 border-b dark:border-gray-800 pb-4">
@@ -1049,7 +1103,21 @@
 								class="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New Skill</button>
 						</div>
 					</div>
+					<div class="flex items-center gap-3 mb-4">
+						<input type="text" id="skills-search" placeholder="Search skills..." oninput="filterSkills()"
+							class="flex-1 border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
+						<select id="skills-type-filter" onchange="filterSkills()" class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+							<option value="">All Types</option>
+							<option value="Bash">Bash</option>
+							<option value="Go">Go</option>
+							<option value="JavaScript">JavaScript</option>
+							<option value="API">API</option>
+							<option value="MD">MD</option>
+							<option value="Agent">Agent</option>
+						</select>
+					</div>
 					<div id="skills-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+					<div id="skills-pagination" class="flex items-center justify-center gap-2 mt-4"></div>
 				</div>
 				<div id="view-rags" class="page-view hidden space-y-6">
 					<div class="flex justify-between items-center">
@@ -1103,10 +1171,15 @@
 							<select id="chat-agent-select"
 								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md p-1.5 text-sm outline-none w-40 md:w-48 shadow-sm"></select>
 						</div>
-						<button onclick="clearMemory()"
-							class="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/10 px-3 py-1.5 rounded border border-red-100 dark:border-red-900/30 transition-colors"><i
-								data-lucide="trash-2" class="w-3.5 h-3.5"></i> <span class="hidden md:inline">Wipe
-								Memory</span></button>
+						<div class="flex items-center gap-2">
+							<button onclick="exportChatHistory('json')"
+								class="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-600 bg-blue-50 dark:bg-blue-900/10 px-3 py-1.5 rounded border border-blue-100 dark:border-blue-900/30 transition-colors"><i
+									data-lucide="download" class="w-3.5 h-3.5"></i> <span class="hidden md:inline">Export</span></button>
+							<button onclick="clearMemory()"
+								class="flex items-center gap-1 text-xs text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-900/10 px-3 py-1.5 rounded border border-red-100 dark:border-red-900/30 transition-colors"><i
+									data-lucide="trash-2" class="w-3.5 h-3.5"></i> <span class="hidden md:inline">Wipe
+									Memory</span></button>
+						</div>
 					</div>
 					<div id="chat-messages"
 						class="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 bg-[#fbfbfb] dark:bg-[#050505]">
@@ -1233,6 +1306,48 @@
 								</div>
 							</div>
 						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-purple-600"><i data-lucide="container"
+											class="w-4 h-4"></i> Docker Skill Execution</span>
+									<p class="text-xs text-gray-500 mt-1">Run Bash, Go, and JavaScript skills inside Docker containers for isolation.</p>
+								</div>
+								<input type="checkbox" id="toggle-docker" onchange="updateDockerUI(); saveSettings()"
+									class="w-4 h-4 cursor-pointer accent-purple-500">
+							</div>
+							<div id="docker-config-area"
+								class="transition-all duration-300 space-y-4 border-t dark:border-gray-800 pt-4">
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div>
+										<label class="text-[10px] text-gray-500 font-bold uppercase">Docker Host</label>
+										<input type="text" id="docker-host" onchange="saveSettings()"
+											placeholder="tcp://localhost:2375"
+											class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono mt-1">
+									</div>
+									<div>
+										<label class="text-[10px] text-gray-500 font-bold uppercase">Container Image</label>
+										<input type="text" id="docker-image" onchange="saveSettings()"
+											placeholder="zuver-skill:latest"
+											class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono mt-1">
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div>
+								<span class="font-bold flex items-center gap-2 text-red-600"><i data-lucide="key"
+										class="w-4 h-4"></i> Change Admin Password</span>
+								<p class="text-xs text-gray-500 mt-1">Update your admin password.</p>
+							</div>
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+								<input type="password" id="pw-current" placeholder="Current password"
+									class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm">
+								<input type="password" id="pw-new" placeholder="New password (min 8 chars)"
+									class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm">
+								<button onclick="changePassword()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">Update</button>
+							</div>
+						</div>
 					</div>
 					<div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
 						<div
@@ -1273,10 +1388,95 @@
 						</div>
 					</div>
 				</div>
+				<div id="view-audit" class="page-view hidden space-y-6">
+					<div class="flex items-center justify-between">
+						<div>
+							<h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5 text-green-500"></i> Audit Log</h2>
+							<p class="text-sm text-gray-500 mt-1">Security events and administrative actions.</p>
+						</div>
+						<button onclick="loadAuditLogs()" class="px-3 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2">
+							<i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh
+						</button>
+					</div>
+					<div class="flex items-center gap-3">
+						<select id="audit-action-filter" onchange="loadAuditLogs()" class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+							<option value="">All Actions</option>
+							<option value="login_success">Login Success</option>
+							<option value="login_failure">Login Failure</option>
+							<option value="password_change">Password Change</option>
+							<option value="apikey_create">API Key Created</option>
+							<option value="apikey_delete">API Key Deleted</option>
+							<option value="provider_create">Provider Created</option>
+							<option value="wipe_database">Database Wipe</option>
+							<option value="reauth_success">Reauth Success</option>
+						</select>
+					</div>
+					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+						<table class="w-full text-xs">
+							<thead class="bg-gray-50 dark:bg-[#1a1a1a]">
+								<tr>
+									<th class="text-left px-4 py-3 font-semibold text-gray-500">Time</th>
+									<th class="text-left px-4 py-3 font-semibold text-gray-500">Action</th>
+									<th class="text-left px-4 py-3 font-semibold text-gray-500">Actor</th>
+									<th class="text-left px-4 py-3 font-semibold text-gray-500">Path</th>
+									<th class="text-left px-4 py-3 font-semibold text-gray-500">Detail</th>
+								</tr>
+							</thead>
+							<tbody id="audit-tbody" class="divide-y dark:divide-gray-800"></tbody>
+						</table>
+					</div>
+					<div id="audit-pagination" class="flex items-center justify-center gap-2"></div>
+				</div>
+				<div id="view-tasks" class="page-view hidden space-y-6">
+					<div class="flex items-center justify-between">
+						<div>
+							<h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="clock" class="w-5 h-5 text-yellow-500"></i> Background Tasks</h2>
+							<p class="text-sm text-gray-500 mt-1">Monitor and manage automated tasks triggered by regex patterns.</p>
+						</div>
+						<button onclick="openTaskModal()" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold shadow-sm flex items-center gap-2">
+							<i data-lucide="plus" class="w-4 h-4"></i> New Task
+						</button>
+					</div>
+					<div id="tasks-list" class="space-y-3"></div>
+				</div>
 			</div>
 		</div>
 	</main>
 	<!-- Modals -->
+	<!-- Modal: Task -->
+	<div id="modal-task" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-md shadow-xl flex flex-col" style="max-height:90vh">
+			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 shrink-0 flex items-center justify-between">
+				<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="clock" class="text-yellow-500 w-5 h-5"></i> Background Task</h3>
+				<button onclick="closeModal('modal-task')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+			</div>
+			<div class="px-6 py-4 space-y-3 flex-1 overflow-y-auto">
+				<input type="hidden" id="task-id-input">
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Agent</label>
+					<select id="task-agent-id" class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm mt-1"></select>
+				</div>
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Regex Pattern</label>
+					<input type="text" id="task-regex" placeholder="e.g. /deploy|/release" class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono mt-1">
+				</div>
+				<div>
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Command to Execute</label>
+					<input type="text" id="task-command" placeholder="e.g. /createTasks ..." class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono mt-1">
+				</div>
+				<div class="flex items-center gap-4">
+					<label class="flex items-center gap-2 text-xs font-bold text-gray-500"><input type="checkbox" id="task-repeat" class="accent-yellow-500"> Repeat</label>
+					<label class="flex items-center gap-2 text-xs font-bold text-gray-500"><input type="checkbox" id="task-active" checked class="accent-green-500"> Active</label>
+				</div>
+			</div>
+			<div class="px-6 py-4 border-t dark:border-gray-800 shrink-0 flex justify-end gap-2">
+				<button onclick="closeModal('modal-task')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+				<button onclick="submitTask()" class="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm font-bold">Save Task</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Modal: API Key -->
 	<div id="modal-apikey" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
 		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-2xl shadow-xl flex flex-col" style="max-height:90vh">
 			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 shrink-0">
@@ -1417,6 +1617,13 @@
 							<option value="MD">Markdown Docs</option>
 							<option value="Agent">Agent Call</option>
 						</select>
+					</div>
+				</div>
+				<div id="skill-docker-ui" class="flex items-center gap-3 p-3 border border-purple-200 dark:border-purple-900/30 rounded-lg bg-purple-50/30 dark:bg-purple-900/10">
+					<input type="checkbox" id="skill-use-docker" class="w-4 h-4 cursor-pointer accent-purple-500">
+					<div>
+						<label class="text-xs font-bold text-purple-600 dark:text-purple-400 cursor-pointer" for="skill-use-docker">Run in Docker Container</label>
+						<p class="text-[10px] text-gray-500 mt-0.5">Execute this skill inside an isolated Docker container.</p>
 					</div>
 				</div>
 				<div class="space-y-1">
@@ -1837,6 +2044,70 @@
 			document.getElementById('page-login').classList.add('hidden');
 		}
 
+		let sessionToken = null;
+		let recentReauthUntil = 0;
+
+		function getSessionToken() {
+			return sessionToken;
+		}
+
+		function setSessionToken(token) {
+			sessionToken = typeof token === 'string' && token.trim() ? token.trim() : null;
+		}
+
+		function clearSessionToken() {
+			sessionToken = null;
+			recentReauthUntil = 0;
+		}
+
+		function hasRecentReauth() {
+			return Date.now() < recentReauthUntil;
+		}
+
+		function markRecentReauth() {
+			recentReauthUntil = Date.now() + (5 * 60 * 1000);
+		}
+
+		async function promptReauthentication(actionLabel = 'this action') {
+			if (hasRecentReauth()) return true;
+			const pwd = await showPrompt(`Re-enter admin password to continue with ${actionLabel}.`, 'Admin password');
+			if (pwd === null) return false;
+			const token = getSessionToken();
+			const resp = await fetch('/api/v1/login', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(token ? { 'Authorization': 'Bearer ' + token } : {})
+				},
+				body: JSON.stringify({ password: pwd })
+			});
+			const data = await resp.json().catch(() => ({}));
+			if (!resp.ok) {
+				showToast(data.error || 'Reauthentication failed.', 'error');
+				return false;
+			}
+			markRecentReauth();
+			return true;
+		}
+
+		function sanitizeHTML(html) {
+			return DOMPurify.sanitize(String(html || ''), { USE_PROFILES: { html: true } });
+		}
+
+		function renderMarkdownSafely(markdown) {
+			const raw = String(markdown || '').replace(/^[\u200B\u200C\u200D\u200E\u200F\uFEFF]/, '');
+			return sanitizeHTML(marked.parse(raw));
+		}
+
+		function setElementHTML(el, html) {
+			if (el) el.innerHTML = sanitizeHTML(html);
+		}
+
+		function appendSanitizedHTML(el, html) {
+			if (!el) return;
+			el.insertAdjacentHTML('beforeend', sanitizeHTML(html));
+		}
+
 		const TOAST_ICONS = {
 			success: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
 			error: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
@@ -1849,7 +2120,8 @@
 			if (!container) { console.warn('[v0] toast-container not ready, msg:', msg); return; }
 			const el = document.createElement('div');
 			el.className = `toast ${type}`;
-			el.innerHTML = `<span class="shrink-0 mt-0.5">${TOAST_ICONS[type] || TOAST_ICONS.info}</span><span class="flex-1">${msg}</span><button onclick="this.parentElement.remove()" style="opacity:0.4;font-size:14px;line-height:1;background:none;border:none;cursor:pointer;padding:0 0 0 4px;">&#x2715;</button>`;
+			el.innerHTML = `<span class="shrink-0 mt-0.5">${TOAST_ICONS[type] || TOAST_ICONS.info}</span><span class="flex-1"></span><button onclick="this.parentElement.remove()" style="opacity:0.4;font-size:14px;line-height:1;background:none;border:none;cursor:pointer;padding:0 0 0 4px;">&#x2715;</button>`;
+			el.querySelector('.flex-1').textContent = String(msg || '');
 			container.appendChild(el);
 			setTimeout(() => {
 				el.classList.add('leaving');
@@ -1861,14 +2133,16 @@
 			return new Promise(resolve => {
 				const overlay = document.createElement('div');
 				overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
-				overlay.innerHTML = `
-		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
-		                <p class="text-sm font-medium leading-snug">${msg}</p>
-		                <div class="flex gap-2 justify-end">
-		                    <button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-		                    <button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${confirmLabel}</button>
-		                </div>
-		            </div>`;
+				const msgEl = document.createElement('p');
+				msgEl.className = 'text-sm font-medium leading-snug';
+				msgEl.textContent = String(msg || '');
+				const actions = document.createElement('div');
+				actions.className = 'flex gap-2 justify-end';
+				actions.innerHTML = `<button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button><button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${escapeHTML(confirmLabel)}</button>`;
+				const card = overlay.firstElementChild;
+				card.innerHTML = '';
+				card.appendChild(msgEl);
+				card.appendChild(actions);
 				document.body.appendChild(overlay);
 				overlay.querySelector('#confirm-cancel').onclick = () => { overlay.remove(); resolve(false); };
 				overlay.querySelector('#confirm-ok').onclick = () => { overlay.remove(); resolve(true); };
@@ -1880,15 +2154,23 @@
 				const overlay = document.createElement('div');
 				overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
 				overlay.innerHTML = `
-		            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4">
-		                <p class="text-sm font-medium">${msg}</p>
-		                <input id="prompt-input" type="text" value="${defaultVal}" placeholder="${placeholder}"
-		                    class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-black rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors">
-		                <div class="flex gap-2 justify-end">
-		                    <button id="prompt-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button>
-		                    <button id="prompt-ok" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">OK</button>
-		                </div>
-		            </div>`;
+			            <div class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-xs w-full space-y-4"></div>`;
+				const card = overlay.firstElementChild;
+				const msgEl = document.createElement('p');
+				msgEl.className = 'text-sm font-medium';
+				msgEl.textContent = String(msg || '');
+				const inputEl = document.createElement('input');
+				inputEl.id = 'prompt-input';
+				inputEl.type = 'text';
+				inputEl.value = String(defaultVal || '');
+				inputEl.placeholder = String(placeholder || '');
+				inputEl.className = 'w-full border dark:border-gray-700 bg-gray-50 dark:bg-black rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors';
+				const actions = document.createElement('div');
+				actions.className = 'flex gap-2 justify-end';
+				actions.innerHTML = '<button id="prompt-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button><button id="prompt-ok" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">OK</button>';
+				card.appendChild(msgEl);
+				card.appendChild(inputEl);
+				card.appendChild(actions);
 				document.body.appendChild(overlay);
 				const input = overlay.querySelector('#prompt-input');
 				input.focus();
@@ -1897,6 +2179,30 @@
 				overlay.querySelector('#prompt-cancel').onclick = () => { overlay.remove(); resolve(null); };
 				overlay.querySelector('#prompt-ok').onclick = submit;
 			});
+		};
+
+		let loadingCount = 0;
+		let loadingTimer = null;
+		window.showLoading = function () {
+			loadingCount++;
+			const bar = document.getElementById('loading-bar');
+			if (bar) {
+				bar.style.opacity = '1';
+				bar.style.width = '30%';
+			}
+		};
+		window.hideLoading = function () {
+			loadingCount = Math.max(0, loadingCount - 1);
+			if (loadingCount === 0) {
+				const bar = document.getElementById('loading-bar');
+				if (bar) {
+					bar.style.width = '100%';
+					setTimeout(() => {
+						bar.style.opacity = '0';
+						setTimeout(() => { bar.style.width = '0%'; }, 300);
+					}, 200);
+				}
+			}
 		};
 
 		// ================================================================
@@ -1916,12 +2222,19 @@
 			"Providers": { zh: "模型供应商", de: "Anbieter" },
 			"API Keys": { zh: "API 密钥", de: "API-Schlüssel" },
 			"Settings": { zh: "系统设置", de: "Einstellungen" },
+			"Audit Log": { zh: "审计日志", de: "Audit-Protokoll" },
+			"Tasks": { zh: "后台任务", de: "Hintergrundaufgaben" },
 			"Console": { zh: "控制台", de: "Konsole" },
 			"Theme": { zh: "主题", de: "Thema" },
 			"Overview": { zh: "概览", de: "Übersicht" },
 			"Armory": { zh: "通用", de: "Rüstkammer" },
 			"Studio": { zh: "工坊", de: "Studio" },
 			"Config": { zh: "配置", de: "Konfiguration" },
+			"Dashboard": { zh: "仪表盘", de: "Dashboard" },
+			"Build": { zh: "构建", de: "Erstellen" },
+			"Data": { zh: "数据", de: "Daten" },
+			"Connect": { zh: "连接", de: "Verbinden" },
+			"System": { zh: "系统", de: "System" },
 			// Auth
 			"System Locked": { zh: "系统已锁定", de: "System gesperrt" },
 			"Unlock OS": { zh: "解锁系统", de: "System entsperren" },
@@ -2045,14 +2358,12 @@
 			}
 		}
 
-		// Trigger translation initialization upon DOM readiness.
-		document.addEventListener("DOMContentLoaded", () => {
-			const sel = document.getElementById('lang-select');
-			if (sel) sel.value = currentLang;
-			if (currentLang !== 'en') {
+			// Trigger translation initialization upon DOM readiness.
+			document.addEventListener("DOMContentLoaded", () => {
+				const sel = document.getElementById('lang-select');
+				if (sel) sel.value = currentLang;
 				setTimeout(() => switchLanguage(currentLang), 150);
-			}
-		});
+			});
 
 		/* ==========================================
 		 * UTILITIES & GLOBAL UI STATE
@@ -2089,11 +2400,16 @@
 			const t = document.getElementById('skill-type-input').value;
 			const isAPI = t === 'API';
 			const isAgent = t === 'Agent';
+			const canUseDocker = t === 'Bash' || t === 'JavaScript' || t === 'Go';
 			const contentInput = document.getElementById('skill-content-input');
+			const dockerUI = document.getElementById('skill-docker-ui');
+			const dockerInput = document.getElementById('skill-use-docker');
 
 			document.getElementById('skill-api-ui').style.display = isAPI ? 'flex' : 'none';
 			document.getElementById('skill-agent-ui').style.display = isAgent ? 'flex' : 'none';
 			contentInput.style.display = (isAPI || isAgent) ? 'none' : 'block';
+			if (dockerUI) dockerUI.style.display = canUseDocker ? 'flex' : 'none';
+			if (!canUseDocker && dockerInput) dockerInput.checked = false;
 
 			if (t === 'MD') {
 				contentInput.placeholder = "Markdown Content (No <placeholders> needed)";
@@ -2119,21 +2435,31 @@
 		 * ========================================== */
 		let dataStore = { agents: [], projects: [], skills: [], rags: [], preferences: [], sources: [], providers: [], mcp: [], outputs: [] };
 
-		async function api(path, method = 'GET', body = null) {
+		async function api(path, method = 'GET', body = null, skipLoading = false) {
+			if (!skipLoading) showLoading();
 			const opt = { method, headers: {} };
 
 			// Attach system authorization token if present
-			const token = localStorage.getItem('zuver_token');
+			const token = getSessionToken();
 			if (token) opt.headers['Authorization'] = 'Bearer ' + token;
 			if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+			if ((method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') && hasRecentReauth()) {
+				opt.headers['X-Reauth-Verified'] = 'true';
+			}
 
 			const r = await fetch(`/api/v1${path}`, opt);
 
 			// Intercept 401 Unauthorized errors to trigger the authentication modal
 			if (r.status === 401 && path !== '/login') {
+				const payload = await r.json().catch(() => ({}));
+				if (payload.error === 'Reauthentication required') {
+					throw new Error('Reauthentication required');
+				}
+				clearSessionToken();
 				showLoginPage();
 				throw new Error("Unauthorized Session");
 			}
+			if (!skipLoading) hideLoading();
 			return r.json();
 		}
 
@@ -2178,7 +2504,13 @@
 					document.getElementById('presidio-anonymizer-url').value = set.presidio_anonymizer;
 				}
 				document.getElementById('toggle-cors').checked = (set.cors_enabled === 'true');
+				if (set.docker_enabled) {
+					document.getElementById('toggle-docker').checked = (set.docker_enabled === 'true');
+					document.getElementById('docker-host').value = set.docker_host || 'tcp://localhost:2375';
+					document.getElementById('docker-image').value = set.docker_image || 'zuver-skill:latest';
+				}
 				updatePresidioUI();
+				updateDockerUI();
 
 				const sel = document.getElementById('chat-agent-select'); const old = sel.value;
 				sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
@@ -2238,7 +2570,7 @@
 		/** Safely injects HTML into target element to prevent null reference crashes */
 		function safeHtml(id, html) {
 			const el = document.getElementById(id);
-			if (el) el.innerHTML = html;
+			if (el) setElementHTML(el, html);
 		}
 
 		function renderLists() {
@@ -2261,7 +2593,7 @@
 					}).join('');
 					return `
 		            <div class="group bg-white dark:bg-[#111] border dark:border-gray-800 rounded-xl shadow-sm hover:border-blue-400 dark:hover:border-blue-700 hover:shadow-md transition-all flex flex-col overflow-hidden">
-		                <div onclick="openEditor('${p.id}')" class="p-5 flex-1 cursor-pointer">
+		                <div data-action="open-editor" data-id="${p.id}" class="p-5 flex-1 cursor-pointer">
 		                    <div class="flex items-start justify-between gap-2">
 		                        <div class="flex items-center gap-2.5">
 		                            <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
@@ -2284,46 +2616,21 @@
 		                        <span class="flex items-center gap-1"><i data-lucide="arrow-right" class="w-3 h-3"></i> ${edgeCount} edges</span>
 		                    </div>
 		                    <div class="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-		                        <button onclick="event.stopPropagation(); runProjectFromCard('${p.id}')" class="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500" title="Run"><i data-lucide="play" class="w-3.5 h-3.5"></i></button>
-		                        <button onclick="event.stopPropagation(); openEditor('${p.id}')" class="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500" title="Edit"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
-		                        <button onclick="event.stopPropagation(); deleteProject('${p.id}')" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="run-project" data-id="${p.id}" class="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500" title="Run"><i data-lucide="play" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="open-editor" data-id="${p.id}" class="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500" title="Edit"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="delete-project" data-id="${p.id}" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
 		                    </div>
 		                </div>
 		            </div>`;
 				}).join(''));
-			safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} onchange="window.togglePrivacy('${a.id}', this.checked)" class="accent-green-500"> ${a.name}</label>`).join(''));
-			safeHtml('agents-list', dataStore.agents.map(a => {
-				const st = (window.analyticsStats && window.analyticsStats.entities[a.id]) || { tokens_24h: 0, calls_24h: 0 };
-				return `
-		        <div class="agent-card p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg cursor-pointer shadow-sm relative group overflow-hidden flex flex-col justify-between h-40">
-		            <div class="absolute inset-0 bg-gradient-to-br from-transparent to-blue-50/50 dark:to-blue-900/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-		            <div class="flex justify-between items-start relative z-10">
-		                <div class="flex gap-3 items-center">
-		                    <div class="w-10 h-10 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm text-white font-bold">${a.name.substring(0, 1).toUpperCase()}</div>
-		                    <div>
-		                        <h3 class="font-bold text-sm">${a.name}</h3>
-		                        <p class="text-[10px] font-mono text-gray-500">${a.model}</p>
-								<p class="text-[9px] font-mono text-gray-400 select-all mt-0.5" title="Agent ID">${a.id}</p>
-		                    </div>
-		                </div>
-			<div class="flex items-center gap-3 z-20">
-				                    <i onclick="event.stopPropagation(); window.exportAgentJSON('${a.id}')" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" title="Export agent JSON"></i>
-				                    <i onclick="event.stopPropagation(); window.cloneAgent('${a.id}')" data-lucide="copy" class="w-4 h-4 text-gray-400 hover:text-indigo-500 transition-colors" title="Clone agent"></i>
-				                    <i onclick="event.stopPropagation(); window.editAgent('${a.id}')" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
-				                    <i onclick="event.stopPropagation(); window.deleteAgent('${a.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
-				                </div>
-		            </div>
-		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 flex-wrap relative z-10 pt-4 border-t dark:border-gray-800/50">
-		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
-		                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> ${st.calls_24h} Calls (24h)</span>
-		                ${a.stream_enabled !== false ? '<span class="bg-green-50 dark:bg-green-900/20 text-green-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="radio" class="w-3 h-3"></i> Stream</span>' : '<span class="bg-gray-50 dark:bg-gray-900/20 text-gray-400 px-2 py-1 rounded">Batch</span>'}
-		            </div>
-		        </div>
-		    `}).join(''));
-			safeHtml('skills-list', dataStore.skills.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}</p></div><div class="flex gap-2"><i onclick="window.exportSkillJSON('${s.id}')" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 cursor-pointer" title="Export skill JSON"></i><i onclick="window.editSkill('${s.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteSkill('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
-			safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editPreferences('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deletePreferences('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
-			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i onclick="window.editRAG('${r.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteRAG('${r.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
-			safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${p.name}</h3><p class="text-[10px] text-gray-400 mt-1">${p.endpoint}</p></div><div class="flex gap-2"><i onclick="window.editProvider('${p.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteProvider('${p.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} data-action="toggle-privacy" data-id="${a.id}" class="accent-green-500"> ${a.name}</label>`).join(''));
+			window.filteredAgents = dataStore.agents;
+			renderAgentPage();
+			window.filteredSkills = dataStore.skills;
+			renderSkillPage();
+			safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i data-action="edit-pref" data-id="${r.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-pref" data-id="${r.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i data-action="edit-rag" data-id="${r.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-rag" data-id="${r.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${p.name}</h3><p class="text-[10px] text-gray-400 mt-1">${p.endpoint}</p></div><div class="flex gap-2"><i data-action="edit-provider" data-id="${p.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-provider" data-id="${p.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 			safeHtml('mcp-grid', dataStore.mcp.map(m => {
 				const tools = (() => { try { const p = JSON.parse(m.tools || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })();
 				const toolChips = tools.length
@@ -2344,12 +2651,12 @@
 							<p class="text-[10px] text-gray-400 mt-0.5 font-mono">${m.url || m.command}</p>
 						</div>
 						<div class="flex items-center gap-2">
-							<button onclick="window.resolveMCP('${m.id}')" id="resolve-btn-${m.id}"
+							<button data-action="resolve-mcp" data-id="${m.id}" id="resolve-btn-${m.id}"
 								class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded bg-yellow-500 hover:bg-yellow-600 text-white transition-colors">
 								<i data-lucide="refresh-cw" class="w-3 h-3"></i> Resolve
 							</button>
-							<i onclick="window.editMCP('${m.id}')" data-lucide="edit-2" class="w-4 h-4 text-yellow-600 hover:text-yellow-700 cursor-pointer"></i>
-							<i onclick="window.deleteMCP('${m.id}')" data-lucide="trash-2" class="w-4 h-4 text-yellow-600 hover:text-red-500 cursor-pointer"></i>
+							<i data-action="edit-mcp" data-id="${m.id}" data-lucide="edit-2" class="w-4 h-4 text-yellow-600 hover:text-yellow-700 cursor-pointer"></i>
+							<i data-action="delete-mcp" data-id="${m.id}" data-lucide="trash-2" class="w-4 h-4 text-yellow-600 hover:text-red-500 cursor-pointer"></i>
 						</div>
 					</div>
 					<div class="flex flex-wrap gap-1.5 pt-1 border-t border-yellow-200 dark:border-yellow-800/50 mcp-tools-container" id="mcp-tools-${m.id}">
@@ -2363,15 +2670,15 @@
 		                <div class="flex justify-between items-start">
 		                    <h3 class="font-bold text-indigo-600 dark:text-indigo-400">${k.name}</h3>
 		                    <div class="flex gap-2">
-		                        <i onclick="window.editAPIKey('${k.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-indigo-500 cursor-pointer"></i>
-		                        <i onclick="window.deleteAPIKey('${k.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                        <i data-action="edit-apikey" data-id="${k.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-indigo-500 cursor-pointer"></i>
+		                        <i data-action="delete-apikey" data-id="${k.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                    </div>
 		                </div>
 		                <p class="text-[10px] text-gray-400 mt-1">${k.description}</p>
 		            </div>
 		            <div class="mt-4 pt-3 border-t dark:border-gray-800 flex justify-between items-center">
 		                <code id="apikey-token-${k.id}" class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${k.token}</code>
-                <i onclick="window.copyAPIKeyToken('${k.id}')" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer" title="Copy token"></i>
+                <i data-action="copy-apikey" data-id="${k.id}" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer" title="Copy token"></i>
 		            </div>
 		        </div>
 		    `).join(''));
@@ -2391,9 +2698,9 @@
 		            </div>
 		        <div class="flex flex-col items-end gap-1">
 		                <div class="flex gap-2">
-		                    <i onclick="window.pingProvider('${p.id}', this)" data-lucide="activity" class="w-4 h-4 text-gray-400 hover:text-emerald-500 cursor-pointer" title="Ping provider"></i>
-		                    <i onclick="window.editProvider('${p.id}')" data-lucide="edit-3" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
-		                    <i onclick="window.deleteProvider('${p.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                    <i data-action="ping-provider" data-id="${p.id}" data-lucide="activity" class="w-4 h-4 text-gray-400 hover:text-emerald-500 cursor-pointer" title="Ping provider"></i>
+		                    <i data-action="edit-provider" data-id="${p.id}" data-lucide="edit-3" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
+		                    <i data-action="delete-provider" data-id="${p.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                </div>
 		                <span id="provider-health-${p.id}" class="text-[10px] px-1.5 py-0.5 rounded bg-${color}-50 dark:bg-${color}-900/20 text-${color}-500 font-bold mt-1 border border-${color}-200 dark:border-${color}-800/50">${st.success_rate.toFixed(1)}% Success | ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
 		            </div>
@@ -2414,7 +2721,7 @@
 		                </div>
 		            </div>
 		            <div class="flex flex-col items-end gap-1">
-		                <i onclick="window.deleteSource('${s.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <i data-action="delete-source" data-id="${s.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                <span class="text-[10px] font-bold text-gray-400 mt-1">${st.calls_24h} Calls (24h)</span>
 		            </div>
 		        </div>
@@ -2437,7 +2744,7 @@
 		                </div>
 		            </div>
 		            <div class="flex flex-col items-end gap-1">
-		                <i onclick="window.deleteMCP('${m.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <i data-action="delete-mcp" data-id="${m.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                <span class="text-[10px] font-bold text-emerald-500 mt-1">${st.calls_24h} Calls (24h)</span>
 		            </div>
 		        </div>
@@ -2445,11 +2752,105 @@
 
 			// Render unified outputs interface (combining Base Outputs and Omni Skills)
 			const combinedOutputs = [
-				...dataStore.outputs.map(o => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><h3 class="font-bold text-sm">${o.name}</h3><div class="flex gap-2"><i onclick="window.editOutput('${o.id}')" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i onclick="window.deleteOutput('${o.id}')" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
-				...dataStore.skills.map(s => `<div class="p-4 border border-orange-200 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-orange-600">${s.name}</h3><p class="text-[10px] text-orange-500/70 mt-1">Skill | ${s.type}</p></div><i onclick="document.querySelector('[data-target=skills]').click()" data-lucide="arrow-right" class="w-4 h-4 text-orange-400 hover:text-orange-600 cursor-pointer"></i></div></div>`)
+				...dataStore.outputs.map(o => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><h3 class="font-bold text-sm">${o.name}</h3><div class="flex gap-2"><i data-action="edit-output" data-id="${o.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-output" data-id="${o.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
+				...dataStore.skills.map(s => `<div class="p-4 border border-orange-200 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-orange-600">${s.name}</h3><p class="text-[10px] text-orange-500/70 mt-1">Skill | ${s.type}</p></div><i data-action="goto-skills" data-lucide="arrow-right" class="w-4 h-4 text-orange-400 hover:text-orange-600 cursor-pointer"></i></div></div>`)
 			].join('');
 			safeHtml('outputs-list', combinedOutputs);
 			lucide.createIcons();
+		}
+
+		const ITEMS_PER_PAGE = 12;
+		window.agentsPage = 1;
+		window.skillsPage = 1;
+		window.filteredAgents = [];
+		window.filteredSkills = [];
+
+		window.filterAgents = function () {
+			const search = (document.getElementById('agents-search')?.value || '').toLowerCase();
+			const typeFilter = document.getElementById('agents-type-filter')?.value || '';
+			window.filteredAgents = dataStore.agents.filter(a => {
+				const matchSearch = !search || a.name.toLowerCase().includes(search) || (a.model || '').toLowerCase().includes(search);
+				const matchType = !typeFilter || (typeFilter === 'Stream' && a.stream_enabled !== false) || (typeFilter === 'Batch' && a.stream_enabled === false);
+				return matchSearch && matchType;
+			});
+			window.agentsPage = 1;
+			renderAgentPage();
+		}
+
+		function renderAgentPage() {
+			const filtered = window.filteredAgents;
+			const start = (window.agentsPage - 1) * ITEMS_PER_PAGE;
+			const pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
+			safeHtml('agents-list', pageItems.map(a => {
+				const st = (window.analyticsStats && window.analyticsStats.entities[a.id]) || { tokens_24h: 0, calls_24h: 0 };
+				return `
+		        <div class="agent-card p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg cursor-pointer shadow-sm relative group overflow-hidden flex flex-col justify-between h-40">
+		            <div class="absolute inset-0 bg-gradient-to-br from-transparent to-blue-50/50 dark:to-blue-900/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+		            <div class="flex justify-between items-start relative z-10">
+		                <div class="flex gap-3 items-center">
+		                    <div class="w-10 h-10 rounded-md bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm text-white font-bold">${a.name.substring(0, 1).toUpperCase()}</div>
+		                    <div>
+		                        <h3 class="font-bold text-sm">${a.name}</h3>
+		                        <p class="text-[10px] font-mono text-gray-500">${a.model}</p>
+								<p class="text-[9px] font-mono text-gray-400 select-all mt-0.5" title="Agent ID">${a.id}</p>
+		                    </div>
+		                </div>
+			<div class="flex items-center gap-3 z-20">
+				                    <i data-action="export-agent" data-id="${a.id}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" title="Export agent JSON"></i>
+				                    <i data-action="clone-agent" data-id="${a.id}" data-lucide="copy" class="w-4 h-4 text-gray-400 hover:text-indigo-500 transition-colors" title="Clone agent"></i>
+				                    <i data-action="edit-agent" data-id="${a.id}" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
+				                    <i data-action="delete-agent" data-id="${a.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
+		                </div>
+		            </div>
+		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 flex-wrap relative z-10 pt-4 border-t dark:border-gray-800/50">
+		                <span class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3"></i> ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
+		                <span class="bg-blue-50 dark:bg-blue-900/20 text-blue-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="activity" class="w-3 h-3"></i> ${st.calls_24h} Calls (24h)</span>
+		                ${a.stream_enabled !== false ? '<span class="bg-green-50 dark:bg-green-900/20 text-green-500 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="radio" class="w-3 h-3"></i> Stream</span>' : '<span class="bg-gray-50 dark:bg-gray-900/20 text-gray-400 px-2 py-1 rounded">Batch</span>'}
+		            </div>
+		        </div>
+		    `}).join(''));
+			renderPagination('agents', filtered.length);
+			lucide.createIcons();
+		}
+
+		window.filterSkills = function () {
+			const search = (document.getElementById('skills-search')?.value || '').toLowerCase();
+			const typeFilter = document.getElementById('skills-type-filter')?.value || '';
+			window.filteredSkills = dataStore.skills.filter(s => {
+				const matchSearch = !search || s.name.toLowerCase().includes(search) || (s.type || '').toLowerCase().includes(search);
+				const matchType = !typeFilter || s.type === typeFilter;
+				return matchSearch && matchType;
+			});
+			window.skillsPage = 1;
+			renderSkillPage();
+		}
+
+		function renderSkillPage() {
+			const filtered = window.filteredSkills;
+			const start = (window.skillsPage - 1) * ITEMS_PER_PAGE;
+			const pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
+			safeHtml('skills-list', pageItems.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between items-center"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}${s.use_docker ? ' <span class="text-purple-500">(Docker)</span>' : ''}</p></div><div class="flex gap-2"><i data-action="export-skill" data-id="${s.id}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 cursor-pointer" title="Export skill JSON"></i><i data-action="edit-skill" data-id="${s.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-skill" data-id="${s.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			renderPagination('skills', filtered.length);
+			lucide.createIcons();
+		}
+
+		function renderPagination(listId, totalItems) {
+			const currentPage = listId === 'agents' ? window.agentsPage : window.skillsPage;
+			const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+			const paginationEl = document.getElementById(listId + '-pagination');
+			if (!paginationEl || totalPages <= 1) {
+				if (paginationEl) paginationEl.innerHTML = '';
+				return;
+			}
+			const prevDisabled = currentPage <= 1 ? 'opacity-50 pointer-events-none' : '';
+			const nextDisabled = currentPage >= totalPages ? 'opacity-50 pointer-events-none' : '';
+			const pageVar = listId === 'agents' ? 'agentsPage' : 'skillsPage';
+			const renderFn = listId === 'agents' ? 'renderAgentPage' : 'renderSkillPage';
+			paginationEl.innerHTML = `
+				<button onclick="window.${pageVar}--; ${renderFn}()" class="px-3 py-1 rounded border dark:border-gray-700 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${prevDisabled}">Prev</button>
+				<span class="text-sm text-gray-500 px-3">Page ${currentPage} of ${totalPages}</span>
+				<button onclick="window.${pageVar}++; ${renderFn}()" class="px-3 py-1 rounded border dark:border-gray-700 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ${nextDisabled}">Next</button>
+			`;
 		}
 
 		/* ==========================================
@@ -2481,7 +2882,7 @@
 						chatBox.innerHTML += `<div class="chat-bubble-user whitespace-pre-wrap">${escapeHTML(msg.content)}</div>`;
 					} else if (msg.role === 'assistant') {
 						// Parse AI responses with Markdown safely
-						chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(msg.content)}</div>`;
+						chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${renderMarkdownSafely(msg.content)}</div>`;
 					} else if (msg.role === 'system') {
 						// Wrap system/tool interactions in collapsible detail blocks for cleanliness
 						chatBox.innerHTML += `
@@ -2542,7 +2943,7 @@
 			const origInner = btn.innerHTML;
 			btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i><span id="file-count-badge" class="hidden"></span>`;
 			lucide.createIcons();
-			const token = localStorage.getItem('zuver_token');
+			const token = getSessionToken();
 			for (const file of Array.from(files)) {
 				try {
 					const formData = new FormData();
@@ -2577,6 +2978,14 @@
 			const agentId = document.getElementById('chat-agent-select').value;
 			const ok = await showConfirm("Wipe this Agent's memory permanently?", 'Clear', true);
 			if (ok) { await api(`/history/${agentId}`, 'DELETE'); loadChatHistory(); }
+		};
+
+		window.exportChatHistory = (format) => {
+			const agentId = document.getElementById('chat-agent-select').value;
+			if (!agentId) { showToast('Select an agent first.', 'error'); return; }
+			const token = getSessionToken();
+			const url = `/api/v1/history/${agentId}/export?format=${format}` + (token ? `&token=${token}` : '');
+			window.open(url, '_blank');
 		};
 
 		window.sendMessage = async () => {
@@ -2632,7 +3041,7 @@
 				stream: agentStreamEnabled
 			};
 
-			const token = localStorage.getItem('zuver_token');
+			const token = getSessionToken();
 			const headers = { 'Content-Type': 'application/json' };
 			if (token) headers['Authorization'] = 'Bearer ' + token;
 
@@ -2646,6 +3055,7 @@
 					});
 
 					if (resp.status === 401) {
+						clearSessionToken();
 						showLoginPage();
 						throw new Error('Unauthorized');
 					}
@@ -2689,7 +3099,7 @@
 									const prevHtml = marked.parse(fullText.slice(0, fullText.length - parsed.delta.length));
 									const chunkSpan = `<span class="stream-chunk">${escapeHTML(parsed.delta)}</span>`;
 									// Simple approach: re-render full markdown but animate the last segment.
-									aiBubble.innerHTML = marked.parse(fullText);
+									aiBubble.innerHTML = renderMarkdownSafely(fullText);
 									// Flash the last text node briefly.
 									const walker = document.createTreeWalker(aiBubble, NodeFilter.SHOW_TEXT, null);
 									let lastTextNode;
@@ -2782,7 +3192,7 @@
 								chatBox.innerHTML += `<div class="chat-bubble-sys">${escapeHTML(log)}</div>`;
 							});
 						}
-						chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(data.reply || '')}</div>`;
+						chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${renderMarkdownSafely(data.reply || '')}</div>`;
 					}
 				} else {
 					// ---- NON-STREAMING (JSON) path ----
@@ -2792,6 +3202,7 @@
 						body: JSON.stringify(reqPayload)
 					});
 					if (resp.status === 401) {
+						clearSessionToken();
 						showLoginPage();
 						throw new Error('Unauthorized');
 					}
@@ -2804,7 +3215,7 @@
 							chatBox.innerHTML += `<div class="${cls}">${escapeHTML(log)}</div>`;
 						});
 					}
-					chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${marked.parse(data.reply || '')}</div>`;
+						chatBox.innerHTML += `<div class="chat-bubble-ai markdown-body">${renderMarkdownSafely(data.reply || '')}</div>`;
 				}
 			} catch (err) {
 				if (err.message !== 'Unauthorized') {
@@ -2883,6 +3294,9 @@
 		}
 
 		window.openEditor = (id) => {
+			if (typeof window.showView === 'function') {
+				window.showView('projects');
+			}
 			document.getElementById('view-projects-list').classList.add('hidden');
 			const ed = document.getElementById('view-projects-editor');
 			ed.classList.remove('hidden'); ed.classList.add('flex');
@@ -3384,7 +3798,7 @@
 
 		// Export all agents as a sanitized JSON file (no provider ID / API keys).
 		window.exportAgentsJSON = async () => {
-			const token = localStorage.getItem('zuver_token') || '';
+			const token = getSessionToken() || '';
 			const link = document.createElement('a');
 			link.href = `/api/v1/agents/export?token=${encodeURIComponent(token)}`;
 			link.download = 'zuver_agents.json';
@@ -3436,7 +3850,7 @@
 
 		// Export all skills as a JSON file.
 		window.exportSkillsJSON = async () => {
-			const token = localStorage.getItem('zuver_token') || '';
+			const token = getSessionToken() || '';
 			const link = document.createElement('a');
 			link.href = `/api/v1/skills/export?token=${encodeURIComponent(token)}`;
 			link.download = 'zuver_skills.json';
@@ -3495,6 +3909,7 @@
 		window.submitMCP = async () => { const id = document.getElementById('mcp-id-input').value || 'mcp_' + Date.now(); await api(document.getElementById('mcp-id-input').value ? `/mcp/${id}` : '/mcp', document.getElementById('mcp-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('mcp-name-input').value, url: document.getElementById('mcp-url-input').value, command: document.getElementById('mcp-cmd-input').value }); closeModal('modal-mcp'); loadAllData(); };
 
 		window.submitSource = async () => {
+			if (!(await promptReauthentication('saving a source'))) return;
 			const id = document.getElementById('source-id-input').value || 'src_' + Date.now();
 			await api(document.getElementById('source-id-input').value ? `/sources/${id}` : '/sources', document.getElementById('source-id-input').value ? 'PUT' : 'POST', {
 				id,
@@ -3529,7 +3944,10 @@
 		window.submitPreferences = async () => { const id = document.getElementById('preferences-id-input').value || 'preferences_' + Date.now(); await api(document.getElementById('preferences-id-input').value ? `/preferences/${id}` : '/preferences', document.getElementById('preferences-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('preferences-name-input').value, description: document.getElementById('preferences-desc-input').value }); closeModal('modal-preferences'); loadAllData(); };
 
 		// Standardized resource modification and deletion bindings
-		window.deleteProvider = async (id) => { if (confirm('Delete Provider?')) { await api(`/providers/${id}`, 'DELETE'); loadAllData(); } };
+		window.deleteProvider = async (id) => {
+			if (!(await promptReauthentication('deleting a provider'))) return;
+			if (confirm('Delete Provider?')) { await api(`/providers/${id}`, 'DELETE'); loadAllData(); }
+		};
 		window.pingProvider = async (id, iconEl) => {
 			const badge = document.getElementById(`provider-health-${id}`);
 			if (iconEl) { iconEl.style.animation = 'spin 1s linear infinite'; }
@@ -3648,7 +4066,8 @@
 					document.getElementById('source-id-input').value = x.id;
 					document.getElementById('source-name-input').value = x.name;
 					document.getElementById('source-type-input').value = x.type || 'Text';
-					document.getElementById('source-key-input').value = x.api_key || '';
+					document.getElementById('source-key-input').value = '';
+					document.getElementById('source-key-input').placeholder = x.api_key ? 'Leave blank to keep existing key' : 'Leave blank to auto-generate';
 					document.getElementById('source-file-input').value = x.file_path || '';
 					// Trigger UI mode toggle to reflect correct fields based on type
 					toggleSourceUI();
@@ -3658,13 +4077,17 @@
 				document.getElementById('source-name-input').value = '';
 				document.getElementById('source-type-input').value = 'Text';
 				document.getElementById('source-key-input').value = '';
+				document.getElementById('source-key-input').placeholder = 'Leave blank to auto-generate';
 				document.getElementById('source-file-input').value = '';
 				// Reset to default configuration
 				toggleSourceUI();
 			}
 		};
 		window.editSource = window.openSourceModal;
-		window.deleteSource = async (id) => { if (confirm('Delete Source?')) { await api(`/sources/${id}`, 'DELETE'); loadAllData(); } };
+		window.deleteSource = async (id) => {
+			if (!(await promptReauthentication('deleting a source'))) return;
+			if (confirm('Delete Source?')) { await api(`/sources/${id}`, 'DELETE'); loadAllData(); }
+		};
 		window.editOutput = (id) => {
 			const x = dataStore.outputs.find(i => i.id === id);
 			if (x) {
@@ -3688,7 +4111,8 @@
 				document.getElementById('provider-name-input').value = x.name;
 				document.getElementById('provider-type-input').value = x.type || 'OpenAI';
 				document.getElementById('provider-endpoint-input').value = x.endpoint;
-				document.getElementById('provider-key-input').value = x.api_key;
+				document.getElementById('provider-key-input').value = '';
+				document.getElementById('provider-key-input').placeholder = x.api_key ? 'Leave blank to keep existing key' : 'sk-...';
 				document.getElementById('provider-config-input').value = x.extra_config || '';
 				openModal('modal-provider');
 			}
@@ -3696,13 +4120,14 @@
 
 		// Submission handler for Providers
 		window.submitProvider = async () => {
+			if (!(await promptReauthentication('saving a provider'))) return;
 			const id = document.getElementById('provider-id-input').value || 'prov_' + Date.now();
 			await api(document.getElementById('provider-id-input').value ? `/providers/${id}` : '/providers', document.getElementById('provider-id-input').value ? 'PUT' : 'POST', {
 				id,
 				name: document.getElementById('provider-name-input').value,
 				type: document.getElementById('provider-type-input').value,
 				endpoint: document.getElementById('provider-endpoint-input').value,
-				api_key: document.getElementById('provider-key-input').value,
+				api_key: document.getElementById('provider-key-input').value.trim(),
 				extra_config: document.getElementById('provider-config-input').value
 			});
 			closeModal('modal-provider'); loadAllData(); showToast('Provider saved.', 'success');
@@ -3731,6 +4156,7 @@
 			document.getElementById('skill-agent-id').value = '';
 			document.getElementById('skill-agent-system-prompt').value = '';
 			document.getElementById('skill-agent-user-prefix').value = '';
+			document.getElementById('skill-use-docker').checked = false;
 			toggleSkillUI();
 
 			if (id) {
@@ -3740,6 +4166,7 @@
 					document.getElementById('skill-name-input').value = sk.name;
 					document.getElementById('skill-type-input').value = sk.type;
 					document.getElementById('skill-inst-input').value = sk.instruction || '';
+					document.getElementById('skill-use-docker').checked = (sk.type === 'Bash' || sk.type === 'JavaScript' || sk.type === 'Go') && (sk.use_docker === true || sk.use_docker === 1);
 					toggleSkillUI(); // re-run after type is set to populate agent picker
 
 					if (sk.type === 'Agent') {
@@ -3790,6 +4217,7 @@
 					api_url: document.getElementById('skill-api-url').value,
 					api_headers: document.getElementById('skill-api-headers').value,
 					api_body: document.getElementById('skill-api-body').value,
+					use_docker: (type === 'Bash' || type === 'JavaScript' || type === 'Go') && document.getElementById('skill-use-docker').checked,
 				});
 			closeModal('modal-skill'); loadAllData(); showToast('Skill saved.', 'success');
 		};
@@ -3827,13 +4255,27 @@
 			}
 		}
 
+		/** Handles UI disabling transitions for the Docker configuration block */
+		function updateDockerUI() {
+			const isEnabled = document.getElementById('toggle-docker').checked;
+			const area = document.getElementById('docker-config-area');
+			if (isEnabled) {
+				area.classList.remove('opacity-40', 'pointer-events-none', 'grayscale');
+			} else {
+				area.classList.add('opacity-40', 'pointer-events-none', 'grayscale');
+			}
+		}
+
 		/** Persists core settings configurations implicitly */
 		async function saveSettings() {
 			await api('/settings', 'POST', {
 				presidio_enabled: document.getElementById('toggle-presidio').checked.toString(),
 				presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
 				presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
-				cors_enabled: document.getElementById('toggle-cors').checked.toString()
+				cors_enabled: document.getElementById('toggle-cors').checked.toString(),
+				docker_enabled: document.getElementById('toggle-docker').checked.toString(),
+				docker_host: document.getElementById('docker-host').value,
+				docker_image: document.getElementById('docker-image').value
 			});
 		}
 
@@ -3851,10 +4293,10 @@
 
 		window.submitSource = async () => {
 			const id = document.getElementById('source-id-input').value || 'src_' + Date.now();
-			await api(document.getElementById('source-id-input').value ? `/sources/${id}` : '/sources', document.getElementById('source-id-input').value ? 'PUT' : 'POST', {
-				id, name: document.getElementById('source-name-input').value, type: document.getElementById('source-type-input').value,
-				api_key: document.getElementById('source-key-input').value, file_path: document.getElementById('source-file-input').value
-			});
+				await api(document.getElementById('source-id-input').value ? `/sources/${id}` : '/sources', document.getElementById('source-id-input').value ? 'PUT' : 'POST', {
+					id, name: document.getElementById('source-name-input').value, type: document.getElementById('source-type-input').value,
+					api_key: document.getElementById('source-key-input').value.trim(), file_path: document.getElementById('source-file-input').value
+				});
 			closeModal('modal-source'); loadAllData(); showToast('Source saved.', 'success');
 		};
 
@@ -3943,7 +4385,7 @@
 				formData.append('file', file);
 				const upResp = await fetch('/api/v1/upload', {
 					method: 'POST',
-					headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') },
+					headers: { 'Authorization': 'Bearer ' + getSessionToken() },
 					body: formData
 				});
 				const uploadData = await upResp.json();
@@ -3978,29 +4420,14 @@
 		};
 
 		/* --- Fine-Grained API Key Management --- */
-		window.deleteAPIKey = async (id) => { if (await showConfirm('Revoke this API Key?', 'Revoke')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); showToast('API key revoked.', 'success'); } };
-
-		window.copyAPIKeyToken = (id) => {
-			const el = document.getElementById('apikey-token-' + id);
-			if (!el) return;
-			const text = el.textContent.trim();
-			if (navigator.clipboard && window.isSecureContext) {
-				navigator.clipboard.writeText(text)
-					.then(() => showToast('Token copied.', 'success'))
-					.catch(() => showToast('Copy failed — try selecting manually.', 'error'));
-			} else {
-				// Fallback for HTTP (non-secure) contexts.
-				const ta = document.createElement('textarea');
-				ta.value = text;
-				ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
-				document.body.appendChild(ta);
-				ta.focus();
-				ta.select();
-				const ok = document.execCommand('copy');
-				document.body.removeChild(ta);
-				showToast(ok ? 'Token copied.' : 'Copy failed — try selecting manually.', ok ? 'success' : 'error');
-			}
+		window.deleteAPIKey = async (id) => {
+			if (!(await promptReauthentication('revoking an API key'))) return;
+			if (await showConfirm('Revoke this API Key?', 'Revoke')) { await api(`/apikeys/${id}`, 'DELETE'); loadAllData(); showToast('API key revoked.', 'success'); }
 		};
+
+			window.copyAPIKeyToken = (id) => {
+				showToast('For security, API key tokens are now masked after creation and cannot be copied from the list view.', 'info', 4500);
+			};
 
 		// Flat shared resource rows (no per-item granularity needed).
 		const AK_FLAT_RESOURCES = [
@@ -4126,6 +4553,7 @@
 		};
 
 		window.submitAPIKey = async () => {
+			if (!(await promptReauthentication('saving an API key'))) return;
 			const id = document.getElementById('apikey-id-input').value;
 			const perms = { preferences: {} };
 
@@ -4219,13 +4647,170 @@
 			showToast('Agent saved.', 'success');
 		};
 
+		window.loadAuditLogs = async function () {
+			const action = document.getElementById('audit-action-filter')?.value || '';
+			const tbody = document.getElementById('audit-tbody');
+			if (tbody) {
+				tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Loading audit events...</td></tr>';
+			}
+			try {
+				const data = await api('/security/logs?limit=50' + (action ? '&action=' + encodeURIComponent(action) : ''), 'GET', null, true);
+				if (!tbody) return;
+				if (!data.events || data.events.length === 0) {
+					tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">No audit events recorded.</td></tr>';
+					return;
+				}
+				tbody.innerHTML = data.events.map(e => `
+					<tr class="hover:bg-gray-50 dark:hover:bg-gray-900/50">
+						<td class="px-4 py-3 whitespace-nowrap text-gray-500">${new Date(e.timestamp).toLocaleString()}</td>
+						<td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${
+							e.action.includes('failure') || e.action.includes('denied') ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+							e.action.includes('success') || e.action.includes('created') ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+							'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+						}">${escapeHTML(e.action)}</span></td>
+						<td class="px-4 py-3 text-gray-500 font-mono">${escapeHTML(e.actor || '-')}</td>
+						<td class="px-4 py-3 text-gray-500 font-mono text-[10px]">${escapeHTML(e.path || '-')}</td>
+						<td class="px-4 py-3 text-gray-400 text-[10px] max-w-xs truncate" title="${escapeHTML(e.detail || '')}">${escapeHTML(e.detail || '-')}</td>
+					</tr>`).join('');
+			} catch (e) {
+				console.error('Failed to load audit logs:', e);
+				if (tbody) {
+					tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-red-400">Failed to load audit events.</td></tr>';
+				}
+			}
+		};
+
+		window.loadTasks = async function () {
+			try {
+				const tasks = await api('/tasks', 'GET', null, true);
+				const el = document.getElementById('tasks-list');
+				if (!el) return;
+				if (!tasks || tasks.length === 0) {
+					el.innerHTML = '<div class="text-center py-12 text-gray-400 text-sm">No background tasks configured. Click "New Task" to create one.</div>';
+					return;
+				}
+				el.innerHTML = tasks.map(t => {
+					const agent = dataStore.agents.find(a => a.id === t.agent_id);
+					const agentName = agent ? agent.name : t.agent_id;
+					return `
+					<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg flex items-center justify-between">
+						<div class="flex items-center gap-4 min-w-0">
+							<div class="w-2 h-2 rounded-full shrink-0 ${t.active ? 'bg-green-500' : 'bg-gray-300'}"></div>
+							<div class="min-w-0">
+								<p class="font-bold text-sm truncate">${escapeHTML(t.command || '(no command)')}</p>
+								<p class="text-[10px] text-gray-400 mt-0.5">Agent: ${escapeHTML(agentName)} &middot; Regex: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">${escapeHTML(t.regex || '*')}</code></p>
+							</div>
+						</div>
+						<div class="flex items-center gap-2 shrink-0">
+							<button data-action="toggle-task" data-id="${t.id}" data-active="${t.active}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
+							<button data-action="edit-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
+							<button data-action="delete-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
+						</div>
+					</div>`;
+				}).join('');
+				lucide.createIcons();
+			} catch (e) {
+				console.error('Failed to load tasks:', e);
+			}
+		};
+
+		window.openTaskModal = (id = null) => {
+			openModal('modal-task');
+			const sel = document.getElementById('task-agent-id');
+			sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+			if (id) {
+				// Find task from last loaded list — we'll store it
+				const t = (window._lastTasks || []).find(x => x.id === id);
+				if (t) {
+					document.getElementById('task-id-input').value = t.id;
+					sel.value = t.agent_id;
+					document.getElementById('task-regex').value = t.regex || '';
+					document.getElementById('task-command').value = t.command || '';
+					document.getElementById('task-repeat').checked = t.repeat;
+					document.getElementById('task-active').checked = t.active;
+				}
+			} else {
+				document.getElementById('task-id-input').value = '';
+				document.getElementById('task-regex').value = '';
+				document.getElementById('task-command').value = '';
+				document.getElementById('task-repeat').checked = false;
+				document.getElementById('task-active').checked = true;
+			}
+		};
+
+		window.submitTask = async () => {
+			const id = document.getElementById('task-id-input').value || 'tsk_' + Date.now();
+			const body = {
+				id,
+				agent_id: document.getElementById('task-agent-id').value,
+				regex: document.getElementById('task-regex').value,
+				command: document.getElementById('task-command').value,
+				repeat: document.getElementById('task-repeat').checked,
+				active: document.getElementById('task-active').checked,
+			};
+			const isEdit = document.getElementById('task-id-input').value !== '';
+			await api(isEdit ? `/tasks/${id}` : '/tasks', isEdit ? 'PUT' : 'POST', body);
+			closeModal('modal-task');
+			loadTasks();
+			showToast('Task saved.', 'success');
+		};
+
+		window.toggleTask = async (id, currentlyActive) => {
+			const t = (window._lastTasks || []).find(x => x.id === id);
+			if (!t) return;
+			await api(`/tasks/${id}`, 'PUT', { ...t, active: !currentlyActive });
+			loadTasks();
+		};
+
+		window.deleteTask = async (id) => {
+			if (await showConfirm('Delete this task?', 'Delete')) {
+				await api(`/tasks/${id}`, 'DELETE');
+				loadTasks();
+				showToast('Task deleted.', 'success');
+			}
+		};
+
+		// Store tasks for edit modal lookup
+		const origLoadTasks = window.loadTasks;
+		window.loadTasks = async function () {
+			const tasks = await api('/tasks', 'GET', null, true);
+			window._lastTasks = tasks;
+			const el = document.getElementById('tasks-list');
+			if (!el) return;
+			if (!tasks || tasks.length === 0) {
+				el.innerHTML = '<div class="text-center py-12 text-gray-400 text-sm">No background tasks configured. Click "New Task" to create one.</div>';
+				return;
+			}
+			el.innerHTML = tasks.map(t => {
+				const agent = dataStore.agents.find(a => a.id === t.agent_id);
+				const agentName = agent ? agent.name : t.agent_id;
+				return `
+				<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg flex items-center justify-between">
+					<div class="flex items-center gap-4 min-w-0">
+						<div class="w-2 h-2 rounded-full shrink-0 ${t.active ? 'bg-green-500' : 'bg-gray-300'}"></div>
+						<div class="min-w-0">
+							<p class="font-bold text-sm truncate">${escapeHTML(t.command || '(no command)')}</p>
+							<p class="text-[10px] text-gray-400 mt-0.5">Agent: ${escapeHTML(agentName)} &middot; Regex: <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">${escapeHTML(t.regex || '*')}</code></p>
+						</div>
+					</div>
+					<div class="flex items-center gap-2 shrink-0">
+						<button data-action="toggle-task" data-id="${t.id}" data-active="${t.active}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
+						<button data-action="edit-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
+						<button data-action="delete-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
+					</div>
+				</div>`;
+			}).join('');
+			lucide.createIcons();
+		};
+
 		async function wipeDatabase() {
+			if (!(await promptReauthentication('wiping the database'))) return;
 			const ok = await showConfirm("WARNING: This will permanently delete ALL Agents, Skills, Preferences, and Projects. Are you absolutely sure?", "Wipe Everything", true);
 			if (ok) {
 				try {
 					const r = await fetch('/api/v1/wipe-database', {
 						method: 'POST',
-						headers: { 'Authorization': 'Bearer ' + localStorage.getItem('zuver_token') }
+						headers: { 'Authorization': 'Bearer ' + getSessionToken() }
 					});
 					if (r.ok) {
 						showToast("Database wiped. Reloading...", "warn");
@@ -4236,6 +4821,36 @@
 				} catch (e) {
 					showToast("Network error.", "error");
 				}
+			}
+		}
+
+		async function changePassword() {
+			const current = document.getElementById('pw-current').value;
+			const newPw = document.getElementById('pw-new').value;
+			if (!current || !newPw) {
+				showToast("Please fill in all fields.", "error");
+				return;
+			}
+			if (newPw.length < 8) {
+				showToast("New password must be at least 8 characters.", "error");
+				return;
+			}
+			try {
+				const r = await fetch('/api/v1/settings/password', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getSessionToken() },
+					body: JSON.stringify({ current_password: current, new_password: newPw })
+				});
+				const data = await r.json();
+				if (r.ok) {
+					showToast("Password updated successfully.", "success");
+					document.getElementById('pw-current').value = '';
+					document.getElementById('pw-new').value = '';
+				} else {
+					showToast(data.error || "Failed to change password.", "error");
+				}
+			} catch (e) {
+				showToast("Network error.", "error");
 			}
 		}
 
@@ -4250,7 +4865,7 @@
 			const ALL_VIEWS = [
 				'home', 'statistics', 'projects', 'agents', 'agent-editor', 'skills', 'sources',
 				'rags', 'preferences', 'mcp', 'providers', 'outputs', 'apikeys',
-				'settings', 'chat'
+				'settings', 'audit', 'tasks', 'chat'
 			];
 
 			// --- Dirty-state registry ---
@@ -4311,6 +4926,12 @@
 				// Load chat history when switching to console.
 				if (target === 'chat') { if (typeof loadChatHistory === 'function') loadChatHistory(); }
 
+				// Load audit logs when switching to audit view.
+				if (target === 'audit') { if (typeof loadAuditLogs === 'function') loadAuditLogs(); }
+
+				// Load tasks when switching to tasks view.
+				if (target === 'tasks') { if (typeof loadTasks === 'function') loadTasks(); }
+
 				// Close mobile sidebar when a nav item is tapped.
 				const sidebar = document.getElementById('main-sidebar');
 				const overlay = document.getElementById('sidebar-overlay');
@@ -4350,8 +4971,49 @@
 			const mobileChatBtn = document.querySelector('button[data-target="chat"]');
 			if (mobileChatBtn) mobileChatBtn.addEventListener('click', () => showViewGuarded('chat'));
 
+			// --- Delegated click handler for dynamically rendered card buttons ---
+			document.addEventListener('click', (e) => {
+				const actionEl = e.target.closest('[data-action]');
+				if (!actionEl) return;
+				const action = actionEl.getAttribute('data-action');
+				const id = actionEl.getAttribute('data-id');
+				if (action === 'open-editor') { e.stopPropagation(); openEditor(id); }
+				else if (action === 'run-project') { e.stopPropagation(); runProjectFromCard(id); }
+				else if (action === 'delete-project') { e.stopPropagation(); deleteProject(id); }
+				else if (action === 'edit-agent') { e.stopPropagation(); window.editAgent(id); }
+				else if (action === 'delete-agent') { e.stopPropagation(); window.deleteAgent(id); }
+				else if (action === 'clone-agent') { e.stopPropagation(); window.cloneAgent(id); }
+				else if (action === 'export-agent') { e.stopPropagation(); window.exportAgentJSON(id); }
+				else if (action === 'edit-skill') { e.stopPropagation(); window.editSkill(id); }
+				else if (action === 'delete-skill') { e.stopPropagation(); window.deleteSkill(id); }
+				else if (action === 'export-skill') { e.stopPropagation(); window.exportSkillJSON(id); }
+				else if (action === 'edit-provider') { e.stopPropagation(); window.editProvider(id); }
+				else if (action === 'delete-provider') { e.stopPropagation(); window.deleteProvider(id); }
+				else if (action === 'edit-source') { e.stopPropagation(); window.editSource(id); }
+				else if (action === 'delete-source') { e.stopPropagation(); window.deleteSource(id); }
+				else if (action === 'edit-rag') { e.stopPropagation(); window.editRAG(id); }
+				else if (action === 'delete-rag') { e.stopPropagation(); window.deleteRAG(id); }
+				else if (action === 'edit-pref') { e.stopPropagation(); window.editPreferences(id); }
+				else if (action === 'delete-pref') { e.stopPropagation(); window.deletePreferences(id); }
+				else if (action === 'edit-mcp') { e.stopPropagation(); window.editMCP(id); }
+				else if (action === 'delete-mcp') { e.stopPropagation(); window.deleteMCP(id); }
+				else if (action === 'resolve-mcp') { e.stopPropagation(); window.resolveMCP(id); }
+				else if (action === 'edit-apikey') { e.stopPropagation(); window.editAPIKey(id); }
+				else if (action === 'delete-apikey') { e.stopPropagation(); window.deleteAPIKey(id); }
+				else if (action === 'copy-apikey') { e.stopPropagation(); window.copyAPIKeyToken(id); }
+				else if (action === 'edit-output') { e.stopPropagation(); window.editOutput(id); }
+				else if (action === 'delete-output') { e.stopPropagation(); window.deleteOutput(id); }
+				else if (action === 'goto-skills') { e.stopPropagation(); document.querySelector('[data-target=skills]').click(); }
+				else if (action === 'goto-chat') { e.stopPropagation(); document.querySelector('[data-target=chat]').click(); }
+				else if (action === 'toggle-privacy') { e.stopPropagation(); window.togglePrivacy(id, actionEl.checked); }
+				else if (action === 'ping-provider') { e.stopPropagation(); window.pingProvider(id, actionEl); }
+				else if (action === 'toggle-task') { e.stopPropagation(); window.toggleTask(id, actionEl.getAttribute('data-active') === 'true'); }
+				else if (action === 'edit-task') { e.stopPropagation(); window.openTaskModal(id); }
+				else if (action === 'delete-task') { e.stopPropagation(); window.deleteTask(id); }
+			});
+
 			// Initial load — only if a session token is present (auth guard will redirect if not).
-			if (localStorage.getItem('zuver_token')) loadAllData();
+			if (getSessionToken()) loadAllData();
 		})();
 
 		let mainChartObj = null;
@@ -4404,6 +5066,7 @@
 		window.loadAnalyticsDashboard = async () => {
 			try {
 				const summary = await api('/analytics/summary');
+				const sec = await api('/security/logs').catch(() => ({ events: [] }));
 				const entities = summary.entities || {};
 
 				// Summary cards
@@ -4429,6 +5092,26 @@
 				if (agentsOptgroup) agentsOptgroup.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
 				if (providersOptgroup) providersOptgroup.innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
 				window.loadChartData('global');
+
+				// Per-agent breakdown table
+				const secTable = document.getElementById('an-security-events');
+				if (secTable) {
+					const filter = document.getElementById('security-event-filter')?.value || 'all';
+					const filterMap = {
+						login: (ev) => ['login_success', 'login_failure', 'remote_init_denied'].includes(ev.action),
+						reauth: (ev) => ev.action.startsWith('reauth_'),
+						provider: (ev) => ev.action.startsWith('provider_'),
+						source: (ev) => ev.action.startsWith('source_'),
+						apikey: (ev) => ev.action.startsWith('apikey_'),
+						destructive: (ev) => ['wipe_database', 'provider_delete', 'source_delete', 'apikey_delete'].includes(ev.action),
+					};
+					let events = (sec.events || []).slice().reverse();
+					if (filter !== 'all' && filterMap[filter]) {
+						events = events.filter(filterMap[filter]);
+					}
+					events = events.slice(0, 8);
+					secTable.innerHTML = events.length ? events.map(ev => `<tr class="hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors"><td class="px-4 py-2 text-[11px] text-gray-400">${escapeHTML(new Date(ev.timestamp).toLocaleString())}</td><td class="px-4 py-2 text-[11px] font-mono text-blue-500">${escapeHTML(ev.action)}</td><td class="px-4 py-2 text-[11px] text-gray-500">${escapeHTML(ev.actor)}</td><td class="px-4 py-2 text-[11px] text-gray-500">${escapeHTML(ev.detail || '')}</td></tr>`).join('') : '<tr><td colspan="4" class="px-4 py-6 text-center text-gray-400">No recent security events.</td></tr>';
+				}
 
 				// Per-agent breakdown table
 				const tbody = document.getElementById('an-agent-table');
@@ -4465,7 +5148,7 @@
 				const r = await fetch('/api/v1/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }) });
 				const data = await r.json();
 				if (r.ok) {
-					localStorage.setItem('zuver_token', data.token);
+					setSessionToken(data.token);
 					hideLoginPage();
 					document.getElementById('login-err').classList.add('hidden');
 					document.getElementById('login-pwd').value = '';
@@ -4478,7 +5161,7 @@
 		}
 		// Show login page on first load if no token
 		(function () {
-			if (!localStorage.getItem('zuver_token')) showLoginPage();
+			if (!getSessionToken()) showLoginPage();
 		})();
 	</script>
 </body>
