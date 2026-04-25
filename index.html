@@ -652,10 +652,6 @@
 				<span class="nav-text" data-i18n="API Keys">API Keys</span>
 			</div>
 			<div class="nav-section-title">System</div>
-			<div data-target="settings" class="nav-item">
-				<div class="nav-icon-box"><i data-lucide="settings" class="w-5 h-5"></i></div>
-				<span class="nav-text">Settings</span>
-			</div>
 			<div data-target="tasks" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="clock" class="w-5 h-5"></i></div>
 				<span class="nav-text" data-i18n="Tasks">Tasks</span>
@@ -663,6 +659,10 @@
 			<div data-target="audit" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
 				<span class="nav-text" data-i18n="Audit Log">Audit Log</span>
+			</div>
+			<div data-target="settings" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="settings" class="w-5 h-5"></i></div>
+				<span class="nav-text">Settings</span>
 			</div>
 		</nav>
 		<div class="p-3 border-t border-gray-200 dark:border-gray-800">
@@ -687,6 +687,11 @@
 				<h1 id="page-title" class="text-lg font-bold">Home</h1>
 			</div>
 			<div class="flex items-center gap-4">
+				<button onclick="openSearch()" class="hidden md:flex items-center gap-2 px-3 py-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg text-xs transition-colors">
+					<i data-lucide="search" class="w-3.5 h-3.5"></i>
+					<span>Search...</span>
+					<kbd class="text-[10px] bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded border dark:border-gray-600 ml-2">Ctrl+K</kbd>
+				</button>
 				<a href="https://github.com/synasties/zuver" target="_blank"
 					class="hidden md:block p-2 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white transition-colors">
 					<i data-lucide="git-branch" class="w-5 h-5"></i>
@@ -728,7 +733,7 @@
 						<p class="text-sm text-gray-500 mt-1">Token consumption, call volume, and per-agent breakdown.</p>
 					</div>
 					<!-- Summary cards -->
-					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+					<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Tokens (24h)</p>
 							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">—</h3>
@@ -736,6 +741,10 @@
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Calls (24h)</p>
 							<h3 id="an-global-calls" class="text-2xl font-black mt-1">—</h3>
+						</div>
+						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
+							<p class="text-[10px] font-bold text-gray-400 uppercase">Est. Cost (24h)</p>
+							<h3 id="an-global-cost" class="text-2xl font-black mt-1">—</h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Active Agents</p>
@@ -1058,7 +1067,7 @@
 							<div
 								class="mt-4 p-3 border border-dashed border-gray-200 dark:border-gray-800 rounded-md bg-gray-50/50 dark:bg-black/20">
 								<p class="text-[10px] font-bold text-gray-400 uppercase tracking-tight mb-2">Upload RAG files.</p>
-								<input type="file" id="agent-file-quick" class="hidden" onchange="uploadAgentFile(this.files[0])">
+								<input type="file" id="agent-file-quick" class="hidden" onchange="uploadAgentFile(this.files[0], this.nextElementSibling)">
 								<button onclick="document.getElementById('agent-file-quick').click()"
 									class="w-full py-2 border border-gray-200 dark:border-gray-700 rounded-md text-[10px] font-bold hover:bg-white dark:hover:bg-gray-800 transition-all flex items-center justify-center gap-2 group">
 									<i data-lucide="upload-cloud" class="w-3 h-3 text-gray-400 group-hover:text-blue-500"></i> Upload and
@@ -1124,6 +1133,15 @@
 						<p class="text-sm text-gray-500 mt-1">Create Vector-based RAG databases for your agents with embeddings.</p>
 						<button onclick="openRAGModal()"
 							class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm">New RAG</button>
+					</div>
+					<div class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
+						<p class="text-xs font-bold text-gray-500 uppercase">Test Query</p>
+						<div class="flex gap-2">
+							<select id="rag-test-id" class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none w-48"></select>
+							<input id="rag-test-query" type="text" placeholder="Enter search query..." class="flex-1 border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+							<button onclick="testRAGQuery()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold">Test</button>
+						</div>
+						<div id="rag-test-results" class="text-xs text-gray-400"></div>
 					</div>
 					<div id="rags-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
 				</div>
@@ -1335,6 +1353,69 @@
 							</div>
 						</div>
 						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-red-600"><i data-lucide="bell"
+											class="w-4 h-4"></i> Error Notifications</span>
+									<p class="text-xs text-gray-500 mt-1">Send system error alerts to a Webhook Output.</p>
+								</div>
+							</div>
+							<div>
+								<label class="text-[10px] text-gray-500 font-bold uppercase">Webhook Output</label>
+								<select id="error-output-select" onchange="saveSettings()"
+									class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm mt-1">
+									<option value="">Disabled</option>
+								</select>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-indigo-600"><i data-lucide="brain-circuit"
+											class="w-4 h-4"></i> RAG Enhancement</span>
+									<p class="text-xs text-gray-500 mt-1">Optional features for Retrieval-Augmented Generation.</p>
+								</div>
+							</div>
+							<div class="space-y-3 border-t dark:border-gray-800 pt-4">
+								<label class="flex items-center gap-3 cursor-pointer">
+									<input type="checkbox" id="rag-chunking" onchange="saveSettings()" class="w-4 h-4 accent-indigo-500">
+									<div>
+										<p class="text-xs font-bold">Auto-Chunking</p>
+										<p class="text-[10px] text-gray-400">Split large texts into overlapping chunks for better retrieval.</p>
+									</div>
+								</label>
+								<div id="rag-chunking-config" class="grid grid-cols-2 gap-3 pl-7 hidden">
+									<div><label class="text-[10px] text-gray-500 font-bold uppercase">Chunk Size</label><input type="number" id="rag-chunk-size" value="500" min="100" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+									<div><label class="text-[10px] text-gray-500 font-bold uppercase">Overlap</label><input type="number" id="rag-chunk-overlap" value="50" min="0" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+								</div>
+								<label class="flex items-center gap-3 cursor-pointer">
+									<input type="checkbox" id="rag-embedding-cache" onchange="saveSettings()" class="w-4 h-4 accent-indigo-500">
+									<div>
+										<p class="text-xs font-bold">Embedding Cache</p>
+										<p class="text-[10px] text-gray-400">Cache embeddings to avoid redundant API calls.</p>
+									</div>
+								</label>
+								<label class="flex items-center gap-3 cursor-pointer">
+									<input type="checkbox" id="rag-hybrid-search" onchange="saveSettings()" class="w-4 h-4 accent-indigo-500">
+									<div>
+										<p class="text-xs font-bold">Hybrid Search</p>
+										<p class="text-[10px] text-gray-400">Combine vector similarity (70%) with keyword matching (30%).</p>
+									</div>
+								</label>
+								<label class="flex items-center gap-3 cursor-pointer">
+									<input type="checkbox" id="rag-local-embedding" onchange="updateRagEmbeddingUI(); saveSettings()" class="w-4 h-4 accent-indigo-500">
+									<div>
+										<p class="text-xs font-bold">Local Embedding Model</p>
+										<p class="text-[10px] text-gray-400">Use a local Ollama model instead of OpenAI for embeddings.</p>
+									</div>
+								</label>
+								<div id="rag-local-embedding-config" class="pl-7 hidden">
+									<label class="text-[10px] text-gray-500 font-bold uppercase">Embedding URL</label>
+									<input type="text" id="rag-local-embedding-url" placeholder="http://localhost:11434/api/embeddings" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs font-mono mt-1">
+								</div>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
 							<div>
 								<span class="font-bold flex items-center gap-2 text-red-600"><i data-lucide="key"
 										class="w-4 h-4"></i> Change Admin Password</span>
@@ -1381,6 +1462,16 @@
 								<a href="https://zuver.cc"
 									class="px-4 py-2 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"><i
 										data-lucide="globe" class="w-4 h-4"></i> Website</a>
+							</div>
+						</div>
+						<div class="p-4 flex items-center justify-between">
+							<div>
+								<span class="font-bold flex items-center gap-2 text-blue-600"><i data-lucide="download" class="w-4 h-4"></i> Backup & Restore</span>
+								<p class="text-xs text-gray-500 mt-1">Export or import all configuration data as JSON.</p>
+							</div>
+							<div class="flex gap-2">
+								<button onclick="backupData()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> Backup</button>
+								<label class="px-3 py-2 border dark:border-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-pointer"><i data-lucide="upload" class="w-3 h-3"></i> Restore<input type="file" class="hidden" accept=".json" onchange="restoreData(this.files[0])"></label>
 							</div>
 						</div>
 						<div
@@ -1451,6 +1542,21 @@
 		</div>
 	</main>
 	<!-- Modals -->
+	<!-- Modal: Global Search -->
+	<div id="modal-search" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[300] flex items-start justify-center pt-[15vh] p-4">
+		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+			<div class="flex items-center gap-3 px-4 py-3 border-b dark:border-gray-800">
+				<i data-lucide="search" class="w-5 h-5 text-gray-400 shrink-0"></i>
+				<input id="global-search-input" type="text" placeholder="Search agents, skills, projects, chat history..."
+					class="flex-1 bg-transparent outline-none text-sm font-medium" autofocus>
+				<kbd class="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">ESC</kbd>
+			</div>
+			<div id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2">
+				<p class="text-xs text-gray-400 text-center py-6">Type to search across all data...</p>
+			</div>
+		</div>
+	</div>
+
 	<!-- Modal: Task -->
 	<div id="modal-task" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
 		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-md shadow-xl flex flex-col" style="max-height:90vh">
@@ -1739,6 +1845,14 @@
 							class="font-normal text-gray-400 normal-case">(JSON, optional)</span></label>
 					<textarea id="provider-config-input" rows="3" placeholder='{"max_tokens": 8192}'
 						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"></textarea>
+				</div>
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Model Pricing <span
+								class="font-normal text-gray-400 normal-case">(per 1M tokens, optional)</span></label>
+						<button onclick="addProviderModel()" type="button" class="text-[10px] text-blue-500 hover:text-blue-600 font-bold">+ Add Model</button>
+					</div>
+					<div id="provider-models-list" class="space-y-2"></div>
 				</div>
 			</div>
 			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
@@ -2052,19 +2166,23 @@
 			document.getElementById('page-login').classList.add('hidden');
 		}
 
-		let sessionToken = null;
 		let recentReauthUntil = 0;
 
 		function getSessionToken() {
-			return sessionToken;
+			return localStorage.getItem('zuver_session_token');
 		}
 
 		function setSessionToken(token) {
-			sessionToken = typeof token === 'string' && token.trim() ? token.trim() : null;
+			const t = typeof token === 'string' && token.trim() ? token.trim() : null;
+			if (t) {
+				localStorage.setItem('zuver_session_token', t);
+			} else {
+				localStorage.removeItem('zuver_session_token');
+			}
 		}
 
 		function clearSessionToken() {
-			sessionToken = null;
+			localStorage.removeItem('zuver_session_token');
 			recentReauthUntil = 0;
 		}
 
@@ -2390,8 +2508,129 @@
 		function toggleTheme() {
 			document.documentElement.classList.toggle('dark');
 			const isDark = document.documentElement.classList.contains('dark');
+			localStorage.setItem('zuver_theme', isDark ? 'dark' : 'light');
 			document.querySelectorAll('.theme-icon').forEach(i => i.setAttribute('data-lucide', isDark ? 'sun' : 'moon'));
 			lucide.createIcons();
+		}
+
+		// Restore theme from localStorage on load.
+		(function () {
+			const saved = localStorage.getItem('zuver_theme');
+			if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+				document.documentElement.classList.add('dark');
+			}
+		})();
+
+		// --- Global Search (Ctrl+K) ---
+		function openSearch() {
+			const modal = document.getElementById('modal-search');
+			modal.classList.remove('hidden');
+			const input = document.getElementById('global-search-input');
+			input.value = '';
+			input.focus();
+			document.getElementById('global-search-results').innerHTML = '<p class="text-xs text-gray-400 text-center py-6">Type to search across all data...</p>';
+		}
+
+		function closeSearch() {
+			document.getElementById('modal-search').classList.add('hidden');
+		}
+
+		document.addEventListener('keydown', (e) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+				e.preventDefault();
+				const modal = document.getElementById('modal-search');
+				if (modal.classList.contains('hidden')) openSearch(); else closeSearch();
+			}
+			if (e.key === 'Escape') {
+				closeSearch();
+			}
+		});
+
+		document.getElementById('modal-search').addEventListener('click', (e) => {
+			if (e.target.id === 'modal-search') closeSearch();
+		});
+
+		let searchDebounce = null;
+		document.getElementById('global-search-input').addEventListener('input', (e) => {
+			clearTimeout(searchDebounce);
+			searchDebounce = setTimeout(() => performSearch(e.target.value), 200);
+		});
+
+		function performSearch(query) {
+			const resultsEl = document.getElementById('global-search-results');
+			if (!query || query.length < 2) {
+				resultsEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-6">Type to search across all data...</p>';
+				return;
+			}
+			const q = query.toLowerCase();
+			const results = [];
+
+			// Search agents
+			(dataStore.agents || []).forEach(a => {
+				if (a.name.toLowerCase().includes(q) || a.model.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)) {
+					results.push({ type: 'Agent', name: a.name, desc: a.model, action: () => { closeSearch(); window.showView('agents'); window.editAgent(a.id); } });
+				}
+			});
+			// Search skills
+			(dataStore.skills || []).forEach(s => {
+				if (s.name.toLowerCase().includes(q) || s.type.toLowerCase().includes(q)) {
+					results.push({ type: 'Skill', name: s.name, desc: s.type, action: () => { closeSearch(); window.showView('skills'); window.editSkill(s.id); } });
+				}
+			});
+			// Search projects
+			(dataStore.projects || []).forEach(p => {
+				if (p.name.toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) {
+					results.push({ type: 'Project', name: p.name, desc: p.description || '', action: () => { closeSearch(); window.showView('projects'); openEditor(p.id); } });
+				}
+			});
+			// Search providers
+			(dataStore.providers || []).forEach(p => {
+				if (p.name.toLowerCase().includes(q) || p.endpoint.toLowerCase().includes(q)) {
+					results.push({ type: 'Provider', name: p.name, desc: p.endpoint, action: () => { closeSearch(); window.showView('providers'); window.editProvider(p.id); } });
+				}
+			});
+			// Search sources
+			(dataStore.sources || []).forEach(s => {
+				if (s.name.toLowerCase().includes(q)) {
+					results.push({ type: 'Source', name: s.name, desc: s.type, action: () => { closeSearch(); window.showView('sources'); } });
+				}
+			});
+			// Search RAGs
+			(dataStore.rags || []).forEach(r => {
+				if (r.name.toLowerCase().includes(q)) {
+					results.push({ type: 'RAG', name: r.name, desc: r.description || '', action: () => { closeSearch(); window.showView('rags'); } });
+				}
+			});
+			// Search preferences
+			(dataStore.preferences || []).forEach(p => {
+				if (p.name.toLowerCase().includes(q)) {
+					results.push({ type: 'Preference', name: p.name, desc: p.description || '', action: () => { closeSearch(); window.showView('preferences'); } });
+				}
+			});
+
+			if (results.length === 0) {
+				resultsEl.innerHTML = '<p class="text-xs text-gray-400 text-center py-6">No results found.</p>';
+				return;
+			}
+
+			const typeColors = { Agent: 'text-blue-500', Skill: 'text-orange-500', Project: 'text-indigo-500', Provider: 'text-green-500', Source: 'text-purple-500', RAG: 'text-cyan-500', Preference: 'text-teal-500' };
+			resultsEl.innerHTML = results.slice(0, 20).map((r, i) => `
+				<button data-search-idx="${i}" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-3 transition-colors">
+					<span class="text-[10px] font-bold ${typeColors[r.type] || 'text-gray-500'} uppercase w-16 shrink-0">${r.type}</span>
+					<div class="min-w-0">
+						<p class="text-sm font-medium truncate">${escapeHTML(r.name)}</p>
+						<p class="text-[10px] text-gray-400 truncate">${escapeHTML(r.desc)}</p>
+					</div>
+				</button>
+			`).join('');
+
+			// Bind click handlers
+			resultsEl.querySelectorAll('[data-search-idx]').forEach(btn => {
+				btn.addEventListener('click', () => {
+					const idx = parseInt(btn.getAttribute('data-search-idx'));
+					if (results[idx]) results[idx].action();
+				});
+			});
 		}
 
 		function openModal(id) {
@@ -2531,6 +2770,22 @@
 					document.getElementById('docker-host').value = set.docker_host || 'tcp://localhost:2375';
 					document.getElementById('docker-image').value = set.docker_image || 'zuver-skill:latest';
 				}
+				// Populate error notification output selector.
+				const errSel = document.getElementById('error-output-select');
+				if (errSel) {
+					const webhookOutputs = dataStore.outputs.filter(o => o.type === 'Webhook');
+					errSel.innerHTML = '<option value="">Disabled</option>' + webhookOutputs.map(o => `<option value="${o.id}" ${set.error_output_id === o.id ? 'selected' : ''}>${escapeHTML(o.name)}</option>`).join('');
+				}
+				// Load RAG enhancement settings.
+				if (set.rag_chunking) document.getElementById('rag-chunking').checked = (set.rag_chunking === 'true');
+				if (set.rag_chunk_size) document.getElementById('rag-chunk-size').value = set.rag_chunk_size;
+				if (set.rag_chunk_overlap) document.getElementById('rag-chunk-overlap').value = set.rag_chunk_overlap;
+				if (set.rag_embedding_cache) document.getElementById('rag-embedding-cache').checked = (set.rag_embedding_cache === 'true');
+				if (set.rag_hybrid_search) document.getElementById('rag-hybrid-search').checked = (set.rag_hybrid_search === 'true');
+				if (set.rag_local_embedding) document.getElementById('rag-local-embedding').checked = (set.rag_local_embedding === 'true');
+				if (set.rag_local_embedding_url) document.getElementById('rag-local-embedding-url').value = set.rag_local_embedding_url;
+				updateRagChunkingUI();
+				updateRagEmbeddingUI();
 				updatePresidioUI();
 				updateDockerUI();
 
@@ -4136,8 +4391,39 @@
 				document.getElementById('provider-key-input').value = '';
 				document.getElementById('provider-key-input').placeholder = x.api_key ? 'Leave blank to keep existing key' : 'sk-...';
 				document.getElementById('provider-config-input').value = x.extra_config || '';
+				// Load model pricing
+				try {
+					window._providerModels = JSON.parse(x.models || '[]');
+				} catch (e) { window._providerModels = []; }
+				renderProviderModels();
 				openModal('modal-provider');
 			}
+		};
+
+		window._providerModels = [];
+
+		function renderProviderModels() {
+			const el = document.getElementById('provider-models-list');
+			if (!el) return;
+			if (!window._providerModels || window._providerModels.length === 0) {
+				el.innerHTML = '<p class="text-[10px] text-gray-400">No models configured. Add models to enable cost tracking.</p>';
+				return;
+			}
+			el.innerHTML = window._providerModels.map((m, i) => `
+				<div class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-[#1a1a1a]">
+					<input type="text" value="${escapeHTML(m.model_id || '')}" placeholder="model-id" onchange="window._providerModels[${i}].model_id=this.value" class="flex-1 border dark:border-gray-700 bg-transparent px-2 py-1 rounded text-xs font-mono">
+					<input type="text" value="${escapeHTML(m.alias || '')}" placeholder="Alias (opt)" onchange="window._providerModels[${i}].alias=this.value" class="w-24 border dark:border-gray-700 bg-transparent px-2 py-1 rounded text-xs">
+					<input type="number" value="${m.input_price || ''}" placeholder="In $/1M" step="0.01" onchange="window._providerModels[${i}].input_price=parseFloat(this.value)||0" class="w-20 border dark:border-gray-700 bg-transparent px-2 py-1 rounded text-xs">
+					<input type="number" value="${m.output_price || ''}" placeholder="Out $/1M" step="0.01" onchange="window._providerModels[${i}].output_price=parseFloat(this.value)||0" class="w-20 border dark:border-gray-700 bg-transparent px-2 py-1 rounded text-xs">
+					<button onclick="window._providerModels.splice(${i},1);renderProviderModels()" type="button" class="text-red-400 hover:text-red-600"><i data-lucide="x" class="w-3 h-3"></i></button>
+				</div>
+			`).join('');
+			lucide.createIcons();
+		}
+
+		window.addProviderModel = () => {
+			window._providerModels.push({ model_id: '', alias: '', input_price: 0, output_price: 0 });
+			renderProviderModels();
 		};
 
 		// Submission handler for Providers
@@ -4150,7 +4436,8 @@
 				type: document.getElementById('provider-type-input').value,
 				endpoint: document.getElementById('provider-endpoint-input').value,
 				api_key: document.getElementById('provider-key-input').value.trim(),
-				extra_config: document.getElementById('provider-config-input').value
+				extra_config: document.getElementById('provider-config-input').value,
+				models: JSON.stringify(window._providerModels || [])
 			});
 			closeModal('modal-provider'); loadAllData(); showToast('Provider saved.', 'success');
 		};
@@ -4161,6 +4448,47 @@
 		window.editRAG = window.openRAGModal;
 		window.deleteRAG = async (id) => { if (await showConfirm('Delete Vector RAG?', 'Delete')) { await api(`/rags/${id}`, 'DELETE'); loadAllData(); showToast('RAG deleted.', 'success'); } };
 		window.submitRAG = async () => { const id = document.getElementById('rag-id-input').value || 'rag_' + Date.now(); await api(document.getElementById('rag-id-input').value ? `/rags/${id}` : '/rags', document.getElementById('rag-id-input').value ? 'PUT' : 'POST', { id, name: document.getElementById('rag-name-input').value, description: document.getElementById('rag-desc-input').value }); closeModal('modal-rag'); loadAllData(); showToast('RAG saved.', 'success'); };
+
+		// Populate RAG test selector when RAGs are loaded.
+		const origRenderLists2 = renderLists;
+		const ragTestObserver = new MutationObserver(() => {
+			const sel = document.getElementById('rag-test-id');
+			if (sel && dataStore.rags) {
+				const current = sel.value;
+				sel.innerHTML = dataStore.rags.map(r => `<option value="${r.id}">${escapeHTML(r.name)}</option>`).join('');
+				if (current) sel.value = current;
+			}
+		});
+		ragTestObserver.observe(document.getElementById('rags-list') || document.body, { childList: true });
+
+		window.testRAGQuery = async () => {
+			const ragId = document.getElementById('rag-test-id').value;
+			const query = document.getElementById('rag-test-query').value.trim();
+			const resultsEl = document.getElementById('rag-test-results');
+			if (!ragId || !query) {
+				resultsEl.innerHTML = '<p class="text-red-400">Select a RAG and enter a query.</p>';
+				return;
+			}
+			resultsEl.innerHTML = '<p class="text-gray-400">Searching...</p>';
+			try {
+				const res = await api(`/rags/${ragId}/query`, 'POST', { query, limit: 5 }, true);
+				if (!res.results || res.results.length === 0) {
+					resultsEl.innerHTML = '<p class="text-gray-400">No matching records found.</p>';
+					return;
+				}
+				resultsEl.innerHTML = res.results.map(r => `
+					<div class="p-2 border dark:border-gray-700 rounded mb-2">
+						<div class="flex justify-between items-center mb-1">
+							<span class="font-bold text-indigo-500">${escapeHTML(r.name)}</span>
+							<span class="text-[10px] text-gray-400">${(r.score * 100).toFixed(1)}% match</span>
+						</div>
+						<p class="text-gray-500 text-[11px] line-clamp-3">${escapeHTML(r.data)}</p>
+					</div>
+				`).join('');
+			} catch (e) {
+				resultsEl.innerHTML = '<p class="text-red-400">Query failed.</p>';
+			}
+		};
 
 		// Skill entity controllers
 		window.openSkillModal = (id = null) => {
@@ -4288,6 +4616,29 @@
 			}
 		}
 
+		function updateRagChunkingUI() {
+			const el = document.getElementById('rag-chunking-config');
+			if (el) {
+				if (document.getElementById('rag-chunking').checked) {
+					el.classList.remove('hidden');
+				} else {
+					el.classList.add('hidden');
+				}
+			}
+		}
+		document.getElementById('rag-chunking')?.addEventListener('change', updateRagChunkingUI);
+
+		function updateRagEmbeddingUI() {
+			const el = document.getElementById('rag-local-embedding-config');
+			if (el) {
+				if (document.getElementById('rag-local-embedding').checked) {
+					el.classList.remove('hidden');
+				} else {
+					el.classList.add('hidden');
+				}
+			}
+		}
+
 		/** Persists core settings configurations implicitly */
 		async function saveSettings() {
 			await api('/settings', 'POST', {
@@ -4297,7 +4648,15 @@
 				cors_enabled: document.getElementById('toggle-cors').checked.toString(),
 				docker_enabled: document.getElementById('toggle-docker').checked.toString(),
 				docker_host: document.getElementById('docker-host').value,
-				docker_image: document.getElementById('docker-image').value
+				docker_image: document.getElementById('docker-image').value,
+				error_output_id: document.getElementById('error-output-select')?.value || '',
+				rag_chunking: document.getElementById('rag-chunking').checked.toString(),
+				rag_chunk_size: document.getElementById('rag-chunk-size').value,
+				rag_chunk_overlap: document.getElementById('rag-chunk-overlap').value,
+				rag_embedding_cache: document.getElementById('rag-embedding-cache').checked.toString(),
+				rag_hybrid_search: document.getElementById('rag-hybrid-search').checked.toString(),
+				rag_local_embedding: document.getElementById('rag-local-embedding').checked.toString(),
+				rag_local_embedding_url: document.getElementById('rag-local-embedding-url').value
 			});
 		}
 
@@ -4394,24 +4753,36 @@
 			}
 		};
 
-		window.uploadAgentFile = async (file) => {
+		window.uploadAgentFile = async (file, btnEl) => {
 			if (!file) return;
 
-			const btn = event.currentTarget;
+			const btn = btnEl || document.querySelector('[onclick*="agent-file-quick"]') || document.getElementById('agent-file-quick')?.previousElementSibling;
+			if (!btn) return;
 			const originalContent = btn.innerHTML;
-			btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> ���理中...`;
+			btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Processing...`;
 			lucide.createIcons();
 
 			try {
+				// Step 1: Upload the file.
 				const formData = new FormData();
 				formData.append('file', file);
+				const agentId = document.getElementById('agent-id-input')?.value || '';
+				if (agentId) formData.append('agent_id', agentId);
 				const upResp = await fetch('/api/v1/upload', {
 					method: 'POST',
 					headers: { 'Authorization': 'Bearer ' + getSessionToken() },
 					body: formData
 				});
+				if (!upResp.ok) {
+					const errData = await upResp.json().catch(() => ({}));
+					throw new Error(errData.error || `Upload failed (HTTP ${upResp.status})`);
+				}
 				const uploadData = await upResp.json();
+				if (!uploadData.path) {
+					throw new Error('Upload succeeded but no path returned.');
+				}
 
+				// Step 2: Create a Source entry.
 				const sourceId = 'src_' + Date.now();
 				await api('/sources', 'POST', {
 					id: sourceId,
@@ -4420,21 +4791,23 @@
 					file_path: uploadData.path
 				});
 
+				// Step 3: Auto-mount the source into the current agent.
+				if (agentId) {
+					const agent = dataStore.agents.find(a => a.id === agentId);
+					if (agent) {
+						let mounts = [];
+						try { mounts = JSON.parse(agent.sources || '[]'); } catch (e) { }
+						mounts.push({ id: sourceId, fetch_prompt: true });
+						await api(`/agents/${agentId}`, 'PUT', { ...agent, sources: JSON.stringify(mounts) });
+					}
+				}
+
 				await loadAllData();
 				renderAgentSources();
-
-				setTimeout(() => {
-					const cb = document.querySelector(`.src-cb[value="${sourceId}"]`);
-					if (cb) {
-						cb.checked = true;
-						const fetchCb = document.getElementById(`fetch_${sourceId}`);
-						if (fetchCb) fetchCb.checked = true;
-					}
-				}, 150);
-
+				showToast(`File "${file.name}" uploaded and mounted.`, 'success');
 			} catch (e) {
 				console.error("Upload Failure:", e);
-				showToast("Failed to process file. Check API permission and accessibility.", "error");
+				showToast(e.message || "Failed to process file.", "error");
 			} finally {
 				btn.innerHTML = originalContent;
 				lucide.createIcons();
@@ -4825,6 +5198,37 @@
 			lucide.createIcons();
 		};
 
+		function backupData() {
+			const token = getSessionToken();
+			window.open('/api/v1/backup' + (token ? '?token=' + token : ''), '_blank');
+		}
+
+		async function restoreData(file) {
+			if (!file) return;
+			if (!(await promptReauthentication('restoring from backup'))) return;
+			const ok = await showConfirm("This will REPLACE all current data with the backup. Continue?", "Restore", true);
+			if (!ok) return;
+			try {
+				const text = await file.text();
+				const data = JSON.parse(text);
+				const token = getSessionToken();
+				const r = await fetch('/api/v1/restore', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+					body: JSON.stringify(data)
+				});
+				const res = await r.json();
+				if (r.ok) {
+					showToast(`Restored ${res.rows_imported} rows. Reloading...`, 'success');
+					setTimeout(() => window.location.reload(), 1500);
+				} else {
+					showToast(res.error || 'Restore failed.', 'error');
+				}
+			} catch (e) {
+				showToast('Invalid backup file.', 'error');
+			}
+		}
+
 		async function wipeDatabase() {
 			if (!(await promptReauthentication('wiping the database'))) return;
 			const ok = await showConfirm("WARNING: This will permanently delete ALL Agents, Skills, Preferences, and Projects. Are you absolutely sure?", "Wipe Everything", true);
@@ -5093,6 +5497,7 @@
 
 				// Summary cards
 				const globalTokens = summary.global_tokens_24h || 0;
+				const globalCost = summary.global_cost_24h || 0;
 				let totalCalls = 0, totalSuccessSum = 0, successCount = 0, activeAgents = 0;
 				dataStore.agents.forEach(a => {
 					const st = entities[a.id];
@@ -5105,6 +5510,7 @@
 				});
 				document.getElementById('an-global-tokens').textContent = globalTokens.toLocaleString();
 				document.getElementById('an-global-calls').textContent = totalCalls.toLocaleString();
+				document.getElementById('an-global-cost').textContent = globalCost > 0 ? '$' + globalCost.toFixed(4) : '$0.00';
 				document.getElementById('an-active-agents').textContent = activeAgents;
 				document.getElementById('an-avg-success').textContent = successCount > 0 ? (totalSuccessSum / successCount).toFixed(1) + '%' : '-';
 
@@ -5171,6 +5577,7 @@
 				const data = await r.json();
 				if (r.ok) {
 					setSessionToken(data.token);
+					markRecentReauth(); // Login counts as recent reauth.
 					hideLoginPage();
 					document.getElementById('login-err').classList.add('hidden');
 					document.getElementById('login-pwd').value = '';

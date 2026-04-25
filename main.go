@@ -22,6 +22,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ type Provider struct {
 	Endpoint    string `json:"endpoint"`
 	APIKey      string `json:"api_key"`
 	ExtraConfig string `json:"extra_config"`
+	Models      string `json:"models"`
 	TokenUsage  int    `json:"token_usage"`
 }
 
@@ -374,7 +376,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.3.2"
+const CurrentVersion = "v1.3.3"
 
 // updateInfo caches the latest release info from GitHub.
 type updateInfo struct {
@@ -1002,31 +1004,87 @@ func cosineSimilarity(a, b []float32) float32 {
 
 // getEmbedding requests vector generation from the primary configured OpenAI provider.
 func getEmbedding(text string, db *sql.DB) []float32 {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+
+	// Check embedding cache first.
+	var cacheEnabled string
+	db.QueryRow("SELECT value FROM settings WHERE key='rag_embedding_cache'").Scan(&cacheEnabled)
+	cacheKey := fmt.Sprintf("%x", sha256.Sum256([]byte(text)))
+	if cacheEnabled == "true" {
+		var cachedEmbedding string
+		if db.QueryRow("SELECT embedding FROM embedding_cache WHERE hash=? AND model='default'", cacheKey).Scan(&cachedEmbedding) == nil {
+			var vec []float32
+			if json.Unmarshal([]byte(cachedEmbedding), &vec) == nil && len(vec) > 0 {
+				return vec
+			}
+		}
+	}
+
+	// Check if local embedding is enabled.
+	var localEnabled, localURL string
+	db.QueryRow("SELECT value FROM settings WHERE key='rag_local_embedding'").Scan(&localEnabled)
+	db.QueryRow("SELECT value FROM settings WHERE key='rag_local_embedding_url'").Scan(&localURL)
+
+	var vec []float32
+	if localEnabled == "true" && localURL != "" {
+		vec = getEmbeddingLocal(text, localURL)
+	} else {
+		vec = getEmbeddingOpenAI(text, db)
+	}
+
+	// Store in cache.
+	if cacheEnabled == "true" && len(vec) > 0 {
+		if vBytes, err := json.Marshal(vec); err == nil {
+			db.Exec("INSERT OR REPLACE INTO embedding_cache (hash, embedding, model) VALUES (?, ?, 'default')", cacheKey, string(vBytes))
+		}
+	}
+
+	return vec
+}
+
+func getEmbeddingLocal(text, endpoint string) []float32 {
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"model":  "nomic-embed-text",
+		"prompt": text,
+	})
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Post(endpoint, "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var res struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil || len(res.Embedding) == 0 {
+		return nil
+	}
+	return res.Embedding
+}
+
+func getEmbeddingOpenAI(text string, db *sql.DB) []float32 {
 	var apiKey, endpoint string
 	err := db.QueryRow("SELECT api_key, endpoint FROM providers WHERE type='OpenAI' LIMIT 1").Scan(&apiKey, &endpoint)
 	if err != nil || apiKey == "" {
 		return nil
 	}
-
 	apiURL := strings.TrimRight(endpoint, "/") + "/v1/embeddings"
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"input": text,
 		"model": "text-embedding-3-small",
 	})
-
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-
 	var res struct {
 		Data []struct {
 			Embedding []float32 `json:"embedding"`
@@ -1054,6 +1112,26 @@ func extractPlaceholders(text string) []string {
 
 // estimateTokens provides a rudimentary token calculation fallback.
 func estimateTokens(text string) int { return len(text) / 3 }
+
+// chunkText splits text into overlapping chunks of approximately chunkSize characters.
+func chunkText(text string, chunkSize, overlap int) []string {
+	if len(text) <= chunkSize {
+		return []string{text}
+	}
+	runes := []rune(text)
+	var chunks []string
+	for i := 0; i < len(runes); i += chunkSize - overlap {
+		end := i + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[i:end]))
+		if end == len(runes) {
+			break
+		}
+	}
+	return chunks
+}
 
 var (
 	paginationStore  = make(map[string][]string)
@@ -1135,6 +1213,7 @@ func main() {
 		`CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT, description TEXT, token TEXT, permissions TEXT)`,
 		`CREATE TABLE IF NOT EXISTS analytics_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, entity_type TEXT, entity_id TEXT, tokens INT, is_success BOOLEAN)`,
 		`CREATE TABLE IF NOT EXISTS security_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, action TEXT, path TEXT, actor TEXT, detail TEXT)`,
+		`CREATE TABLE IF NOT EXISTS embedding_cache (hash TEXT PRIMARY KEY, embedding TEXT, model TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	}
 	for _, q := range tables {
 		if _, err := db.Exec(q); err != nil {
@@ -1150,6 +1229,8 @@ func main() {
 	autoMigrateColumn(db, "sources", "file_path", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "providers", "type", "TEXT DEFAULT 'OpenAI'")
 	autoMigrateColumn(db, "providers", "extra_config", "TEXT DEFAULT '{}'")
+	autoMigrateColumn(db, "providers", "models", "TEXT DEFAULT '[]'")
+	autoMigrateColumn(db, "analytics_logs", "cost", "REAL DEFAULT 0")
 	autoMigrateColumn(db, "agents", "can_create_skills", "INTEGER DEFAULT 0")
 	autoMigrateColumn(db, "agents", "stream_enabled", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "projects", "tags", "TEXT DEFAULT ''")
@@ -1164,6 +1245,11 @@ func main() {
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cors_enabled', 'false')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('docker_enabled', 'false'), ('docker_host', 'tcp://localhost:2375'), ('docker_image', 'zuver-skill:latest')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('error_output_id', '')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_chunking', 'false'), ('rag_chunk_size', '500'), ('rag_chunk_overlap', '50')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_embedding_cache', 'false')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_hybrid_search', 'false')")
+	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_local_embedding', 'false'), ('rag_local_embedding_url', 'http://localhost:11434/api/embeddings')")
 
 	var pCount int
 	db.QueryRow("SELECT COUNT(*) FROM projects").Scan(&pCount)
@@ -1246,6 +1332,7 @@ func main() {
 	mux.HandleFunc("POST /api/v1/rags", app.handleCreateRAG)
 	mux.HandleFunc("PUT /api/v1/rags/{id}", app.handleUpdateRAG)
 	mux.HandleFunc("DELETE /api/v1/rags/{id}", app.handleDeleteRAG)
+	mux.HandleFunc("POST /api/v1/rags/{id}/query", app.handleQueryRAG)
 	mux.HandleFunc("GET /api/v1/preferences", app.handleGetPreferences)
 	mux.HandleFunc("POST /api/v1/preferences", app.handleCreatePreference)
 	mux.HandleFunc("PUT /api/v1/preferences/{id}", app.handleUpdatePreference)
@@ -1551,14 +1638,15 @@ func main() {
 			       COALESCE(SUM(tokens), 0) as tokens_24h,
 			       COUNT(*) as calls_24h,
 			       MAX(timestamp) as last_call,
-			       COALESCE(SUM(CASE WHEN is_success THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 100) as success_rate
+			       COALESCE(SUM(CASE WHEN is_success THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 100) as success_rate,
+			       COALESCE(SUM(cost), 0) as cost_24h
 			FROM analytics_logs
 			WHERE timestamp >= datetime('now', '-1 day')
 			GROUP BY entity_id, entity_type
 		`)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{"entities": map[string]interface{}{}, "global_tokens_24h": 0})
+			json.NewEncoder(w).Encode(map[string]interface{}{"entities": map[string]interface{}{}, "global_tokens_24h": 0, "global_cost_24h": 0})
 			return
 		}
 		defer rows.Close()
@@ -1568,21 +1656,24 @@ func main() {
 			Calls24h    int     `json:"calls_24h"`
 			LastCall    string  `json:"last_call"`
 			SuccessRate float64 `json:"success_rate"`
+			Cost24h     float64 `json:"cost_24h"`
 		}
 		stats := make(map[string]Stat)
 		for rows.Next() {
 			var id, eType, lastCall string
 			var tokens, calls int
-			var rate float64
-			rows.Scan(&id, &eType, &tokens, &calls, &lastCall, &rate)
-			stats[id] = Stat{Tokens24h: tokens, Calls24h: calls, LastCall: lastCall, SuccessRate: rate}
+			var rate, cost float64
+			rows.Scan(&id, &eType, &tokens, &calls, &lastCall, &rate, &cost)
+			stats[id] = Stat{Tokens24h: tokens, Calls24h: calls, LastCall: lastCall, SuccessRate: rate, Cost24h: cost}
 		}
 
 		var globalTokens int
+		var globalCost float64
 		app.ConfigDB.QueryRow(`SELECT COALESCE(SUM(tokens), 0) FROM analytics_logs WHERE timestamp >= datetime('now', '-1 day')`).Scan(&globalTokens)
+		app.ConfigDB.QueryRow(`SELECT COALESCE(SUM(cost), 0) FROM analytics_logs WHERE timestamp >= datetime('now', '-1 day')`).Scan(&globalCost)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{"entities": stats, "global_tokens_24h": globalTokens})
+		json.NewEncoder(w).Encode(map[string]interface{}{"entities": stats, "global_tokens_24h": globalTokens, "global_cost_24h": globalCost})
 	})
 
 	mux.HandleFunc("POST /api/v1/upload", app.handleFileUpload)
@@ -1648,6 +1739,103 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// Backup: export all data as a single JSON file.
+	mux.HandleFunc("GET /api/v1/backup", func(w http.ResponseWriter, r *http.Request) {
+		backup := map[string]interface{}{}
+		tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
+		for _, t := range tables {
+			rows, err := app.ConfigDB.Query("SELECT * FROM " + t)
+			if err != nil {
+				continue
+			}
+			cols, _ := rows.Columns()
+			var rowsData []map[string]interface{}
+			for rows.Next() {
+				values := make([]interface{}, len(cols))
+				ptrs := make([]interface{}, len(cols))
+				for i := range values {
+					ptrs[i] = &values[i]
+				}
+				rows.Scan(ptrs...)
+				row := make(map[string]interface{})
+				for i, col := range cols {
+					v := values[i]
+					if b, ok := v.([]byte); ok {
+						row[col] = string(b)
+					} else {
+						row[col] = v
+					}
+				}
+				rowsData = append(rowsData, row)
+			}
+			rows.Close()
+			backup[t] = rowsData
+		}
+		backup["_meta"] = map[string]interface{}{
+			"version":   CurrentVersion,
+			"exported_at": time.Now().UTC().Format(time.RFC3339),
+		}
+		out, _ := json.MarshalIndent(backup, "", "  ")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="zuver_backup.json"`)
+		w.Write(out)
+	})
+
+	// Restore: import data from a JSON backup file.
+	mux.HandleFunc("POST /api/v1/restore", func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50 MB max
+		var backup map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&backup); err != nil {
+			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			return
+		}
+		app.appendSecurityEvent("database_restore", r.URL.Path, "admin", "database restore initiated")
+		tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
+		imported := 0
+		for _, t := range tables {
+			rowsRaw, ok := backup[t]
+			if !ok {
+				continue
+			}
+			rows, ok := rowsRaw.([]interface{})
+			if !ok || len(rows) == 0 {
+				continue
+			}
+			// Get column names from first row.
+			firstRow, ok := rows[0].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			cols := make([]string, 0, len(firstRow))
+			for k := range firstRow {
+				cols = append(cols, k)
+			}
+			// Clear existing data.
+			app.ConfigDB.Exec("DELETE FROM " + t)
+			// Insert each row.
+			placeholders := make([]string, len(cols))
+			for i := range placeholders {
+				placeholders[i] = "?"
+			}
+			query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", t, strings.Join(cols, ","), strings.Join(placeholders, ","))
+			for _, rowRaw := range rows {
+				row, ok := rowRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				args := make([]interface{}, len(cols))
+				for i, col := range cols {
+					args[i] = row[col]
+				}
+				app.ConfigDB.Exec(query, args...)
+				imported++
+			}
+		}
+		app.appendSecurityEvent("database_restore_done", r.URL.Path, "admin", fmt.Sprintf("restored %d rows", imported))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "rows_imported": imported})
 	})
 
 	// ------------------------------------------------------------------
@@ -2437,41 +2625,76 @@ skipPresidio:
 
 	// --- RAG auto-retrieval ---
 	if len(allowedRAGs) > 0 && processedUserMsg != "" {
-		if userVector := getEmbedding(processedUserMsg, a.ConfigDB); userVector != nil {
-			activeInjections += "\n[RAG Auto-Retrieved Memory]\n"
-			for ragID := range allowedRAGs {
-				var rawAutoTName string
-				a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&rawAutoTName)
-				if rawAutoTName == "" {
-					continue
-				}
-				tName, tErr := sanitizeTableName(rawAutoTName)
-				if tErr != nil {
-					log.Printf("[Security] RAG auto-retrieval: table name failed sanitization for ragID %q: %v", ragID, tErr)
-					continue
-				}
-				rows, err := a.MemoryDB.Query(fmt.Sprintf("SELECT record_name, data, vector FROM %s", tName))
-				if err != nil {
-					continue
-				}
-				var bestRecord, bestData string
-				var highestScore float32 = -1.0
-				for rows.Next() {
-					var rName, rData, vJson string
-					rows.Scan(&rName, &rData, &vJson)
+		var hybridEnabled string
+		a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_hybrid_search'").Scan(&hybridEnabled)
+		userVector := getEmbedding(processedUserMsg, a.ConfigDB)
+		keywords := strings.Fields(strings.ToLower(processedUserMsg))
+
+		activeInjections += "\n[RAG Auto-Retrieved Memory]\n"
+		for ragID := range allowedRAGs {
+			var rawAutoTName string
+			a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&rawAutoTName)
+			if rawAutoTName == "" {
+				continue
+			}
+			tName, tErr := sanitizeTableName(rawAutoTName)
+			if tErr != nil {
+				log.Printf("[Security] RAG auto-retrieval: table name failed sanitization for ragID %q: %v", ragID, tErr)
+				continue
+			}
+			rows, err := a.MemoryDB.Query(fmt.Sprintf("SELECT record_name, data, vector FROM %s", tName))
+			if err != nil {
+				continue
+			}
+			type ragCandidate struct {
+				name  string
+				data  string
+				score float32
+			}
+			var candidates []ragCandidate
+			for rows.Next() {
+				var rName, rData, vJson string
+				rows.Scan(&rName, &rData, &vJson)
+				var score float32
+
+				// Vector similarity score.
+				if userVector != nil {
 					var dbVector []float32
 					if json.Unmarshal([]byte(vJson), &dbVector) == nil && len(dbVector) > 0 {
-						if score := cosineSimilarity(userVector, dbVector); score > highestScore {
-							highestScore = score
-							bestRecord = rName
-							bestData = rData
-						}
+						score = cosineSimilarity(userVector, dbVector)
 					}
 				}
-				rows.Close()
-				if highestScore > 0.4 {
-					activeInjections += fmt.Sprintf("- From %s (Match: %.2f%%): %s\n", bestRecord, highestScore*100, bestData)
+
+				// Hybrid: add keyword match bonus.
+				if hybridEnabled == "true" {
+					dataLower := strings.ToLower(rData)
+					keywordHits := 0
+					for _, kw := range keywords {
+						if len(kw) > 2 && strings.Contains(dataLower, kw) {
+							keywordHits++
+						}
+					}
+					if len(keywords) > 0 {
+						keywordScore := float32(keywordHits) / float32(len(keywords))
+						score = score*0.7 + keywordScore*0.3 // 70% vector, 30% keyword
+					}
 				}
+
+				if score > 0.3 {
+					candidates = append(candidates, ragCandidate{name: rName, data: rData, score: score})
+				}
+			}
+			rows.Close()
+
+			// Sort by score descending, take top 3.
+			sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+			limit := 3
+			if len(candidates) < limit {
+				limit = len(candidates)
+			}
+			for i := 0; i < limit; i++ {
+				c := candidates[i]
+				activeInjections += fmt.Sprintf("- From %s (Match: %.2f%%): %s\n", c.name, c.score*100, c.data)
 			}
 		}
 	}
@@ -2801,6 +3024,7 @@ skipPresidio:
 					executionLogs = append(executionLogs, "[Network Error]: "+errDo.Error())
 					a.logAnalytics("agent", agent.ID, 0, false)
 					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					a.notifySystemError("Agent API Connection Failed", fmt.Sprintf("Agent %s could not connect to provider: %s", agent.Name, errDo.Error()))
 					sseEmit(map[string]interface{}{"done": true, "error": "[SYSTEM] Failed to connect to the API provider.", "logs": executionLogs})
 					return
 				}
@@ -2932,6 +3156,7 @@ skipPresidio:
 					executionLogs = append(executionLogs, "[Network Error]: "+errDo2.Error())
 					a.logAnalytics("agent", agent.ID, 0, false)
 					a.logAnalytics("provider", agent.ProviderID, 0, false)
+					a.notifySystemError("Agent API Connection Failed", fmt.Sprintf("Agent %s could not connect to provider: %s", agent.Name, errDo2.Error()))
 					w.Header().Set("Content-Type", "application/json")
 					json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[SYSTEM] Failed to connect to the API provider.", "logs": executionLogs})
 					return
@@ -3444,6 +3669,44 @@ func (a *App) executeCommand(
 				return "[SYSTEM ERROR] Usage: /addRAGData <id> <name> <data>"
 			}
 			ragDataStr := strings.Join(parts[3:], " ")
+
+			// Check if chunking is enabled.
+			var chunkingEnabled string
+			a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunking'").Scan(&chunkingEnabled)
+			if chunkingEnabled == "true" {
+				var chunkSizeStr, chunkOverlapStr string
+				a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunk_size'").Scan(&chunkSizeStr)
+				a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunk_overlap'").Scan(&chunkOverlapStr)
+				chunkSize := 500
+				chunkOverlap := 50
+				if v, err := strconv.Atoi(chunkSizeStr); err == nil && v > 0 {
+					chunkSize = v
+				}
+				if v, err := strconv.Atoi(chunkOverlapStr); err == nil && v >= 0 {
+					chunkOverlap = v
+				}
+				chunks := chunkText(ragDataStr, chunkSize, chunkOverlap)
+				added := 0
+				for i, chunk := range chunks {
+					chunkName := fmt.Sprintf("%s_chunk_%d", parts[2], i)
+					vector := getEmbedding(chunk, a.ConfigDB)
+					vectorJSON := "[]"
+					if vector != nil {
+						if vBytes, err := json.Marshal(vector); err == nil {
+							vectorJSON = string(vBytes)
+						}
+					}
+					if _, err := a.MemoryDB.Exec(fmt.Sprintf("INSERT INTO %s (record_name, data, vector) VALUES (?, ?, ?)", tName), chunkName, chunk, vectorJSON); err != nil {
+						if strings.Contains(err.Error(), "has no column named vector") {
+							a.MemoryDB.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN vector TEXT DEFAULT '[]'", tName))
+							a.MemoryDB.Exec(fmt.Sprintf("INSERT INTO %s (record_name, data, vector) VALUES (?, ?, ?)", tName), chunkName, chunk, vectorJSON)
+						}
+					}
+					added++
+				}
+				return fmt.Sprintf("[RESULT] Added %d chunks from '%s'.", added, parts[2])
+			}
+
 			vector := getEmbedding(ragDataStr, a.ConfigDB)
 			vectorJSON := "[]"
 			if vector != nil {
@@ -3955,7 +4218,7 @@ func maskSecret(secret string) string {
 }
 
 func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, name, COALESCE(type,'OpenAI'), endpoint, api_key, COALESCE(extra_config,'{}'), token_usage FROM providers")
+	rows, err := a.ConfigDB.Query("SELECT id, name, COALESCE(type,'OpenAI'), endpoint, api_key, COALESCE(extra_config,'{}'), COALESCE(models,'[]'), token_usage FROM providers")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]Provider{})
@@ -3965,7 +4228,7 @@ func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 	var list []Provider
 	for rows.Next() {
 		var i Provider
-		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Endpoint, &i.APIKey, &i.ExtraConfig, &i.TokenUsage)
+		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Endpoint, &i.APIKey, &i.ExtraConfig, &i.Models, &i.TokenUsage)
 		i.APIKey = maskSecret(i.APIKey)
 		list = append(list, i)
 	}
@@ -3979,7 +4242,10 @@ func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	var i Provider
 	json.NewDecoder(r.Body).Decode(&i)
-	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig)
+	if i.Models == "" {
+		i.Models = "[]"
+	}
+	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config, models) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, i.Models)
 	a.appendSecurityEvent("provider_create", r.URL.Path, "admin", fmt.Sprintf("created provider %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -3988,10 +4254,13 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	var i Provider
 	json.NewDecoder(r.Body).Decode(&i)
+	if i.Models == "" {
+		i.Models = "[]"
+	}
 	if strings.TrimSpace(i.APIKey) == "" {
-		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, r.PathValue("id"))
+		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, i.Models, r.PathValue("id"))
 	} else {
-		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, r.PathValue("id"))
+		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, i.Models, r.PathValue("id"))
 	}
 	a.appendSecurityEvent("provider_update", r.URL.Path, "admin", fmt.Sprintf("updated provider %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
@@ -4202,6 +4471,127 @@ func (a *App) handleDeleteRAG(w http.ResponseWriter, r *http.Request) {
 	a.ConfigDB.Exec("DELETE FROM rags WHERE id=?", r.PathValue("id"))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleQueryRAG tests a query against a RAG database and returns matching records.
+func (a *App) handleQueryRAG(w http.ResponseWriter, r *http.Request) {
+	ragID := r.PathValue("id")
+	var req struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Query == "" {
+		http.Error(w, `{"error":"query is required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.Limit <= 0 || req.Limit > 20 {
+		req.Limit = 5
+	}
+
+	var rawTName string
+	a.ConfigDB.QueryRow("SELECT table_name FROM rags WHERE id=?", ragID).Scan(&rawTName)
+	if rawTName == "" {
+		http.Error(w, `{"error":"RAG not found"}`, http.StatusNotFound)
+		return
+	}
+	tName, tErr := sanitizeTableName(rawTName)
+	if tErr != nil {
+		http.Error(w, `{"error":"invalid RAG table"}`, http.StatusBadRequest)
+		return
+	}
+
+	userVector := getEmbedding(req.Query, a.ConfigDB)
+	var hybridEnabled string
+	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_hybrid_search'").Scan(&hybridEnabled)
+	keywords := strings.Fields(strings.ToLower(req.Query))
+
+	rows, err := a.MemoryDB.Query(fmt.Sprintf("SELECT record_name, data, vector FROM %s", tName))
+	if err != nil {
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type result struct {
+		Name  string  `json:"name"`
+		Data  string  `json:"data"`
+		Score float64 `json:"score"`
+	}
+	var results []result
+	for rows.Next() {
+		var rName, rData, vJson string
+		rows.Scan(&rName, &rData, &vJson)
+		var score float32
+		if userVector != nil {
+			var dbVector []float32
+			if json.Unmarshal([]byte(vJson), &dbVector) == nil && len(dbVector) > 0 {
+				score = cosineSimilarity(userVector, dbVector)
+			}
+		}
+		if hybridEnabled == "true" {
+			dataLower := strings.ToLower(rData)
+			keywordHits := 0
+			for _, kw := range keywords {
+				if len(kw) > 2 && strings.Contains(dataLower, kw) {
+					keywordHits++
+				}
+			}
+			if len(keywords) > 0 {
+				keywordScore := float32(keywordHits) / float32(len(keywords))
+				score = score*0.7 + keywordScore*0.3
+			}
+		}
+		if score > 0.2 {
+			results = append(results, result{Name: rName, Data: rData, Score: float64(score)})
+		}
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
+	if len(results) > req.Limit {
+		results = results[:req.Limit]
+	}
+	if results == nil {
+		results = []result{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"results": results, "total": len(results)})
+}
+
+// notifySystemError sends an error notification to the configured webhook Output.
+// Called asynchronously — failures are silently logged.
+func (a *App) notifySystemError(title, detail string) {
+	var outputID string
+	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='error_output_id'").Scan(&outputID)
+	if outputID == "" {
+		return
+	}
+	var webhookURL string
+	a.ConfigDB.QueryRow("SELECT webhook_url FROM outputs WHERE id=? AND type='Webhook'", outputID).Scan(&webhookURL)
+	if webhookURL == "" {
+		return
+	}
+	if isPrivateHost(webhookURL) {
+		return
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"event":     "system_error",
+		"title":     title,
+		"detail":    detail,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version":   CurrentVersion,
+	})
+	req, err := http.NewRequest("POST", webhookURL, bytes.NewReader(payload))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Zuver-ErrorNotify/1.0")
+	go func() {
+		resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
 }
 
 // dispatchWebhookOutputs fires any Webhook-type outputs assigned to the agent, sending the
@@ -4877,9 +5267,44 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// modelPricing represents per-model token pricing (per 1M tokens).
+type modelPricing struct {
+	ModelID    string  `json:"model_id"`
+	Alias      string  `json:"alias"`
+	InputPrice float64 `json:"input_price"`
+	OutputPrice float64 `json:"output_price"`
+}
+
+// lookupModelCost calculates the cost for a given token count and provider model pricing.
+// Returns 0 if no pricing info is found.
+func (a *App) lookupModelCost(providerID string, tokens int) float64 {
+	var modelsJSON string
+	a.ConfigDB.QueryRow("SELECT COALESCE(models,'[]') FROM providers WHERE id=?", providerID).Scan(&modelsJSON)
+	var models []modelPricing
+	if json.Unmarshal([]byte(modelsJSON), &models) != nil || len(models) == 0 {
+		return 0
+	}
+	// Use the first model's pricing as the default for this provider.
+	// Assume roughly 50/50 input/output split when we don't have exact counts.
+	p := models[0]
+	avgPrice := (p.InputPrice + p.OutputPrice) / 2
+	return float64(tokens) * avgPrice / 1_000_000
+}
+
 func (a *App) logAnalytics(entityType, entityID string, tokens int, success bool) {
 	go func() {
-		a.ConfigDB.Exec("INSERT INTO analytics_logs (entity_type, entity_id, tokens, is_success) VALUES (?, ?, ?, ?)", entityType, entityID, tokens, success)
+		var cost float64
+		if entityType == "agent" {
+			// Look up provider pricing via agent -> provider mapping.
+			var providerID string
+			a.ConfigDB.QueryRow("SELECT provider_id FROM agents WHERE id=?", entityID).Scan(&providerID)
+			if providerID != "" {
+				cost = a.lookupModelCost(providerID, tokens)
+			}
+		} else if entityType == "provider" {
+			cost = a.lookupModelCost(entityID, tokens)
+		}
+		a.ConfigDB.Exec("INSERT INTO analytics_logs (entity_type, entity_id, tokens, is_success, cost) VALUES (?, ?, ?, ?, ?)", entityType, entityID, tokens, success, cost)
 	}()
 }
 
