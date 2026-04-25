@@ -373,6 +373,71 @@ var (
 	securityLogs  []SecurityEvent
 )
 
+// CurrentVersion is the running instance version — compared against GitHub releases.
+const CurrentVersion = "v1.3.2"
+
+// updateInfo caches the latest release info from GitHub.
+type updateInfo struct {
+	LatestVersion string `json:"latest_version"`
+	DownloadURL   string `json:"download_url"`
+	ReleaseURL    string `json:"release_url"`
+	HasUpdate     bool   `json:"has_update"`
+	CheckedAt     string `json:"checked_at"`
+}
+
+var (
+	latestUpdate   updateInfo
+	latestUpdateMu sync.Mutex
+)
+
+// checkForUpdate fetches the latest release tag from GitHub and caches the result.
+func checkForUpdate() {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/synasties/zuver/releases/latest", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Assets  []struct {
+			BrowserDownloadURL string `json:"browser_download_url"`
+			Name               string `json:"name"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return
+	}
+	if release.TagName == "" {
+		return
+	}
+	downloadURL := release.HTMLURL
+	for _, a := range release.Assets {
+		if strings.Contains(a.Name, "linux") && strings.Contains(a.Name, "amd64") {
+			downloadURL = a.BrowserDownloadURL
+			break
+		}
+	}
+	latestUpdateMu.Lock()
+	latestUpdate = updateInfo{
+		LatestVersion: release.TagName,
+		DownloadURL:   downloadURL,
+		ReleaseURL:    release.HTMLURL,
+		HasUpdate:     release.TagName != CurrentVersion,
+		CheckedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	latestUpdateMu.Unlock()
+}
+
 var (
 	dbWriteQueue  = make(chan DBTask, 10000)
 	adminToken    string
@@ -1115,6 +1180,15 @@ func main() {
 		}
 	}()
 
+	// Background update checker — checks GitHub releases every 6 hours.
+	go func() {
+		checkForUpdate() // check immediately on startup
+		for {
+			time.Sleep(6 * time.Hour)
+			checkForUpdate()
+		}
+	}()
+
 	// Background task monitor — starts AFTER ListenAndServe would block, so we run it before.
 	go func() {
 		for {
@@ -1446,12 +1520,29 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /api/v1/sysinfo", func(w http.ResponseWriter, r *http.Request) {
+		latestUpdateMu.Lock()
+		u := latestUpdate
+		latestUpdateMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		json.NewEncoder(w).Encode(map[string]interface{}{
 			"name":        "Zuver",
-			"version":     "v1.3.1",
+			"version":     CurrentVersion,
 			"description": "Next-gen Generative AI Framework, built for possibilities.",
+			"has_update":  u.HasUpdate,
+			"latest":      u.LatestVersion,
 		})
+	})
+
+	mux.HandleFunc("GET /api/v1/update-check", func(w http.ResponseWriter, r *http.Request) {
+		// Allow manual refresh by triggering a check.
+		if r.URL.Query().Get("refresh") == "true" {
+			go checkForUpdate()
+		}
+		latestUpdateMu.Lock()
+		u := latestUpdate
+		latestUpdateMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(u)
 	})
 
 	mux.HandleFunc("GET /api/v1/analytics/summary", func(w http.ResponseWriter, r *http.Request) {
