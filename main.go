@@ -564,9 +564,10 @@ func (a *App) verifyAdminPassword(password string) bool {
 	if dbHash == "" {
 		return false
 	}
+	// Only accept bcrypt hashes. Legacy SHA-256 hashes are auto-upgraded
+	// on first successful login via handleLogin — we never verify them here.
 	if !strings.HasPrefix(dbHash, "$2") {
-		legacy := fmt.Sprintf("%x", sha256.Sum256([]byte(password)))
-		return legacy == dbHash
+		return false
 	}
 	return bcryptCompare(dbHash, password)
 }
@@ -1448,7 +1449,7 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
 			"name":        "Zuver",
-			"version":     "v1.3.0",
+			"version":     "v1.3.1",
 			"description": "Next-gen Generative AI Framework, built for possibilities.",
 		})
 	})
