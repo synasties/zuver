@@ -630,6 +630,10 @@
 				<div class="nav-icon-box"><i data-lucide="database" class="w-5 h-5"></i></div>
 				<span class="nav-text">Sources</span>
 			</div>
+			<div data-target="sessions" class="nav-item">
+				<div class="nav-icon-box"><i data-lucide="message-square" class="w-5 h-5"></i></div>
+				<span class="nav-text" data-i18n="Sessions">Sessions</span>
+			</div>
 			<div data-target="rags" class="nav-item">
 				<div class="nav-icon-box"><i data-lucide="brain-circuit" class="w-5 h-5"></i></div>
 				<span class="nav-text">Vector RAGs</span>
@@ -699,6 +703,9 @@
 				<button onclick="toggleTheme()"
 					class="hidden md:block p-2 text-gray-500 hover:text-black dark:text-gray-400 dark:hover:text-white transition-colors"><i
 						data-lucide="moon" class="theme-icon"></i></button>
+				<button onclick="doLogout()" title="Log out"
+					class="hidden md:block p-2 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 transition-colors"><i
+						data-lucide="log-out" class="w-5 h-5"></i></button>
 				<button data-target="chat"
 					class="md:hidden bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 rounded-lg text-sm font-medium">Console</button>
 			</div>
@@ -1086,6 +1093,20 @@
 					</div>
 					<div id="sources-list" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
 				</div>
+				<div id="view-sessions" class="page-view hidden space-y-6">
+					<div>
+						<h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="message-square" class="w-5 h-5 text-blue-500"></i> Chat Sessions</h2>
+						<p class="text-sm text-gray-500 mt-1">Browse, search, and manage conversation sessions across all agents.</p>
+					</div>
+					<div class="flex items-center gap-3">
+						<select id="sessions-agent-filter" onchange="loadSessionsList()" class="border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+							<option value="">All Agents</option>
+						</select>
+						<input id="sessions-search" type="text" placeholder="Search sessions..." oninput="loadSessionsList()"
+							class="flex-1 border dark:border-gray-700 bg-transparent rounded-lg px-3 py-2 text-sm outline-none">
+					</div>
+					<div id="sessions-list" class="space-y-3"></div>
+				</div>
 				<div id="view-outputs" class="page-view hidden space-y-6">
 					<div class="flex justify-between items-center">
 						<p class="text-sm text-gray-500 mt-1">Manage what your agents can access and control.</p>
@@ -1185,9 +1206,14 @@
 					class="page-view hidden h-[calc(100vh-140px)] flex flex-col bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shadow-md border border-gray-200/60">
 					<div class="p-4 border-b dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-black/20">
 						<div class="flex items-center gap-2">
-							<span class="text-sm font-medium text-gray-500">Session:</span>
+							<span class="text-sm font-medium text-gray-500">Agent:</span>
 							<select id="chat-agent-select"
-								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md p-1.5 text-sm outline-none w-40 md:w-48 shadow-sm"></select>
+								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md p-1.5 text-sm outline-none w-32 md:w-40 shadow-sm"></select>
+							<span class="text-sm font-medium text-gray-500">Context:</span>
+							<select id="chat-session-select"
+								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md p-1.5 text-sm outline-none w-28 md:w-36 shadow-sm"></select>
+							<button onclick="createNewSession()" title="New Session"
+								class="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500"><i data-lucide="plus" class="w-3.5 h-3.5"></i></button>
 						</div>
 						<div class="flex items-center gap-2">
 							<button onclick="exportChatHistory('json')"
@@ -1429,6 +1455,32 @@
 								<button onclick="changePassword()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">Update</button>
 							</div>
 						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-green-600"><i data-lucide="shield"
+											class="w-4 h-4"></i> Two-Factor Authentication (TOTP)</span>
+									<p class="text-xs text-gray-500 mt-1">Require TOTP code from authenticator app on login.</p>
+								</div>
+								<div class="flex items-center gap-2">
+									<div id="totp-status" class="text-xs font-bold px-2 py-1 rounded"></div>
+									<button onclick="setupTOTP()" id="totp-setup-btn" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold hidden">Setup TOTP</button>
+								</div>
+							</div>
+							<div id="totp-setup-area" class="space-y-3 border-t dark:border-gray-800 pt-4 hidden">
+								<p class="text-xs text-gray-400">1. Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
+								<div id="totp-qr" class="flex justify-center"></div>
+								<p class="text-[10px] text-gray-400 text-center">Or enter this secret manually: <code id="totp-secret-display" class="bg-gray-100 dark:bg-gray-800 px-1 rounded"></code></p>
+								<div class="flex gap-2">
+									<input type="text" id="totp-verify-code" placeholder="Enter 6-digit code" maxlength="6"
+										class="flex-1 border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono">
+									<button onclick="verifyTOTPSetup()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold">Verify & Enable</button>
+								</div>
+							</div>
+							<div id="totp-disable-area" class="hidden border-t dark:border-gray-800 pt-4">
+								<button onclick="disableTOTP()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">Disable 2FA</button>
+							</div>
+						</div>
 					</div>
 					<div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
 						<div
@@ -1467,11 +1519,11 @@
 						<div class="p-4 flex items-center justify-between">
 							<div>
 								<span class="font-bold flex items-center gap-2 text-blue-600"><i data-lucide="download" class="w-4 h-4"></i> Backup & Restore</span>
-								<p class="text-xs text-gray-500 mt-1">Export or import all configuration data as JSON.</p>
+								<p class="text-xs text-gray-500 mt-1">Export or import all configuration data. Optional password encryption.</p>
 							</div>
 							<div class="flex gap-2">
-								<button onclick="backupData()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> Backup</button>
-								<label class="px-3 py-2 border dark:border-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1 cursor-pointer"><i data-lucide="upload" class="w-3 h-3"></i> Restore<input type="file" class="hidden" accept=".json" onchange="restoreData(this.files[0])"></label>
+								<button onclick="openModal('modal-backup')" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> Backup</button>
+								<button onclick="openModal('modal-restore')" class="px-3 py-2 border dark:border-gray-700 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex items-center gap-1"><i data-lucide="upload" class="w-3 h-3"></i> Restore</button>
 							</div>
 						</div>
 						<div
@@ -1553,6 +1605,59 @@
 			</div>
 			<div id="global-search-results" class="max-h-[50vh] overflow-y-auto p-2">
 				<p class="text-xs text-gray-400 text-center py-6">Type to search across all data...</p>
+			</div>
+		</div>
+	</div>
+
+	<!-- Modal: Backup -->
+	<div id="modal-backup" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-md shadow-xl flex flex-col">
+			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-center justify-between">
+				<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="download" class="text-blue-500 w-5 h-5"></i> Backup Configuration</h3>
+				<button onclick="closeModal('modal-backup')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+			</div>
+			<div class="px-6 py-5 space-y-4">
+				<p class="text-sm text-gray-500">Export all configuration data as a downloadable file.</p>
+				<div class="space-y-2">
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Encryption Password <span class="font-normal normal-case text-gray-400">(optional)</span></label>
+					<input type="password" id="backup-password" placeholder="Leave empty for plaintext JSON"
+						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+					<p class="text-[10px] text-gray-400">If set, the backup will be encrypted with AES-256-GCM. You'll need this password to restore.</p>
+				</div>
+			</div>
+			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
+				<button onclick="closeModal('modal-backup')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+				<button onclick="doBackup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold">Download Backup</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- Modal: Restore -->
+	<div id="modal-restore" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+		<div class="bg-white dark:bg-[#111] rounded-xl w-full max-w-md shadow-xl flex flex-col">
+			<div class="px-6 pt-6 pb-4 border-b dark:border-gray-800 flex items-center justify-between">
+				<h3 class="font-bold text-base flex items-center gap-2"><i data-lucide="upload" class="text-orange-500 w-5 h-5"></i> Restore Configuration</h3>
+				<button onclick="closeModal('modal-restore')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+			</div>
+			<div class="px-6 py-5 space-y-4">
+				<p class="text-sm text-gray-500">Import configuration from a backup file. This will <strong>replace</strong> all current data.</p>
+				<div class="space-y-2">
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Backup File</label>
+					<label class="flex items-center justify-center gap-2 w-full px-4 py-6 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition-colors">
+						<i data-lucide="upload-cloud" class="w-6 h-6 text-gray-400"></i>
+						<span id="restore-file-label" class="text-sm text-gray-500">Click to select .json or .enc file</span>
+						<input type="file" id="restore-file-input" class="hidden" accept=".json,.enc" onchange="onRestoreFileSelected(this.files[0])">
+					</label>
+				</div>
+				<div id="restore-password-field" class="space-y-2 hidden">
+					<label class="text-[10px] font-bold text-gray-500 uppercase">Decryption Password</label>
+					<input type="password" id="restore-password" placeholder="Enter password to decrypt"
+						class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/30">
+				</div>
+			</div>
+			<div class="px-6 py-4 border-t dark:border-gray-800 flex justify-end gap-2">
+				<button onclick="closeModal('modal-restore')" class="px-4 py-2 border dark:border-gray-700 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+				<button onclick="doRestore()" id="restore-btn" disabled class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">Restore</button>
 			</div>
 		</div>
 	</div>
@@ -1730,6 +1835,7 @@
 							<option value="API">API Request</option>
 							<option value="MD">Markdown Docs</option>
 							<option value="Agent">Agent Call</option>
+							<option value="Placeholder">Placeholder (No-op)</option>
 						</select>
 					</div>
 				</div>
@@ -1772,6 +1878,14 @@
 						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Target Agent</label>
 						<select id="skill-agent-id"
 							class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm focus:outline-none"></select>
+					</div>
+					<div class="space-y-1">
+						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Return Result To</label>
+						<select id="skill-agent-return-to"
+							class="w-full border dark:border-gray-700 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-2 rounded-lg text-sm focus:outline-none">
+							<option value="agent">Calling Agent (continue conversation)</option>
+							<option value="user">User (send directly to chat)</option>
+						</select>
 					</div>
 					<div class="space-y-1">
 						<label class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">System Prompt Override <span
@@ -2132,14 +2246,19 @@
 					<img src="https://zuver.cc/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
 				</div>
 				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
-				<p class="text-sm text-gray-500" data-i18n="Auth Desc">Enter password to unlock. First-time login will set this
-					as the permanent Admin password.</p>
+				<p class="text-sm text-gray-500">Enter password to unlock.</p>
 			</div>
 			<div
 				class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
 				<div>
 					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
 					<input type="password" id="login-pwd" placeholder="••••••••"
+						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+						onkeypress="if(event.key === 'Enter') doLogin()">
+				</div>
+				<div id="totp-login-field" class="hidden">
+					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">TOTP Code</label>
+					<input type="text" id="login-totp" placeholder="6-digit code" maxlength="6"
 						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
 						onkeypress="if(event.key === 'Enter') doLogin()">
 				</div>
@@ -2166,8 +2285,6 @@
 			document.getElementById('page-login').classList.add('hidden');
 		}
 
-		let recentReauthUntil = 0;
-
 		function getSessionToken() {
 			return localStorage.getItem('zuver_session_token');
 		}
@@ -2183,15 +2300,22 @@
 
 		function clearSessionToken() {
 			localStorage.removeItem('zuver_session_token');
-			recentReauthUntil = 0;
+			localStorage.removeItem('zuver_reauth_until');
 		}
 
 		function hasRecentReauth() {
-			return Date.now() < recentReauthUntil;
+			const stored = localStorage.getItem('zuver_reauth_until');
+			if (!stored) return false;
+			const until = parseInt(stored, 10);
+			if (Date.now() >= until) {
+				localStorage.removeItem('zuver_reauth_until');
+				return false;
+			}
+			return true;
 		}
 
 		function markRecentReauth() {
-			recentReauthUntil = Date.now() + (5 * 60 * 1000);
+			localStorage.setItem('zuver_reauth_until', String(Date.now() + (5 * 60 * 1000)));
 		}
 
 		async function promptReauthentication(actionLabel = 'this action') {
@@ -2259,16 +2383,17 @@
 			return new Promise(resolve => {
 				const overlay = document.createElement('div');
 				overlay.className = 'fixed inset-0 bg-black/40 z-[400] flex items-center justify-center p-4 backdrop-blur-sm';
+				const card = document.createElement('div');
+				card.className = 'bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl p-6 max-w-sm w-full space-y-4';
 				const msgEl = document.createElement('p');
 				msgEl.className = 'text-sm font-medium leading-snug';
 				msgEl.textContent = String(msg || '');
 				const actions = document.createElement('div');
 				actions.className = 'flex gap-2 justify-end';
 				actions.innerHTML = `<button id="confirm-cancel" class="px-4 py-2 text-sm border dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">Cancel</button><button id="confirm-ok" class="px-4 py-2 text-sm font-bold rounded-lg text-white transition-colors ${danger ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}">${escapeHTML(confirmLabel)}</button>`;
-				const card = overlay.firstElementChild;
-				card.innerHTML = '';
 				card.appendChild(msgEl);
 				card.appendChild(actions);
+				overlay.appendChild(card);
 				document.body.appendChild(overlay);
 				overlay.querySelector('#confirm-cancel').onclick = () => { overlay.remove(); resolve(false); };
 				overlay.querySelector('#confirm-ok').onclick = () => { overlay.remove(); resolve(true); };
@@ -2309,11 +2434,16 @@
 
 		let loadingCount = 0;
 		let loadingTimer = null;
+		let loadingTimer2 = null;
 		window.showLoading = function () {
 			loadingCount++;
+			// Cancel any pending hide timers from previous requests.
+			if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+			if (loadingTimer2) { clearTimeout(loadingTimer2); loadingTimer2 = null; }
 			const bar = document.getElementById('loading-bar');
 			if (bar) {
 				bar.style.opacity = '1';
+				bar.style.transition = 'width 0.3s ease';
 				bar.style.width = '30%';
 			}
 		};
@@ -2323,9 +2453,9 @@
 				const bar = document.getElementById('loading-bar');
 				if (bar) {
 					bar.style.width = '100%';
-					setTimeout(() => {
+					loadingTimer = setTimeout(() => {
 						bar.style.opacity = '0';
-						setTimeout(() => { bar.style.width = '0%'; }, 300);
+						loadingTimer2 = setTimeout(() => { bar.style.width = '0%'; }, 300);
 					}, 200);
 				}
 			}
@@ -2359,15 +2489,12 @@
 			"Dashboard": { zh: "仪表盘", de: "Dashboard" },
 			"Build": { zh: "构建", de: "Erstellen" },
 			"Data": { zh: "数据", de: "Daten" },
+			"Sessions": { zh: "会话", de: "Sitzungen" },
 			"Connect": { zh: "连接", de: "Verbinden" },
 			"System": { zh: "系统", de: "System" },
 			// Auth
 			"System Locked": { zh: "系统已锁定", de: "System gesperrt" },
 			"Unlock OS": { zh: "解锁系统", de: "System entsperren" },
-			"Auth Desc": {
-				zh: "请输入密码以解锁系统。若是首次登录，输入的密码将作为最高管理员密码永久保存。",
-				de: "Geben Sie das Passwort ein. Beim ersten Login wird es als Admin-Passwort festgelegt."
-			},
 			// Buttons & actions
 			"New Agent": { zh: "新建 Agent", de: "Neuer Agent" },
 			"Save Agent": { zh: "保存 Agent", de: "Agent speichern" },
@@ -2647,6 +2774,7 @@
 			const t = document.getElementById('skill-type-input').value;
 			const isAPI = t === 'API';
 			const isAgent = t === 'Agent';
+			const isPlaceholder = t === 'Placeholder';
 			const canUseDocker = t === 'Bash' || t === 'JavaScript' || t === 'Go';
 			const contentInput = document.getElementById('skill-content-input');
 			const dockerUI = document.getElementById('skill-docker-ui');
@@ -2662,6 +2790,8 @@
 				contentInput.placeholder = "Markdown Content (No <placeholders> needed)";
 			} else if (t === 'JavaScript') {
 				contentInput.placeholder = "// Node.js script. Use <placeholders> for dynamic args.\nconsole.log('hello from JS skill');";
+			} else if (isPlaceholder) {
+				contentInput.placeholder = "Text to return as-is when agent calls this skill. e.g. /deploy ready for review";
 			} else {
 				contentInput.placeholder = "Code / Template. Use <placeholders> here.";
 			}
@@ -2788,12 +2918,15 @@
 				updateRagEmbeddingUI();
 				updatePresidioUI();
 				updateDockerUI();
+				loadTOTPStatus();
 
 				const sel = document.getElementById('chat-agent-select'); const old = sel.value;
 				sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
 				if (old && dataStore.agents.find(a => a.id === old)) sel.value = old;
+				loadSessions();
 				renderLists();
 			} catch (e) { console.error("API Error:", e); }
+			hideLoading();
 		}
 
 		/** Toggles the attachment popup menu */
@@ -3137,6 +3270,7 @@
 
 		async function loadChatHistory() {
 			const agentId = document.getElementById('chat-agent-select').value;
+			const sessionId = document.getElementById('chat-session-select')?.value || '';
 			const chatBox = document.getElementById('chat-messages');
 			if (!agentId) return;
 
@@ -3147,7 +3281,8 @@
 			chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${emptyText.replace('...', '...')}</div>`;
 			chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${loadingText}</div>`;
 			try {
-				const history = await api(`/history/${agentId}`);
+				const url = sessionId ? `/history/${agentId}?session_id=${sessionId}` : `/history/${agentId}`;
+				const history = await api(url);
 				chatBox.innerHTML = '';
 				if (history.length === 0) {
 					chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 my-10">${emptyText}</div>`;
@@ -3247,14 +3382,117 @@
 
 		// Bind event listeners for agent swapping
 		document.getElementById('chat-agent-select').addEventListener('change', () => {
-			loadChatHistory();
+			loadSessions().then(() => loadChatHistory());
 			syncInputModality();
 		});
 
+		// --- Session Management ---
+		async function loadSessions() {
+			const agentId = document.getElementById('chat-agent-select')?.value;
+			const sel = document.getElementById('chat-session-select');
+			if (!agentId || !sel) return;
+			try {
+				const sessions = await api(`/sessions/${agentId}`, 'GET', null, true);
+				const current = sel.value;
+				sel.innerHTML = '<option value="">Default</option>' + (sessions || []).map(s => `<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('');
+				if (current) sel.value = current;
+			} catch (e) { }
+		}
+
+		window.createNewSession = async () => {
+			const agentId = document.getElementById('chat-agent-select')?.value;
+			if (!agentId) { showToast('Select an agent first.', 'error'); return; }
+			const name = await showPrompt('Session name:', 'e.g. brainstorming');
+			if (name === null) return;
+			try {
+				const res = await api(`/sessions/${agentId}`, 'POST', { name: name || undefined });
+				await loadSessions();
+				const sel = document.getElementById('chat-session-select');
+				if (sel && res.id) sel.value = res.id;
+				loadChatHistory();
+				showToast('Session created.', 'success');
+			} catch (e) { }
+		};
+
+		// --- Sessions List Page ---
+		window.loadSessionsList = async () => {
+			const agentFilter = document.getElementById('sessions-agent-filter')?.value || '';
+			const search = (document.getElementById('sessions-search')?.value || '').toLowerCase();
+			const el = document.getElementById('sessions-list');
+			if (!el) return;
+
+			// Populate agent filter dropdown.
+			const agentSel = document.getElementById('sessions-agent-filter');
+			if (agentSel && agentSel.options.length <= 1) {
+				agentSel.innerHTML = '<option value="">All Agents</option>' + dataStore.agents.map(a => `<option value="${a.id}">${escapeHTML(a.name)}</option>`).join('');
+			}
+
+			try {
+				let allSessions = [];
+				const agentsToQuery = agentFilter ? [agentFilter] : dataStore.agents.map(a => a.id);
+				for (const aid of agentsToQuery) {
+					const sessions = await api(`/sessions/${aid}`, 'GET', null, true);
+					if (sessions) {
+						sessions.forEach(s => {
+							const agent = dataStore.agents.find(a => a.id === s.agent_id);
+							s._agentName = agent ? agent.name : s.agent_id;
+						});
+						allSessions = allSessions.concat(sessions);
+					}
+				}
+				// Filter by search.
+				if (search) {
+					allSessions = allSessions.filter(s => s.name.toLowerCase().includes(search) || s._agentName.toLowerCase().includes(search));
+				}
+				// Sort by updated_at descending.
+				allSessions.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+
+				if (allSessions.length === 0) {
+					el.innerHTML = '<div class="text-center py-12 text-gray-400 text-sm">No sessions found.</div>';
+					return;
+				}
+				el.innerHTML = allSessions.map(s => `
+					<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-lg flex items-center justify-between">
+						<div class="min-w-0">
+							<p class="font-bold text-sm truncate">${escapeHTML(s.name)}</p>
+							<p class="text-[10px] text-gray-400 mt-0.5">Agent: ${escapeHTML(s._agentName)} &middot; Updated: ${s.updated_at ? new Date(s.updated_at).toLocaleString() : '-'}</p>
+						</div>
+						<div class="flex items-center gap-2 shrink-0">
+							<button data-action="open-session" data-agent="${s.agent_id}" data-session="${s.id}" class="px-3 py-1.5 text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">Open</button>
+							<button data-action="delete-session" data-agent="${s.agent_id}" data-session="${s.id}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
+						</div>
+					</div>
+				`).join('');
+				lucide.createIcons();
+			} catch (e) {
+				el.innerHTML = '<div class="text-center py-12 text-red-400 text-sm">Failed to load sessions.</div>';
+			}
+		};
+
+		document.getElementById('chat-session-select')?.addEventListener('change', loadChatHistory);
+
+		window.deleteSession = async (agentId, sessionId) => {
+			if (await showConfirm('Delete this session and its history?', 'Delete')) {
+				await api(`/sessions/${sessionId}`, 'DELETE');
+				loadSessionsList();
+				showToast('Session deleted.', 'success');
+			}
+		};
+
 		window.clearMemory = async () => {
 			const agentId = document.getElementById('chat-agent-select').value;
-			const ok = await showConfirm("Wipe this Agent's memory permanently?", 'Clear', true);
-			if (ok) { await api(`/history/${agentId}`, 'DELETE'); loadChatHistory(); }
+			const sessionId = document.getElementById('chat-session-select')?.value || '';
+			const label = sessionId ? 'this session' : "this Agent's memory";
+			const ok = await showConfirm(`Wipe ${label} permanently?`, 'Clear', true);
+			if (ok) {
+				if (sessionId) {
+					await api(`/sessions/${sessionId}`, 'DELETE');
+					await loadSessions();
+				} else {
+					await api(`/history/${agentId}`, 'DELETE');
+				}
+				loadChatHistory();
+			}
 		};
 
 		window.exportChatHistory = (format) => {
@@ -3307,6 +3545,7 @@
 
 			const reqPayload = {
 				agent_id: agentId,
+				session_id: document.getElementById('chat-session-select')?.value || '',
 				message: msg,
 				file_path: hasFiles ? files[0].path : '',
 				file_paths: files.map(f => f.path),
@@ -4526,6 +4765,7 @@
 							document.getElementById('skill-agent-id').value = cfg.agent_id || '';
 							document.getElementById('skill-agent-system-prompt').value = cfg.system_prompt || '';
 							document.getElementById('skill-agent-user-prefix').value = cfg.user_prompt_prefix || '';
+							document.getElementById('skill-agent-return-to').value = cfg.return_to || 'agent';
 						} catch (e) { }
 					} else if (sk.type === 'API') {
 						document.getElementById('skill-api-method').value = sk.api_method || 'GET';
@@ -4550,8 +4790,10 @@
 				const cfg = { agent_id: document.getElementById('skill-agent-id').value };
 				const sp = document.getElementById('skill-agent-system-prompt').value.trim();
 				const upp = document.getElementById('skill-agent-user-prefix').value.trim();
+				const returnTo = document.getElementById('skill-agent-return-to').value;
 				if (sp) cfg.system_prompt = sp;
 				if (upp) cfg.user_prompt_prefix = upp;
+				if (returnTo) cfg.return_to = returnTo;
 				content = JSON.stringify(cfg);
 			}
 
@@ -5198,24 +5440,71 @@
 			lucide.createIcons();
 		};
 
-		function backupData() {
+		// --- Backup Modal ---
+		window.doBackup = async function () {
+			if (!(await promptReauthentication('creating a backup'))) return;
+			const password = document.getElementById('backup-password')?.value || '';
+			closeModal('modal-backup');
 			const token = getSessionToken();
-			window.open('/api/v1/backup' + (token ? '?token=' + token : ''), '_blank');
-		}
+			if (password) {
+				fetch('/api/v1/backup', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+					body: JSON.stringify({ password })
+				}).then(r => r.blob()).then(blob => {
+					const url = URL.createObjectURL(blob);
+					const a = document.createElement('a');
+					a.href = url;
+					a.download = 'zuver_backup.enc';
+					a.click();
+					URL.revokeObjectURL(url);
+					showToast('Encrypted backup downloaded.', 'success');
+				}).catch(() => showToast('Backup failed.', 'error'));
+			} else {
+				window.open('/api/v1/backup' + (token ? '?token=' + token : ''), '_blank');
+				showToast('Plaintext backup downloaded.', 'success');
+			}
+		};
 
-		async function restoreData(file) {
+		// --- Restore Modal ---
+		let restoreFile = null;
+		let restoreIsEncrypted = false;
+
+		window.onRestoreFileSelected = function (file) {
 			if (!file) return;
+			restoreFile = file;
+			restoreIsEncrypted = file.name.endsWith('.enc');
+			document.getElementById('restore-file-label').textContent = file.name;
+			document.getElementById('restore-password-field').classList.toggle('hidden', !restoreIsEncrypted);
+			document.getElementById('restore-btn').disabled = false;
+		};
+
+		window.doRestore = async function () {
+			if (!restoreFile) return;
+			// Read password BEFORE closing modal (closeModal clears inputs).
+			let password = '';
+			if (restoreIsEncrypted) {
+				password = document.getElementById('restore-password')?.value || '';
+				if (!password) { showToast('Decryption password required.', 'error'); return; }
+			}
 			if (!(await promptReauthentication('restoring from backup'))) return;
 			const ok = await showConfirm("This will REPLACE all current data with the backup. Continue?", "Restore", true);
 			if (!ok) return;
+			closeModal('modal-restore');
 			try {
-				const text = await file.text();
-				const data = JSON.parse(text);
+				let body;
+				if (restoreIsEncrypted) {
+					const arrayBuffer = await restoreFile.arrayBuffer();
+					const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+					body = JSON.stringify({ password, data: base64 });
+				} else {
+					body = await restoreFile.text();
+				}
 				const token = getSessionToken();
 				const r = await fetch('/api/v1/restore', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-					body: JSON.stringify(data)
+					body
 				});
 				const res = await r.json();
 				if (r.ok) {
@@ -5227,7 +5516,8 @@
 			} catch (e) {
 				showToast('Invalid backup file.', 'error');
 			}
-		}
+			restoreFile = null;
+		};
 
 		async function wipeDatabase() {
 			if (!(await promptReauthentication('wiping the database'))) return;
@@ -5280,6 +5570,80 @@
 			}
 		}
 
+		// --- TOTP 2FA ---
+		async function loadTOTPStatus() {
+			try {
+				const r = await api('/settings/totp', 'GET', null, true);
+				const statusEl = document.getElementById('totp-status');
+				const setupArea = document.getElementById('totp-setup-area');
+				const disableArea = document.getElementById('totp-disable-area');
+				const setupBtn = document.getElementById('totp-setup-btn');
+				if (r.enabled) {
+					statusEl.textContent = 'Enabled';
+					statusEl.className = 'text-xs font-bold px-2 py-1 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+					setupArea.classList.add('hidden');
+					setupBtn.classList.add('hidden');
+					disableArea.classList.remove('hidden');
+				} else {
+					statusEl.textContent = 'Disabled';
+					statusEl.className = 'text-xs font-bold px-2 py-1 rounded bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
+					setupArea.classList.add('hidden');
+					setupBtn.classList.remove('hidden');
+					disableArea.classList.add('hidden');
+				}
+			} catch (e) { }
+		}
+
+		window.setupTOTP = async () => {
+			try {
+				const r = await api('/settings/totp/setup', 'POST');
+				document.getElementById('totp-secret-display').textContent = r.secret;
+				// Generate QR code as SVG using a simple URL.
+				const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(r.qr_url)}`;
+				document.getElementById('totp-qr').innerHTML = `<img src="${qrUrl}" alt="TOTP QR Code" class="rounded-lg border dark:border-gray-700">`;
+				document.getElementById('totp-setup-area').classList.remove('hidden');
+			} catch (e) {
+				showToast("Failed to initialize TOTP.", "error");
+			}
+		};
+
+		window.verifyTOTPSetup = async () => {
+			const code = document.getElementById('totp-verify-code').value.trim();
+			if (!code || code.length !== 6) {
+				showToast("Enter a 6-digit code.", "error");
+				return;
+			}
+			try {
+				// Use fetch directly (not api()) to avoid clearing login state on error.
+				const token = getSessionToken();
+				const r = await fetch('/api/v1/settings/totp/verify', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+					body: JSON.stringify({ code })
+				});
+				const data = await r.json();
+				if (r.ok && data.status === 'ok') {
+					showToast("2FA enabled successfully.", "success");
+					loadTOTPStatus();
+				} else {
+					showToast(data.error || "Invalid TOTP code.", "error");
+				}
+			} catch (e) {
+				showToast("Network error.", "error");
+			}
+		};
+
+		window.disableTOTP = async () => {
+			if (!(await promptReauthentication('disabling 2FA'))) return;
+			try {
+				await api('/settings/totp', 'DELETE');
+				showToast("2FA disabled.", "success");
+				loadTOTPStatus();
+			} catch (e) {
+				showToast("Failed to disable 2FA.", "error");
+			}
+		};
+
 		/* ==========================================
 			 * NAVIGATION — data-target click delegation
 			 * ==========================================
@@ -5289,7 +5653,7 @@
 			 */
 		(function initNav() {
 			const ALL_VIEWS = [
-				'home', 'statistics', 'projects', 'agents', 'agent-editor', 'skills', 'sources',
+				'home', 'statistics', 'projects', 'agents', 'agent-editor', 'skills', 'sources', 'sessions',
 				'rags', 'preferences', 'mcp', 'providers', 'outputs', 'apikeys',
 				'settings', 'audit', 'tasks', 'chat'
 			];
@@ -5357,6 +5721,9 @@
 
 				// Load tasks when switching to tasks view.
 				if (target === 'tasks') { if (typeof loadTasks === 'function') loadTasks(); }
+
+				// Load sessions when switching to sessions view.
+				if (target === 'sessions') { if (typeof loadSessionsList === 'function') loadSessionsList(); }
 
 				// Close mobile sidebar when a nav item is tapped.
 				const sidebar = document.getElementById('main-sidebar');
@@ -5436,6 +5803,20 @@
 				else if (action === 'toggle-task') { e.stopPropagation(); window.toggleTask(id, actionEl.getAttribute('data-active') === 'true'); }
 				else if (action === 'edit-task') { e.stopPropagation(); window.openTaskModal(id); }
 				else if (action === 'delete-task') { e.stopPropagation(); window.deleteTask(id); }
+				else if (action === 'open-session') {
+					e.stopPropagation();
+					const agentId = actionEl.getAttribute('data-agent');
+					const sessionId = actionEl.getAttribute('data-session');
+					window.showView('chat');
+					const agentSel = document.getElementById('chat-agent-select');
+					if (agentSel) { agentSel.value = agentId; loadSessions().then(() => { const ss = document.getElementById('chat-session-select'); if (ss) ss.value = sessionId; loadChatHistory(); }); }
+				}
+				else if (action === 'delete-session') {
+					e.stopPropagation();
+					const agentId = actionEl.getAttribute('data-agent');
+					const sessionId = actionEl.getAttribute('data-session');
+					window.deleteSession(agentId, sessionId);
+				}
 			});
 
 			// Initial load — only if a session token is present (auth guard will redirect if not).
@@ -5569,28 +5950,90 @@
 		};
 
 		/** Validates authentication payloads and issues session tokens */
+		function resetLoadingBar() {
+			loadingCount = 0;
+			if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+			if (loadingTimer2) { clearTimeout(loadingTimer2); loadingTimer2 = null; }
+			const bar = document.getElementById('loading-bar');
+			if (bar) {
+				bar.style.transition = 'none';
+				bar.style.width = '0%';
+				bar.style.opacity = '0';
+				// Re-enable transition after reset.
+				requestAnimationFrame(() => { bar.style.transition = ''; });
+			}
+		}
+
+		async function doLogout() {
+			if (!(await promptReauthentication('logging out'))) return;
+			try {
+				const token = getSessionToken();
+				await fetch('/api/v1/logout', {
+					method: 'POST',
+					headers: { 'Authorization': 'Bearer ' + token }
+				});
+			} catch (e) { }
+			clearSessionToken();
+			resetLoadingBar();
+			showLoginPage();
+		}
+
 		async function doLogin() {
 			const p = document.getElementById('login-pwd').value;
 			if (!p) return;
+			const totpCode = document.getElementById('login-totp')?.value || '';
 			try {
-				const r = await fetch('/api/v1/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }) });
+				// Clear any stale token before attempting login.
+				clearSessionToken();
+				const r = await fetch('/api/v1/login', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ password: p, totp_code: totpCode })
+				});
 				const data = await r.json();
 				if (r.ok) {
 					setSessionToken(data.token);
-					markRecentReauth(); // Login counts as recent reauth.
+					markRecentReauth();
+					resetLoadingBar();
 					hideLoginPage();
 					document.getElementById('login-err').classList.add('hidden');
 					document.getElementById('login-pwd').value = '';
+					document.getElementById('login-totp').value = '';
+					document.getElementById('totp-login-field').classList.add('hidden');
 					loadAllData();
 				} else {
+					if (data.totp_required) {
+						document.getElementById('totp-login-field').classList.remove('hidden');
+						document.getElementById('login-totp').focus();
+					}
 					document.getElementById('login-err').innerText = data.error || 'Access Denied';
 					document.getElementById('login-err').classList.remove('hidden');
 				}
-			} catch (e) { }
+		} catch (e) { }
 		}
-		// Show login page on first load if no token
-		(function () {
-			if (!getSessionToken()) showLoginPage();
+		// Show login page on first load if no token, or validate existing token.
+		(async function () {
+			const token = getSessionToken();
+			if (!token) {
+				showLoginPage();
+				return;
+			}
+			// Validate the stored token by requesting an admin-only endpoint.
+			try {
+				const r = await fetch('/api/v1/settings', {
+					headers: { 'Authorization': 'Bearer ' + token }
+				});
+				if (!r.ok) {
+					// Token is stale (server restarted) — clear and show login.
+					clearSessionToken();
+					showLoginPage();
+					return;
+				}
+				loadAllData();
+			} catch (e) {
+				clearSessionToken();
+				showLoginPage();
+			}
 		})();
 	</script>
 </body>

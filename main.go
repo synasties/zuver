@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -14,6 +18,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,6 +34,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/pbkdf2"
 
 	_ "modernc.org/sqlite"
 )
@@ -152,9 +158,19 @@ type MCPServer struct {
 type ChatMessage struct {
 	ID        int    `json:"id"`
 	AgentID   string `json:"agent_id"`
+	SessionID string `json:"session_id"`
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	Timestamp string `json:"timestamp"`
+}
+
+// ChatSession represents a conversation session within an agent.
+type ChatSession struct {
+	ID        string `json:"id"`
+	AgentID   string `json:"agent_id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // App encapsulates the global database connections for the framework.
@@ -213,11 +229,12 @@ func bcryptCompare(hash, password string) bool {
 func generateRandomPassword() (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
 	for i := range b {
-		b[i] = chars[int(b[i])%len(chars)]
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = chars[n.Int64()]
 	}
 	return string(b), nil
 }
@@ -376,7 +393,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.3.3"
+const CurrentVersion = "v1.4.0"
 
 // updateInfo caches the latest release info from GitHub.
 type updateInfo struct {
@@ -443,11 +460,15 @@ func checkForUpdate() {
 var (
 	dbWriteQueue  = make(chan DBTask, 10000)
 	adminToken    string
+	adminTokenExp time.Time
+	adminTokenMu  sync.RWMutex
 	loginAttempts = make(map[string]int)
 	lockoutTime   = make(map[string]time.Time)
 	authMu        sync.Mutex
 	dbWriteMu     sync.Mutex
 )
+
+const adminTokenTTL = 24 * time.Hour
 
 // CSRF token store: token → timestamp
 var (
@@ -655,7 +676,11 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Admin token always passes without scope restriction.
-		if adminToken != "" && token == adminToken {
+		adminTokenMu.RLock()
+		currentAdminToken := adminToken
+		tokenExp := adminTokenExp
+		adminTokenMu.RUnlock()
+		if currentAdminToken != "" && token == currentAdminToken && time.Now().Before(tokenExp) {
 			if requiresRecentReauth(r) {
 				reauthOK := false
 				if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Reauth-Verified")), "true") {
@@ -849,6 +874,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Password string `json:"password"`
+		TOTPCode string `json:"totp_code"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
@@ -905,11 +931,15 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		loginAttempts[ip] = 0
 		b := make([]byte, 32)
 		rand.Read(b)
+		adminTokenMu.Lock()
 		adminToken = "tok_" + hex.EncodeToString(b)
+		adminTokenExp = time.Now().Add(adminTokenTTL)
+		newAdminToken := adminToken
+		adminTokenMu.Unlock()
 		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login - auto-generated password")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token":         adminToken,
+			"token":         newAdminToken,
 			"password":      generatedPassword,
 			"password_set":  "true",
 		})
@@ -941,6 +971,23 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if bcryptCompare(dbHash, req.Password) {
+		// Check if TOTP 2FA is enabled — require TOTP code if so.
+		var totpEnabled string
+		a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='totp_enabled'").Scan(&totpEnabled)
+		if totpEnabled == "true" {
+			if req.TOTPCode == "" {
+				http.Error(w, `{"error": "TOTP code required", "totp_required": true}`, http.StatusUnauthorized)
+				return
+			}
+			var totpSecret string
+			a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='totp_secret'").Scan(&totpSecret)
+			if !verifyTOTP(totpSecret, req.TOTPCode) {
+				a.appendSecurityEvent("totp_verify_fail", r.URL.Path, ip, "invalid TOTP code on login")
+				http.Error(w, `{"error": "Invalid TOTP code"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
 		loginAttempts[ip] = 0
 		// Use crypto/rand for an unpredictable session token.
 		b := make([]byte, 32)
@@ -949,10 +996,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
 			return
 		}
+		adminTokenMu.Lock()
 		adminToken = "tok_" + hex.EncodeToString(b)
+		adminTokenExp = time.Now().Add(adminTokenTTL)
+		currentToken := adminToken
+		adminTokenMu.Unlock()
 		a.appendSecurityEvent("login_success", r.URL.Path, ip, "admin login succeeded")
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": adminToken})
+		json.NewEncoder(w).Encode(map[string]string{"token": currentToken})
 	} else {
 		loginAttempts[ip]++
 		if loginAttempts[ip] >= 5 {
@@ -1042,6 +1093,48 @@ func getEmbedding(text string, db *sql.DB) []float32 {
 	}
 
 	return vec
+}
+
+// generateImage calls an OpenAI-compatible image generation API (DALL-E, etc.)
+// and returns a base64-encoded image or a URL.
+func generateImage(prompt, model, apiKey, endpoint string) (string, string, error) {
+	if model == "" {
+		model = "dall-e-3"
+	}
+	apiURL := strings.TrimRight(endpoint, "/") + "/images/generations"
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"model":  model,
+		"prompt": prompt,
+		"n":      1,
+		"size":   "1024x1024",
+	})
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if resp.StatusCode != 200 {
+		return "", "", fmt.Errorf("image generation failed: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", "", err
+	}
+	if len(result.Data) == 0 {
+		return "", "", fmt.Errorf("no image returned")
+	}
+	return result.Data[0].URL, "image/png", nil
 }
 
 func getEmbeddingLocal(text, endpoint string) []float32 {
@@ -1163,6 +1256,44 @@ func triggerPagination(agentID string, data string, pageSize int) string {
 }
 
 // loggingMiddleware records inbound HTTP routing behavior.
+// Global per-IP rate limiter for all endpoints.
+var (
+	globalRateBuckets = make(map[string]*rateBucket)
+	globalRateMu      sync.Mutex
+	globalRateLimit   = 60 // requests per minute per IP
+)
+
+func globalRateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip rate limiting for login and static files.
+		if r.URL.Path == "/api/v1/login" || !strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ip := r.RemoteAddr
+		if idx := strings.LastIndex(ip, ":"); idx != -1 {
+			ip = ip[:idx]
+		}
+		globalRateMu.Lock()
+		now := time.Now()
+		b, exists := globalRateBuckets[ip]
+		if !exists || now.After(b.windowEnd) {
+			globalRateBuckets[ip] = &rateBucket{count: 1, windowEnd: now.Add(time.Minute)}
+		} else {
+			b.count++
+			if b.count > globalRateLimit {
+				globalRateMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, `{"error":"Rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+		}
+		globalRateMu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[HTTP] %s %s", r.Method, r.URL.Path)
@@ -1214,6 +1345,7 @@ func main() {
 		`CREATE TABLE IF NOT EXISTS analytics_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, entity_type TEXT, entity_id TEXT, tokens INT, is_success BOOLEAN)`,
 		`CREATE TABLE IF NOT EXISTS security_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, action TEXT, path TEXT, actor TEXT, detail TEXT)`,
 		`CREATE TABLE IF NOT EXISTS embedding_cache (hash TEXT PRIMARY KEY, embedding TEXT, model TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE IF NOT EXISTS chat_sessions (id TEXT PRIMARY KEY, agent_id TEXT, name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	}
 	for _, q := range tables {
 		if _, err := db.Exec(q); err != nil {
@@ -1231,6 +1363,7 @@ func main() {
 	autoMigrateColumn(db, "providers", "extra_config", "TEXT DEFAULT '{}'")
 	autoMigrateColumn(db, "providers", "models", "TEXT DEFAULT '[]'")
 	autoMigrateColumn(db, "analytics_logs", "cost", "REAL DEFAULT 0")
+	autoMigrateColumn(db, "chat_history", "session_id", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "agents", "can_create_skills", "INTEGER DEFAULT 0")
 	autoMigrateColumn(db, "agents", "stream_enabled", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "projects", "tags", "TEXT DEFAULT ''")
@@ -1390,12 +1523,16 @@ func main() {
 			http.Error(w, `{"error":"provider not found"}`, http.StatusNotFound)
 			return
 		}
-		// SSRF guard: Ollama and other local providers are intentionally local, so we skip
-		// the private-host check for those — but reject obviously non-HTTP(S) schemes.
+		// SSRF guard: Ollama is intentionally local, but block private hosts for other provider types.
 		parsedEP, epErr := url.ParseRequestURI(strings.TrimRight(endpoint, "/"))
 		if epErr != nil || (parsedEP.Scheme != "http" && parsedEP.Scheme != "https") {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "invalid endpoint scheme"})
+			return
+		}
+		if strings.ToLower(pType) != "ollama" && isPrivateHost(endpoint) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "private host blocked for non-local providers"})
 			return
 		}
 		// Build a minimal models/ping request appropriate for the provider type.
@@ -1498,6 +1635,10 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/history/{agent_id}", app.handleClearChatHistory)
 	mux.HandleFunc("GET /api/v1/history/{agent_id}/export", app.handleExportChatHistory)
 
+	mux.HandleFunc("GET /api/v1/sessions/{agent_id}", app.handleGetSessions)
+	mux.HandleFunc("POST /api/v1/sessions/{agent_id}", app.handleCreateSession)
+	mux.HandleFunc("DELETE /api/v1/sessions/{session_id}", app.handleDeleteSession)
+
 	mux.HandleFunc("GET /api/v1/tasks", app.handleGetTasks)
 	mux.HandleFunc("POST /api/v1/tasks", app.handleCreateTask)
 	mux.HandleFunc("PUT /api/v1/tasks/{id}", app.handleUpdateTask)
@@ -1560,6 +1701,64 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/v1/login", app.handleLogin)
+	mux.HandleFunc("POST /api/v1/logout", func(w http.ResponseWriter, r *http.Request) {
+		adminTokenMu.Lock()
+		adminToken = ""
+		adminTokenExp = time.Time{}
+		adminTokenMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	// TOTP 2FA endpoints.
+	mux.HandleFunc("POST /api/v1/settings/totp/setup", func(w http.ResponseWriter, r *http.Request) {
+		secret := generateTOTPSecret()
+		qrURL := getTOTPQRCodeURL(secret, "zuver@admin")
+		// Store the secret temporarily (not yet enabled).
+		app.ConfigDB.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('totp_secret', ?)", secret)
+		app.ConfigDB.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('totp_enabled', 'false')")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"secret": secret, "qr_url": qrURL})
+	})
+
+	mux.HandleFunc("POST /api/v1/settings/totp/verify", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Code string `json:"code"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		var secret string
+		app.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='totp_secret'").Scan(&secret)
+		if secret == "" {
+			http.Error(w, `{"error":"TOTP not set up"}`, http.StatusBadRequest)
+			return
+		}
+		if !verifyTOTP(secret, req.Code) {
+			app.appendSecurityEvent("totp_verify_fail", r.URL.Path, "admin", "invalid TOTP code")
+			http.Error(w, `{"error":"Invalid TOTP code"}`, http.StatusUnauthorized)
+			return
+		}
+		// Enable TOTP.
+		app.ConfigDB.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('totp_enabled', 'true')")
+		app.appendSecurityEvent("totp_enabled", r.URL.Path, "admin", "TOTP 2FA enabled")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("DELETE /api/v1/settings/totp", func(w http.ResponseWriter, r *http.Request) {
+		app.ConfigDB.Exec("DELETE FROM settings WHERE key='totp_secret'")
+		app.ConfigDB.Exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('totp_enabled', 'false')")
+		app.appendSecurityEvent("totp_disabled", r.URL.Path, "admin", "TOTP 2FA disabled")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("GET /api/v1/settings/totp", func(w http.ResponseWriter, r *http.Request) {
+		var enabled string
+		app.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='totp_enabled'").Scan(&enabled)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"enabled": enabled == "true"})
+	})
+
 	mux.HandleFunc("GET /api/v1/security/logs", func(w http.ResponseWriter, r *http.Request) {
 		limit := 100
 		if l := r.URL.Query().Get("limit"); l != "" {
@@ -1741,56 +1940,74 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	// Backup: export all data as a single JSON file.
+	// Backup: export all data as a single JSON file, optionally encrypted with a password.
+	// Usage: GET /api/v1/backup (plaintext) or POST /api/v1/backup (encrypted with password in body)
 	mux.HandleFunc("GET /api/v1/backup", func(w http.ResponseWriter, r *http.Request) {
-		backup := map[string]interface{}{}
-		tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
-		for _, t := range tables {
-			rows, err := app.ConfigDB.Query("SELECT * FROM " + t)
-			if err != nil {
-				continue
-			}
-			cols, _ := rows.Columns()
-			var rowsData []map[string]interface{}
-			for rows.Next() {
-				values := make([]interface{}, len(cols))
-				ptrs := make([]interface{}, len(cols))
-				for i := range values {
-					ptrs[i] = &values[i]
-				}
-				rows.Scan(ptrs...)
-				row := make(map[string]interface{})
-				for i, col := range cols {
-					v := values[i]
-					if b, ok := v.([]byte); ok {
-						row[col] = string(b)
-					} else {
-						row[col] = v
-					}
-				}
-				rowsData = append(rowsData, row)
-			}
-			rows.Close()
-			backup[t] = rowsData
-		}
-		backup["_meta"] = map[string]interface{}{
-			"version":   CurrentVersion,
-			"exported_at": time.Now().UTC().Format(time.RFC3339),
-		}
+		backup := buildBackupData(app)
 		out, _ := json.MarshalIndent(backup, "", "  ")
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", `attachment; filename="zuver_backup.json"`)
 		w.Write(out)
 	})
 
+	mux.HandleFunc("POST /api/v1/backup", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Password string `json:"password"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Password == "" {
+			http.Error(w, `{"error":"password required"}`, http.StatusBadRequest)
+			return
+		}
+		backup := buildBackupData(app)
+		out, _ := json.MarshalIndent(backup, "", "  ")
+		encrypted, err := encryptBackup(out, req.Password)
+		if err != nil {
+			http.Error(w, `{"error":"encryption failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", `attachment; filename="zuver_backup.enc"`)
+		w.Write(encrypted)
+	})
+
 	// Restore: import data from a JSON backup file.
 	mux.HandleFunc("POST /api/v1/restore", func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50 MB max
-		var backup map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&backup); err != nil {
-			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+		rawBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, `{"error":"failed to read body"}`, http.StatusBadRequest)
 			return
 		}
+
+		// Try to parse as JSON first. If it fails, try to decrypt with password.
+		var backup map[string]interface{}
+		if err := json.Unmarshal(rawBody, &backup); err != nil {
+			// Not valid JSON — try to decrypt as encrypted backup.
+			var req struct {
+				Password string `json:"password"`
+				Data     string `json:"data"` // base64-encoded encrypted data
+			}
+			if err2 := json.Unmarshal(rawBody, &req); err2 != nil || req.Data == "" || req.Password == "" {
+				http.Error(w, `{"error":"invalid JSON or missing password/data"}`, http.StatusBadRequest)
+				return
+			}
+			encrypted, decErr := base64.StdEncoding.DecodeString(req.Data)
+			if decErr != nil {
+				http.Error(w, `{"error":"invalid base64 data"}`, http.StatusBadRequest)
+				return
+			}
+			plaintext, decErr := decryptBackup(encrypted, req.Password)
+			if decErr != nil {
+				http.Error(w, `{"error":"decryption failed: wrong password?"}`, http.StatusUnauthorized)
+				return
+			}
+			if err := json.Unmarshal(plaintext, &backup); err != nil {
+				http.Error(w, `{"error":"decrypted data is not valid JSON"}`, http.StatusBadRequest)
+				return
+			}
+		}
+
 		app.appendSecurityEvent("database_restore", r.URL.Path, "admin", "database restore initiated")
 		tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
 		imported := 0
@@ -1810,7 +2027,14 @@ func main() {
 			}
 			cols := make([]string, 0, len(firstRow))
 			for k := range firstRow {
+				// Security: validate column names to prevent SQL injection.
+				if !safeTableNameRe.MatchString(k) {
+					continue
+				}
 				cols = append(cols, k)
+			}
+			if len(cols) == 0 {
+				continue
 			}
 			// Clear existing data.
 			app.ConfigDB.Exec("DELETE FROM " + t)
@@ -1928,7 +2152,7 @@ func main() {
 		// Inline HTML confirmation page — no external dependencies on this host.
 		escapedTitle := strings.ReplaceAll(title, `"`, `&quot;`)
 		escapedDesc := strings.ReplaceAll(desc, `"`, `&quot;`)
-		escapedConfigURL := configURL
+		escapedConfigURL := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(configURL, "&", "&amp;"), "\"", "&quot;"), "<", "&lt;")
 
 		html := `<!DOCTYPE html>
 <html lang="en">
@@ -2198,7 +2422,7 @@ async function doImport(e) {
 		port = "18806"
 	}
 
-	handler := app.securityHeadersMiddleware(loggingMiddleware(app.authMiddleware(mux)))
+	handler := app.securityHeadersMiddleware(globalRateLimitMiddleware(loggingMiddleware(app.authMiddleware(mux))))
 	server := &http.Server{
 		Addr:              ":" + port,
 		Handler:           handler,
@@ -2224,7 +2448,7 @@ async function doImport(e) {
 
 // allowedSkillTypes is the closed set of values the "type" field may hold.
 var allowedSkillTypes = map[string]bool{
-	"API": true, "Go": true, "Bash": true, "Python": true, "JavaScript": true, "Text": true, "Prompt": true, "MD": true, "Agent": true,
+	"API": true, "Go": true, "Bash": true, "Python": true, "JavaScript": true, "Text": true, "Prompt": true, "MD": true, "Agent": true, "Placeholder": true,
 }
 
 // dangerousPatterns lists substrings that must not appear inside any string
@@ -2381,6 +2605,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		AgentID         string   `json:"agent_id"`
+		SessionID       string   `json:"session_id"`
 		Message         string   `json:"message"`
 		FilePath        string   `json:"file_path"`  // legacy single file
 		FilePaths       []string `json:"file_paths"` // multi-file array (takes precedence)
@@ -2544,7 +2769,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 skipPresidio:
 
-	AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", agent.ID, "user", processedUserMsg)
+	AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", agent.ID, req.SessionID, "user", processedUserMsg)
 
 	// --- Build help panel & allowlists ---
 	helpPanel := "Commands:\n/getSourcesList\n/getSourceData <id>\n/nextPage\n/getRAGList\n/getRAGDataList <id>\n/addRAGData <id> <name> <data>\n/deleteRAGData <id> <name>\n/editRAGData <id> <name> <data>\n/getPrefList\n/getPrefDataList <id>\n/addPrefData <id> <name> <data>\n/deletePrefData <id> <name>\n/editPrefData <id> <name> <data>\n"
@@ -3286,13 +3511,13 @@ skipPresidio:
 
 			sysMsg := fmt.Sprintf("[SYSTEM SUCCESS] Native Go Skill '%s' compiled and mounted. You can now use /%s. Please inform the user.", editorState["name"], editorState["name"])
 			messages = append(messages, map[string]interface{}{"role": "user", "content": sysMsg})
-			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", agent.ID, "system", sysMsg)
+			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", agent.ID, req.SessionID, "system", sysMsg)
 			continue
 		}
 
 		messages = append(messages, map[string]interface{}{"role": "assistant", "content": replyContent})
 		executionLogs = append(executionLogs, "[Agent]: "+replyContent)
-		AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", agent.ID, "assistant", replyContent)
+		AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", agent.ID, req.SessionID, "assistant", replyContent)
 
 		// --- Command parsing ---
 		var cmdLines []string
@@ -3351,7 +3576,25 @@ skipPresidio:
 			}
 
 			combinedSysMsg = strings.TrimSpace(combinedSysMsg)
-			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", agent.ID, "system", combinedSysMsg)
+			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", agent.ID, req.SessionID, "system", combinedSysMsg)
+
+			// Check if any result should be sent directly to user (Agent Skill with return_to: "user").
+			if strings.HasPrefix(combinedSysMsg, "[USER_REPLY]") {
+				userReply := strings.TrimPrefix(combinedSysMsg, "[USER_REPLY]")
+				AsyncDBExec(a.ConfigDB, "UPDATE agents SET token_usage = token_usage + ? WHERE id = ?", totalTokensUsed, agent.ID)
+				AsyncDBExec(a.ConfigDB, "UPDATE providers SET token_usage = token_usage + ? WHERE id = ?", totalTokensUsed, agent.ProviderID)
+				a.logAnalytics("agent", agent.ID, totalTokensUsed, true)
+				a.logAnalytics("provider", agent.ProviderID, totalTokensUsed, true)
+				if useStream {
+					sseEmit(map[string]interface{}{"delta": userReply})
+					sseEmit(map[string]interface{}{"done": true, "logs": executionLogs})
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(map[string]interface{}{"reply": userReply, "logs": executionLogs})
+				}
+				return
+			}
+
 			messages = append(messages, map[string]interface{}{"role": "user", "content": combinedSysMsg})
 			continue
 		}
@@ -3361,6 +3604,40 @@ skipPresidio:
 		AsyncDBExec(a.ConfigDB, "UPDATE providers SET token_usage = token_usage + ? WHERE id = ?", totalTokensUsed, agent.ProviderID)
 		a.logAnalytics("agent", agent.ID, totalTokensUsed, true)
 		a.logAnalytics("provider", agent.ProviderID, totalTokensUsed, true)
+
+		// --- Auto-generation routing ---
+		// If agent's output methods don't include Text, route reply to generations API.
+		var outputMethods []string
+		json.Unmarshal([]byte(agent.OutputMethods), &outputMethods)
+		hasTextOutput := false
+		for _, m := range outputMethods {
+			if m == "Text" || m == "MD" {
+				hasTextOutput = true
+				break
+			}
+		}
+		if !hasTextOutput && len(outputMethods) > 0 {
+			// Determine which generation API to call based on output methods.
+			var prov Provider
+			if err := a.ConfigDB.QueryRow("SELECT api_key, endpoint FROM providers WHERE id=?", agent.ProviderID).Scan(&prov.APIKey, &prov.Endpoint); err == nil {
+				for _, m := range outputMethods {
+					switch m {
+					case "Image":
+						executionLogs = append(executionLogs, "[Image Generation]: Generating image...")
+						imgURL, _, imgErr := generateImage(replyContent, "dall-e-3", prov.APIKey, prov.Endpoint)
+						if imgErr == nil && imgURL != "" {
+							replyContent = imgURL
+							executionLogs = append(executionLogs, "[Image Generation]: Success")
+						} else {
+							executionLogs = append(executionLogs, "[Image Generation Error]: "+imgErr.Error())
+						}
+					case "Video", "Audio":
+						executionLogs = append(executionLogs, fmt.Sprintf("[Generation]: %s generation not yet implemented.", m))
+					}
+					break // Use the first matching generation type.
+				}
+			}
+		}
 
 		// Dispatch webhook outputs asynchronously.
 		go a.dispatchWebhookOutputs(agent, replyContent)
@@ -3849,9 +4126,23 @@ func (a *App) executeCommand(
 			case "Agent":
 				// Call a sub-agent synchronously; agentArgs become the input text.
 				input := strings.Join(agentArgs, " ")
-				return a.callAgentSkill(sContent, input)
+				// Check if skill config has return_to: "user" to send result directly to user.
+				var skillCfg struct {
+					ReturnTo string `json:"return_to"`
+				}
+				json.Unmarshal([]byte(sContent), &skillCfg)
+				result := a.callAgentSkill(sContent, input)
+				if skillCfg.ReturnTo == "user" {
+					// Prefix with marker so handleChat knows to send this directly to user.
+					return "[USER_REPLY]" + result
+				}
+				return result
 			case "MD":
 				return "[INSTRUCTION]\n" + sContent
+			case "Placeholder":
+				// Placeholder skills don't execute anything — the command is returned as-is
+				// so the agent treats it as a normal response to show to the user.
+				return cLine
 			case "Bash", "Go", "JavaScript":
 				fCode := sContent
 				ph := extractPlaceholders(sContent)
@@ -3911,6 +4202,10 @@ func (a *App) executeCommand(
 						fHead = strings.ReplaceAll(fHead, ph[i], arg)
 						fBody = strings.ReplaceAll(fBody, ph[i], arg)
 					}
+				}
+				// SSRF guard: block requests to private/loopback addresses.
+				if isPrivateHost(fUrl) {
+					return "[API ERROR] URL targets a private/loopback address and is blocked."
 				}
 				apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
 				var hm map[string]string
@@ -4037,9 +4332,17 @@ func autoMigrateColumn(db *sql.DB, table string, column string, colDef string) {
 	}
 }
 
-// handleGetChatHistory retrieves conversation history for a specific agent.
+// handleGetChatHistory retrieves conversation history for a specific agent, optionally filtered by session.
 func (a *App) handleGetChatHistory(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, role, content, timestamp FROM chat_history WHERE agent_id=? ORDER BY id ASC", r.PathValue("agent_id"))
+	agentID := r.PathValue("agent_id")
+	sessionID := r.URL.Query().Get("session_id")
+	var rows *sql.Rows
+	var err error
+	if sessionID != "" {
+		rows, err = a.ConfigDB.Query("SELECT id, role, content, timestamp FROM chat_history WHERE agent_id=? AND session_id=? ORDER BY id ASC", agentID, sessionID)
+	} else {
+		rows, err = a.ConfigDB.Query("SELECT id, role, content, timestamp FROM chat_history WHERE agent_id=? AND (session_id='' OR session_id IS NULL) ORDER BY id ASC", agentID)
+	}
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]ChatMessage{})
@@ -4049,7 +4352,8 @@ func (a *App) handleGetChatHistory(w http.ResponseWriter, r *http.Request) {
 	var list []ChatMessage
 	for rows.Next() {
 		var m ChatMessage
-		m.AgentID = r.PathValue("agent_id")
+		m.AgentID = agentID
+		m.SessionID = sessionID
 		rows.Scan(&m.ID, &m.Role, &m.Content, &m.Timestamp)
 		list = append(list, m)
 	}
@@ -4127,6 +4431,52 @@ func (a *App) handleExportChatHistory(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.json"`, agentID))
 	w.Write(out)
+}
+
+func (a *App) handleGetSessions(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agent_id")
+	rows, err := a.ConfigDB.Query("SELECT id, agent_id, name, created_at, updated_at FROM chat_sessions WHERE agent_id=? ORDER BY updated_at DESC", agentID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]ChatSession{})
+		return
+	}
+	defer rows.Close()
+	var list []ChatSession
+	for rows.Next() {
+		var s ChatSession
+		rows.Scan(&s.ID, &s.AgentID, &s.Name, &s.CreatedAt, &s.UpdatedAt)
+		list = append(list, s)
+	}
+	if list == nil {
+		list = []ChatSession{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
+}
+
+func (a *App) handleCreateSession(w http.ResponseWriter, r *http.Request) {
+	agentID := r.PathValue("agent_id")
+	var req struct {
+		Name string `json:"name"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	if req.Name == "" {
+		req.Name = time.Now().Format("2006-01-02 15:04")
+	}
+	sessionID := fmt.Sprintf("sess_%d", time.Now().UnixNano())
+	now := time.Now().Format(time.RFC3339)
+	a.ConfigDB.Exec("INSERT INTO chat_sessions (id, agent_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", sessionID, agentID, req.Name, now, now)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"id": sessionID, "name": req.Name})
+}
+
+func (a *App) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("session_id")
+	a.ConfigDB.Exec("DELETE FROM chat_history WHERE session_id=?", sessionID)
+	a.ConfigDB.Exec("DELETE FROM chat_sessions WHERE id=?", sessionID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
@@ -4215,6 +4565,230 @@ func maskSecret(secret string) string {
 		return strings.Repeat("•", 8)
 	}
 	return secret[:4] + strings.Repeat("•", len(secret)-8) + secret[len(secret)-4:]
+}
+
+// buildBackupData collects all database tables into a map for backup/restore.
+func buildBackupData(app *App) map[string]interface{} {
+	backup := map[string]interface{}{}
+	tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
+	for _, t := range tables {
+		rows, err := app.ConfigDB.Query("SELECT * FROM " + t)
+		if err != nil {
+			continue
+		}
+		cols, _ := rows.Columns()
+		var rowsData []map[string]interface{}
+		for rows.Next() {
+			values := make([]interface{}, len(cols))
+			ptrs := make([]interface{}, len(cols))
+			for i := range values {
+				ptrs[i] = &values[i]
+			}
+			rows.Scan(ptrs...)
+			row := make(map[string]interface{})
+			for i, col := range cols {
+				v := values[i]
+				if b, ok := v.([]byte); ok {
+					row[col] = string(b)
+				} else {
+					row[col] = v
+				}
+			}
+			rowsData = append(rowsData, row)
+		}
+		rows.Close()
+		backup[t] = rowsData
+	}
+	backup["_meta"] = map[string]interface{}{
+		"version":    CurrentVersion,
+		"exported_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	return backup
+}
+
+// encryptBackup encrypts JSON data with a password using AES-256-GCM + PBKDF2.
+func encryptBackup(data []byte, password string) ([]byte, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, err
+	}
+	key := deriveKey(password, salt)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	ciphertext := aesGCM.Seal(nil, nonce, data, nil)
+	// Format: salt(16) + nonce(12) + ciphertext
+	result := make([]byte, 0, 16+12+len(ciphertext))
+	result = append(result, salt...)
+	result = append(result, nonce...)
+	result = append(result, ciphertext...)
+	return result, nil
+}
+
+// decryptBackup decrypts AES-256-GCM encrypted data with a password.
+func decryptBackup(data []byte, password string) ([]byte, error) {
+	if len(data) < 28 { // 16 (salt) + 12 (nonce) minimum
+		return nil, fmt.Errorf("invalid encrypted data")
+	}
+	salt := data[:16]
+	nonce := data[16:28]
+	ciphertext := data[28:]
+	key := deriveKey(password, salt)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decryption failed (wrong password?)")
+	}
+	return plaintext, nil
+}
+
+// deriveKey derives a 32-byte AES key from a password using PBKDF2-SHA256.
+func deriveKey(password string, salt []byte) []byte {
+	return pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+}
+
+// TOTP functions (RFC 6238)
+const totpPeriod = 30 // seconds
+const totpDigits = 6
+
+// generateTOTPSecret generates a random base32-encoded TOTP secret.
+func generateTOTPSecret() string {
+	b := make([]byte, 20) // 160 bits
+	rand.Read(b)
+	return base32Encode(b)
+}
+
+// base32Encode encodes bytes to RFC 4648 base32 without padding.
+func base32Encode(data []byte) string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	var result []byte
+	for i := 0; i < len(data); i += 5 {
+		// Read up to 5 bytes into a 40-bit buffer.
+		var buf [5]byte
+		n := copy(buf[:], data[i:])
+		var val uint64
+		for j := 0; j < n; j++ {
+			val = (val << 8) | uint64(buf[j])
+		}
+		// Pad remaining bytes with zeros if less than 5.
+		for j := n; j < 5; j++ {
+			val <<= 8
+		}
+		// Extract 8 base32 characters (5 bits each).
+		for j := 0; j < 8; j++ {
+			idx := val >> (35 - j*5) & 31
+			result = append(result, alphabet[idx])
+		}
+	}
+	return string(result)
+}
+
+// verifyTOTP verifies a TOTP code against a secret. Returns true if valid.
+func verifyTOTP(secret, code string) bool {
+	if len(code) != totpDigits {
+		return false
+	}
+	secretBytes, err := base32Decode(secret)
+	if err != nil {
+		return false
+	}
+	// Check current time window and ±1 window for clock skew.
+	now := time.Now().Unix()
+	for _, offset := range []int64{-1, 0, 1} {
+		counter := uint64((now / totpPeriod) + offset)
+		if generateTOTPCode(secretBytes, counter) == code {
+			return true
+		}
+	}
+	return false
+}
+
+// generateTOTPCode generates a 6-digit TOTP code for a given counter.
+func generateTOTPCode(secret []byte, counter uint64) string {
+	buf := make([]byte, 8)
+	buf[0] = byte(counter >> 56)
+	buf[1] = byte(counter >> 48)
+	buf[2] = byte(counter >> 40)
+	buf[3] = byte(counter >> 32)
+	buf[4] = byte(counter >> 24)
+	buf[5] = byte(counter >> 16)
+	buf[6] = byte(counter >> 8)
+	buf[7] = byte(counter)
+
+	// TOTP RFC 6238 uses HMAC-SHA1.
+	mac := hmac.New(sha1.New, secret)
+	mac.Write(buf)
+	hash := mac.Sum(nil)
+
+	offset := hash[len(hash)-1] & 0x0f
+	code := uint32(hash[offset])&0x7f<<24 | uint32(hash[offset+1])&0xff<<16 | uint32(hash[offset+2])&0xff<<8 | uint32(hash[offset+3])&0xff
+	code = code % 1000000
+
+	return fmt.Sprintf("%06d", code)
+}
+
+// base32Decode decodes an RFC 4648 base32 string to bytes.
+func base32Decode(s string) ([]byte, error) {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	s = strings.ToUpper(strings.TrimSpace(s))
+	s = strings.TrimRight(s, "=")
+	if len(s) == 0 {
+		return nil, fmt.Errorf("empty base32 string")
+	}
+	// Process in groups of 8 characters (= 5 bytes).
+	var result []byte
+	for i := 0; i < len(s); i += 8 {
+		chunk := s[i:]
+		if len(chunk) > 8 {
+			chunk = chunk[:8]
+		}
+		var val uint64
+		for j, c := range chunk {
+			idx := strings.IndexByte(alphabet, byte(c))
+			if idx < 0 {
+				return nil, fmt.Errorf("invalid base32 character: %c", c)
+			}
+			val = val<<5 | uint64(idx)
+			_ = j
+		}
+		// Pad short chunks: shift left to align.
+		if len(chunk) < 8 {
+			val <<= uint((8 - len(chunk)) * 5)
+		}
+		// Extract up to 5 bytes.
+		for j := 0; j < 5; j++ {
+			b := byte(val >> (32 - j*8))
+			// Only append bytes that were actually encoded.
+			if j < len(chunk)*5/8 || (len(chunk)*5)%8 != 0 && j == len(chunk)*5/8 {
+				result = append(result, b)
+			} else if len(chunk) == 8 {
+				result = append(result, b)
+			}
+		}
+	}
+	return result, nil
+}
+
+// getTOTPQRCodeURL generates an otpauth:// URI for QR code generation.
+func getTOTPQRCodeURL(secret, account string) string {
+	return fmt.Sprintf("otpauth://totp/Zuver:%s?secret=%s&issuer=Zuver&digits=%d&period=%d",
+		account, secret, totpDigits, totpPeriod)
 }
 
 func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
