@@ -21,27 +21,31 @@
 
 ## ✨ Features
 
-* 🌌 **Omniscient & Omnipotent.** Supports OpenAI-standard Skills, featuring Generative Skills, Workflows, Computer control, and more.
+* 🌌 **Omniscient & Omnipotent.** Supports OpenAI-standard Skills, featuring Generative Skills, Workflows, Computer control, and more. Agent auto-routes to image/video/audio generation APIs when output modalities are configured.
 
-* ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maxmized speed, while supporting multi-threading for real-time execution.
-  
-* 💻 **Bash for LLM.** Utilizing pseudo-terminals and natural-language-like programming, empowering your Agent to use Skills and APIs via LLMs out-of-the-box.
+* ⚡ **Lightweight yet reliable.** Completely developed with Go and HTML for maximized speed, while supporting multi-threading for real-time execution.
 
-* 🛡️ **Privacy by Design.** Leveraging a revolutionary Edge + Cloud hybrid model architecture to provide privacy-first desensitization and semantic obfuscation capabilities.
+* 💻 **Bash for LLM.** Utilizing pseudo-terminals and natural-language-like programming, empowering your Agent to use Skills and APIs via LLMs out-of-the-box. Optional Docker isolation for sandboxed execution.
 
-* 🗜️ **Multi-level Context Compression.** Utilizing Generative RAG, Preferences and highly configurable parameters to grant your Agent a long-term, stable personality and memory.
-  
-* 🔐 **Granular Permission Control.** Let your Agent know what it can do, and respect what it cannot. Strictly manage the Agent's capability boundaries via the Sources and Outputs panels.
+* 🛡️ **Privacy by Design.** Leveraging a revolutionary Edge + Cloud hybrid model architecture to provide privacy-first desensitization and semantic obfuscation capabilities. Supports TOTP 2FA and session expiration.
+
+* 🗜️ **Multi-level Context Compression.** Utilizing Generative RAG with optional auto-chunking, embedding caching, hybrid search (vector + keyword), and local embedding models for long-term Agent memory.
+
+* 🔐 **Granular Permission Control.** Let your Agent know what it can do, and respect what it cannot. Strictly manage the Agent's capability boundaries via the Sources and Outputs panels. Multi-session chat support for context management.
 
 * ☁️ **Privacy-First Cloud Features.** Access and download Skills, Workflows, and Agent presets for free via the companion **Matex Market**; allow authorized third-party apps to access data securely through the Sync mechanism.
 
-* 🤝 **Multi-Model Collaboration.** Supports multi-model cooperation, multi-modal synergy, and model orchestration, allowing your Agent to combine the best of all worlds.
+* 🤝 **Multi-Model Collaboration.** Supports multi-model cooperation, multi-modal synergy, and model orchestration, allowing your Agent to combine the best of all worlds. Provider model pricing for cost estimation.
 
 * 🔌 **Choose Your Favorite Provider.** Fully compatible with OpenAI-standard APIs, as well as mainstream model providers like Ollama, LM Studio, Phala, and more.
 
 * 📱 **Choose Your Favorite Client.** Use our open-source Agent clients, or interact with your Agent directly via Web GUI or [Telegram Bot](https://github.com/synasties/zuver_telegram).
 
 * 🛠️ **Development Made Simple.** Comes with comprehensive API and SDK documentation for you to effortlessly add brand new capabilities and sensory data sources to your Agent.
+
+* 🔒 **Enterprise-Grade Security.** AES-256-GCM encrypted backups, SSRF protection, CSRF tokens, ReDoS prevention, global rate limiting, audit logging, and admin session expiration.
+
+* 🔍 **Global Search.** Press `Ctrl+K` to search across agents, skills, projects, providers, sources, and RAGs from anywhere in the application.
 
 ## 🚀 Quick Start
 
@@ -64,6 +68,8 @@ cd zuver
 go run main.go
 
 ```
+
+On first launch, a random admin password is generated and displayed in the terminal. Use it to log in via `http://localhost:18806`.
 
 ## 📚 Documentations
 
