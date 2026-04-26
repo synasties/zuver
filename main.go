@@ -334,6 +334,44 @@ func isPrivateIP(ipStr string) bool {
 	return false
 }
 
+// safeHTTPClient returns an http.Client that resolves DNS once and dials the
+// resolved IP directly, preventing DNS rebinding (TOCTOU) attacks.
+func safeHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				// Resolve DNS once.
+				ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+				if err != nil {
+					return nil, err
+				}
+				if len(ips) == 0 {
+					return nil, fmt.Errorf("no IPs found for %s", host)
+				}
+				// Try each resolved IP.
+				var lastErr error
+				for _, ipAddr := range ips {
+				    if isPrivateIP(ipAddr.IP.String()) {
+				        return nil, fmt.Errorf("security block: resolved to private IP %s", ipAddr.IP.String())
+				    }
+				    
+				    conn, err := net.DialTimeout(network, net.JoinHostPort(ipAddr.IP.String(), port), timeout)
+				    if err == nil {
+				        return conn, nil
+ 				   }
+				    lastErr = err
+				}
+				return nil, lastErr
+			},
+		},
+	}
+}
+
 // securityHeadersMiddleware adds standard defensive HTTP response headers to
 // every response: X-Content-Type-Options, X-Frame-Options, Referrer-Policy,
 // Content-Security-Policy (restrictive default), and Permissions-Policy.
@@ -393,7 +431,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.4.0"
+const CurrentVersion = "v1.4.1b1"
 
 // updateInfo caches the latest release info from GitHub.
 type updateInfo struct {
@@ -515,6 +553,19 @@ func cleanupCSRFTokens() {
 	for token, expiresAt := range csrfTokens {
 		if now.After(expiresAt) {
 			delete(csrfTokens, token)
+		}
+	}
+}
+
+// cleanupAuthState removes stale login attempts and lockout entries.
+func cleanupAuthState() {
+	authMu.Lock()
+	defer authMu.Unlock()
+	now := time.Now()
+	for ip, expiresAt := range lockoutTime {
+		if now.After(expiresAt.Add(5 * time.Minute)) {
+			delete(lockoutTime, ip)
+			delete(loginAttempts, ip)
 		}
 	}
 }
@@ -704,7 +755,8 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		// Validate external API key and load its permission document + rate limit.
 		var permJSON string
 		var rateLimit int
-		err := a.ConfigDB.QueryRow("SELECT permissions, COALESCE(rate_limit,0) FROM api_keys WHERE token=?", token).Scan(&permJSON, &rateLimit)
+		tokenHash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+		err := a.ConfigDB.QueryRow("SELECT permissions, COALESCE(rate_limit,0) FROM api_keys WHERE token_hash=?", tokenHash).Scan(&permJSON, &rateLimit)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
@@ -849,6 +901,33 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// getClientIP extracts the real client IP from the request, considering reverse proxy headers.
+// Only trusts X-Forwarded-For/X-Real-IP when the immediate peer is a known proxy (loopback/private).
+func getClientIP(r *http.Request) string {
+	// Extract immediate peer IP from RemoteAddr.
+	peer := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(peer); err == nil {
+		peer = h
+	}
+	peer = strings.Trim(peer, "[]")
+
+	// Only trust proxy headers if the immediate peer is loopback or private (i.e., behind a proxy).
+	if peer == "127.0.0.1" || peer == "::1" || peer == "localhost" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// X-Forwarded-For may contain a chain: "client, proxy1, proxy2"
+			// Take the first (leftmost) IP as the real client.
+			parts := strings.Split(xff, ",")
+			if len(parts) > 0 {
+				return strings.TrimSpace(parts[0])
+			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
+	}
+	return peer
+}
+
 // isLoopbackRemoteAddr reports whether the request appears to originate from the same host.
 // This is used to restrict first-time admin password initialization to local access only.
 func isLoopbackRemoteAddr(remoteAddr string) bool {
@@ -887,11 +966,8 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Strip port from RemoteAddr so the lockout key is IP-only.
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		ip = ip[:idx]
-	}
+	// Get real client IP (handles reverse proxy headers).
+	ip := getClientIP(r)
 
 	authMu.Lock()
 	defer authMu.Unlock()
@@ -908,7 +984,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Security: only allow bootstrap from a local loopback request so a remotely
 	// exposed fresh instance cannot be claimed by the first network caller.
 	if dbHash == "" {
-		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+		if !isLoopbackRemoteAddr(getClientIP(r)) {
 			a.appendSecurityEvent("remote_init_denied", r.URL.Path, ip, "remote first-time admin initialization blocked")
 			w.Header().Set("Content-Type", "application/json")
 			http.Error(w, `{"error": "Admin password has not been initialized yet. Complete first-time setup from localhost."}`, http.StatusForbidden)
@@ -1162,6 +1238,7 @@ func getEmbeddingOpenAI(text string, db *sql.DB) []float32 {
 	if err != nil || apiKey == "" {
 		return nil
 	}
+	apiKey = decryptSecret(apiKey)
 	apiURL := strings.TrimRight(endpoint, "/") + "/v1/embeddings"
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"input": text,
@@ -1173,7 +1250,7 @@ func getEmbeddingOpenAI(text string, db *sql.DB) []float32 {
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	resp, err := safeHTTPClient(10 * time.Second).Do(req)
 	if err != nil {
 		return nil
 	}
@@ -1270,10 +1347,7 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip := r.RemoteAddr
-		if idx := strings.LastIndex(ip, ":"); idx != -1 {
-			ip = ip[:idx]
-		}
+		ip := getClientIP(r)
 		globalRateMu.Lock()
 		now := time.Now()
 		b, exists := globalRateBuckets[ip]
@@ -1369,6 +1443,7 @@ func main() {
 	autoMigrateColumn(db, "projects", "tags", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "projects", "is_active", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "api_keys", "rate_limit", "INTEGER DEFAULT 0") // requests/minute, 0 = unlimited
+	autoMigrateColumn(db, "api_keys", "token_hash", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "outputs", "type", "TEXT DEFAULT 'Command'")   // Command | Webhook
 	autoMigrateColumn(db, "outputs", "webhook_url", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "mcp_servers", "tools", "TEXT DEFAULT '[]'") // JSON array of resolved tool names
@@ -1391,11 +1466,13 @@ func main() {
 		db.Exec("INSERT INTO projects (id, name, description, flow_json) VALUES (?, ?, ?, ?)", "proj_default", "Default Router", "System default routing pipeline.", defaultFlow)
 	}
 
+	loadOrCreateMasterKey()
 	go startDBWorker()
 	go func() {
 		for {
 			time.Sleep(5 * time.Minute)
 			cleanupCSRFTokens()
+			cleanupAuthState()
 		}
 	}()
 
@@ -1554,9 +1631,9 @@ func main() {
 				pingReq.Header.Set("Authorization", "Bearer "+apiKey)
 			}
 		}
-		client := &http.Client{Timeout: 8 * time.Second}
-		t0 := time.Now()
-		resp, err := client.Do(pingReq)
+	client := safeHTTPClient(8 * time.Second)
+	t0 := time.Now()
+	resp, err := client.Do(pingReq)
 		latency := time.Since(t0).Milliseconds()
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
@@ -1655,7 +1732,7 @@ func main() {
 		for rows.Next() {
 			var i APIKey
 			rows.Scan(&i.ID, &i.Name, &i.Description, &i.Token, &i.Permissions, &i.RateLimit)
-			i.Token = maskSecret(i.Token)
+			i.Token = maskSecret(decryptSecret(i.Token))
 			list = append(list, i)
 		}
 		if list == nil {
@@ -1673,12 +1750,10 @@ func main() {
 		}
 		i.ID = fmt.Sprintf("ak_%d", time.Now().UnixNano())
 		i.Token = "zuv-" + hex.EncodeToString([]byte(i.ID))
-		// Enforce a default minimum rate limit of 60 req/min for new API keys
-		// to prevent accidental unlimited access. Set to 0 for unlimited (admin only).
 		if i.RateLimit == 0 {
 			i.RateLimit = 60
 		}
-		app.ConfigDB.Exec("INSERT INTO api_keys (id, name, description, token, permissions, rate_limit) VALUES (?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Description, i.Token, i.Permissions, i.RateLimit)
+		app.ConfigDB.Exec("INSERT INTO api_keys (id, name, description, token, token_hash, permissions, rate_limit) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Description, encryptSecret(i.Token), fmt.Sprintf("%x", sha256.Sum256([]byte(i.Token))), i.Permissions, i.RateLimit)
 		app.appendSecurityEvent("apikey_create", r.URL.Path, "admin", fmt.Sprintf("created API key %s (%s)", i.ID, i.Name))
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -1926,7 +2001,7 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/v1/wipe-database", func(w http.ResponseWriter, r *http.Request) {
-		actor := r.RemoteAddr
+		actor := getClientIP(r)
 		if _, ok := r.Context().Value(contextKeyReauthVerified{}).(bool); ok {
 			actor = "admin"
 		}
@@ -4663,6 +4738,107 @@ func deriveKey(password string, salt []byte) []byte {
 	return pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
 }
 
+// Master key for encrypting API keys at rest.
+// Loaded from ZUVER_MASTER_KEY env var, or auto-generated and stored in .zuver_master_key.
+var masterKey []byte
+
+func loadOrCreateMasterKey() {
+	// Try environment variable first.
+	if envKey := os.Getenv("ZUVER_MASTER_KEY"); envKey != "" {
+		// Derive a 32-byte key from the env var.
+		masterKey = deriveKey(envKey, []byte("zuver-master-key-salt"))
+		log.Printf("[Security] Master key loaded from ZUVER_MASTER_KEY environment variable.")
+		return
+	}
+	// Try loading from file.
+	keyFile := ".zuver_master_key"
+	if data, err := os.ReadFile(keyFile); err == nil && len(data) == 64 {
+		// File contains hex-encoded 32-byte key.
+		key, err := hex.DecodeString(string(data))
+		if err == nil && len(key) == 32 {
+			masterKey = key
+			log.Printf("[Security] Master key loaded from %s.", keyFile)
+			return
+		}
+	}
+	// Generate new master key and save to file.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("[Security] Failed to generate master key: %v. API keys will not be encrypted.", err)
+		return
+	}
+	masterKey = b
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(b)), 0600); err != nil {
+		log.Printf("[Security] Failed to save master key to %s: %v", keyFile, err)
+	} else {
+		log.Printf("[Security] New master key generated and saved to %s. KEEP THIS FILE SAFE!", keyFile)
+	}
+}
+
+// encryptSecret encrypts a string with the master key using AES-256-GCM.
+// Returns base64-encoded ciphertext. Returns plaintext if master key is not available.
+func encryptSecret(plaintext string) string {
+	if len(masterKey) == 0 || plaintext == "" {
+		return plaintext
+	}
+	salt := make([]byte, 16)
+	rand.Read(salt)
+	block, err := aes.NewCipher(masterKey)
+	if err != nil {
+		return plaintext
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return plaintext
+	}
+	nonce := make([]byte, aesGCM.NonceSize())
+	rand.Read(nonce)
+	ciphertext := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
+	// Format: base64(salt + nonce + ciphertext)
+	result := make([]byte, 0, 16+12+len(ciphertext))
+	result = append(result, salt...)
+	result = append(result, nonce...)
+	result = append(result, ciphertext...)
+	return base64.StdEncoding.EncodeToString(result)
+}
+
+// decryptSecret decrypts a base64-encoded ciphertext with the master key.
+// Returns plaintext. Returns the input unchanged if master key is not available or decryption fails.
+func decryptSecret(ciphertext string) string {
+	if len(masterKey) == 0 || ciphertext == "" {
+		return ciphertext
+	}
+	data, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil || len(data) < 28 {
+		return ciphertext // Not encrypted or invalid, return as-is.
+	}
+	salt := data[:16]
+	nonce := data[16:28]
+	encrypted := data[28:]
+	block, err := aes.NewCipher(masterKey)
+	if err != nil {
+		return ciphertext
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return ciphertext
+	}
+	plaintext, err := aesGCM.Open(nil, nonce, encrypted, salt)
+	if err != nil {
+		return ciphertext // Decryption failed, return as-is (legacy plaintext).
+	}
+	return string(plaintext)
+}
+
+// isEncrypted checks if a string looks like base64-encoded encrypted data.
+func isEncrypted(s string) bool {
+	if len(s) < 50 {
+		return false
+	}
+	_, err := base64.StdEncoding.DecodeString(s)
+	return err == nil && len(s) > 40
+}
+
 // TOTP functions (RFC 6238)
 const totpPeriod = 30 // seconds
 const totpDigits = 6
@@ -4803,7 +4979,7 @@ func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var i Provider
 		rows.Scan(&i.ID, &i.Name, &i.Type, &i.Endpoint, &i.APIKey, &i.ExtraConfig, &i.Models, &i.TokenUsage)
-		i.APIKey = maskSecret(i.APIKey)
+		i.APIKey = maskSecret(decryptSecret(i.APIKey))
 		list = append(list, i)
 	}
 	if list == nil {
@@ -4819,7 +4995,7 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	if i.Models == "" {
 		i.Models = "[]"
 	}
-	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config, models) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, i.Models)
+	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config, models) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, encryptSecret(i.APIKey), i.ExtraConfig, i.Models)
 	a.appendSecurityEvent("provider_create", r.URL.Path, "admin", fmt.Sprintf("created provider %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -4834,7 +5010,7 @@ func (a *App) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(i.APIKey) == "" {
 		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, i.Models, r.PathValue("id"))
 	} else {
-		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.APIKey, i.ExtraConfig, i.Models, r.PathValue("id"))
+		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, api_key=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, encryptSecret(i.APIKey), i.ExtraConfig, i.Models, r.PathValue("id"))
 	}
 	a.appendSecurityEvent("provider_update", r.URL.Path, "admin", fmt.Sprintf("updated provider %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
@@ -4879,7 +5055,7 @@ func (a *App) handleCreateSource(w http.ResponseWriter, r *http.Request) {
 	if i.Type != "Local File" && i.APIKey == "" {
 		i.APIKey = fmt.Sprintf("sk_src_%d", time.Now().UnixNano())
 	}
-	a.ConfigDB.Exec("INSERT INTO sources (id, name, type, api_key, file_path) VALUES (?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.APIKey, i.FilePath)
+	a.ConfigDB.Exec("INSERT INTO sources (id, name, type, api_key, file_path) VALUES (?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, encryptSecret(i.APIKey), i.FilePath)
 	a.appendSecurityEvent("source_create", r.URL.Path, "admin", fmt.Sprintf("created source %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -4891,7 +5067,7 @@ func (a *App) handleUpdateSource(w http.ResponseWriter, r *http.Request) {
 	if i.Type != "Local File" && strings.TrimSpace(i.APIKey) == "" {
 		a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, file_path=? WHERE id=?", i.Name, i.Type, i.FilePath, r.PathValue("id"))
 	} else {
-		a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, api_key=?, file_path=? WHERE id=?", i.Name, i.Type, i.APIKey, i.FilePath, r.PathValue("id"))
+		a.ConfigDB.Exec("UPDATE sources SET name=?, type=?, api_key=?, file_path=? WHERE id=?", i.Name, i.Type, encryptSecret(i.APIKey), i.FilePath, r.PathValue("id"))
 	}
 	a.appendSecurityEvent("source_update", r.URL.Path, "admin", fmt.Sprintf("updated source %s", r.PathValue("id")))
 	w.Header().Set("Content-Type", "application/json")
@@ -4914,7 +5090,12 @@ func (a *App) handleSourceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var id, dbKey string
-	if err := a.ConfigDB.QueryRow("SELECT id, api_key FROM sources WHERE name=?", name).Scan(&id, &dbKey); err != nil || (dbKey != "" && dbKey != reqKey) {
+	if err := a.ConfigDB.QueryRow("SELECT id, api_key FROM sources WHERE name=?", name).Scan(&id, &dbKey); err != nil {
+		http.Error(w, `{"error": "Unauthorized or Invalid API Key"}`, http.StatusUnauthorized)
+		return
+	}
+	dbKey = decryptSecret(dbKey)
+	if dbKey != "" && dbKey != reqKey {
 		http.Error(w, `{"error": "Unauthorized or Invalid API Key"}`, http.StatusUnauthorized)
 		return
 	}
@@ -5824,7 +6005,7 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	// Verify current password.
 	if !bcryptCompare(dbHash, req.CurrentPassword) {
-		a.appendSecurityEvent("password_change_failure", r.URL.Path, r.RemoteAddr, "invalid current password")
+		a.appendSecurityEvent("password_change_failure", r.URL.Path, getClientIP(r), "invalid current password")
 		http.Error(w, `{"error": "Current password is incorrect"}`, http.StatusUnauthorized)
 		return
 	}
@@ -5836,7 +6017,7 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SyncDBExec(a.ConfigDB, "UPDATE settings SET value=? WHERE key='admin_password'", newHash)
-	a.appendSecurityEvent("password_changed", r.URL.Path, r.RemoteAddr, "admin password updated")
+	a.appendSecurityEvent("password_changed", r.URL.Path, getClientIP(r), "admin password updated")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -6249,7 +6430,7 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 							apiR.Header.Set(k, v)
 						}
 					}
-					extResp, e := (&http.Client{Timeout: 15 * time.Second}).Do(apiR)
+			extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
 					if e != nil {
 						lastResult = "[SKILL API ERROR] " + e.Error()
 					} else {
