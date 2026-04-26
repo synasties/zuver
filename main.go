@@ -431,7 +431,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.4.1b1"
+const CurrentVersion = "v1.4.1-beta.1"
 
 // updateInfo caches the latest release info from GitHub.
 type updateInfo struct {
