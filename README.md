@@ -71,6 +71,8 @@ go run main.go
 
 On first launch, a random admin password is generated and displayed in the terminal. Use it to log in via `http://localhost:18806`.
 
+If you don't want to use the Web GUI, might because security concerns, honestly just delete it, for real, and it will run as Headless backend. You can also replace index.html with stuffs like [Just Talk](https://github.com/synasties/justtalk), even just double-click and run the HTML on your device works.
+
 ## 📚 Documentations
 
 Want to explore advanced configurations, write custom Skills, or dive deep into the API structure?
