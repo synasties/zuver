@@ -2820,9 +2820,6 @@
 			const token = getSessionToken();
 			if (token) opt.headers['Authorization'] = 'Bearer ' + token;
 			if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-			if ((method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH') && hasRecentReauth()) {
-				opt.headers['X-Reauth-Verified'] = 'true';
-			}
 
 			const r = await fetch(`/api/v1${path}`, opt);
 
@@ -5965,12 +5962,17 @@
 		}
 
 		async function doLogout() {
-			if (!(await promptReauthentication('logging out'))) return;
+			const pwd = await showPrompt('Enter admin password to logout.', 'Admin password');
+			if (pwd === null) return;
 			try {
 				const token = getSessionToken();
 				await fetch('/api/v1/logout', {
 					method: 'POST',
-					headers: { 'Authorization': 'Bearer ' + token }
+					headers: {
+						'Content-Type': 'application/json',
+						'Authorization': 'Bearer ' + token,
+						'X-Reauth-Password': pwd
+					}
 				});
 			} catch (e) { }
 			clearSessionToken();

@@ -8,12 +8,15 @@ import (
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
@@ -431,7 +434,224 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.4.1-beta.1"
+const CurrentVersion = "v1.4.1"
+
+// Config holds all runtime configuration for the Zuver framework.
+type Config struct {
+	HTTPPort     int    `json:"http_port"`
+	HTTPSPort    int    `json:"https_port"`
+	HTTPSEnabled bool   `json:"https_enabled"`
+	HTTPSOnly    bool   `json:"https_only"`
+	CertFile     string `json:"cert_file"`
+	KeyFile      string `json:"key_file"`
+	Headless     bool   `json:"headless"`
+	LogLevel     string `json:"log_level"` // "info" or "debug"
+}
+
+var config Config
+
+func defaultConfig() Config {
+	return Config{
+		HTTPPort:     18807,
+		HTTPSPort:    18806,
+		HTTPSEnabled: true,
+		HTTPSOnly:    true,
+		CertFile:     "",
+		KeyFile:      "",
+		Headless:     false,
+		LogLevel:     "info",
+	}
+}
+
+func loadConfig() {
+	configFile := "zuver.json"
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		config = defaultConfig()
+		saveConfig()
+		log.Printf("[Config] Default config created at %s", configFile)
+		return
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		log.Printf("[Config] Failed to parse %s, using defaults: %v", configFile, err)
+		config = defaultConfig()
+	}
+}
+
+func saveConfig() {
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		log.Printf("[Config] Failed to marshal config: %v", err)
+		return
+	}
+	if err := os.WriteFile("zuver.json", data, 0644); err != nil {
+		log.Printf("[Config] Failed to write config file: %v", err)
+	}
+}
+
+// ensureSelfSignedCert generates a self-signed TLS certificate if cert/key files don't exist.
+func ensureSelfSignedCert(certFile, keyFile string) error {
+	if certFile == "" || keyFile == "" {
+		certFile = "cert.pem"
+		keyFile = "key.pem"
+	}
+	if _, err := os.Stat(certFile); err == nil {
+		if _, err := os.Stat(keyFile); err == nil {
+			return nil
+		}
+	}
+	log.Printf("[TLS] Generating self-signed certificate (cert: %s, key: %s)...", certFile, keyFile)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		DNSNames:     []string{"localhost"},
+	}
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return fmt.Errorf("failed to generate key: %w", err)
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &priv.PublicKey, priv)
+	if err != nil {
+		return fmt.Errorf("failed to create certificate: %w", err)
+	}
+	certOut, err := os.Create(certFile)
+	if err != nil {
+		return fmt.Errorf("failed to create cert file: %w", err)
+	}
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	certOut.Close()
+	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create key file: %w", err)
+	}
+	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	keyOut.Close()
+	log.Printf("[TLS] Self-signed certificate generated successfully.")
+	return nil
+}
+
+// Master key for encrypting API keys at rest.
+// Derived from a password at startup; never stored in plaintext.
+var masterKey []byte
+
+func loadOrCreateMasterKey() {
+	// Try environment variable first.
+	if envKey := os.Getenv("ZUVER_MASTER_KEY"); envKey != "" {
+		masterKey = deriveKey([]byte(envKey), []byte("zuver-master-key-salt"))
+		log.Printf("[Security] Master key derived from ZUVER_MASTER_KEY environment variable.")
+		return
+	}
+
+	saltFile := ".zuver_master_salt"
+	data, err := os.ReadFile(saltFile)
+
+	if err == nil && len(data) >= 32 {
+		// Salt exists — this is a subsequent boot. Prompt for password.
+		fmt.Print("Enter master password to decrypt API keys: ")
+		reader := bufio.NewReader(os.Stdin)
+		password, _ := reader.ReadString('\n')
+		password = strings.TrimSpace(password)
+		if password == "" {
+			log.Println("[Security] No password entered. API keys will not be encrypted.")
+			return
+		}
+		masterKey = deriveKey([]byte(password), data[:16])
+		log.Printf("[Security] Master key derived from password.")
+		return
+	}
+
+	// First boot: generate salt, prompt for new password, derive key.
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		log.Printf("[Security] Failed to generate salt: %v", err)
+		return
+	}
+	fmt.Print("Set master password for API key encryption: ")
+	reader := bufio.NewReader(os.Stdin)
+	password, _ := reader.ReadString('\n')
+	password = strings.TrimSpace(password)
+	if password == "" {
+		log.Println("[Security] No password entered. API keys will not be encrypted.")
+		return
+	}
+	if len(password) < 8 {
+		log.Println("[Security] Password too short (min 8 chars). API keys will not be encrypted.")
+		return
+	}
+	masterKey = deriveKey([]byte(password), salt)
+	if err := os.WriteFile(saltFile, salt, 0600); err != nil {
+		log.Printf("[Security] Failed to save salt to %s: %v", saltFile, err)
+	} else {
+		log.Printf("[Security] Master key derived and salt saved to %s.", saltFile)
+	}
+}
+
+// encryptSecret encrypts a string with the master key using AES-256-GCM.
+func encryptSecret(plaintext string) string {
+	if len(masterKey) == 0 || plaintext == "" {
+		return plaintext
+	}
+	salt := make([]byte, 16)
+	rand.Read(salt)
+	// Derive a unique key from masterKey + salt for this encryption.
+	encKey := deriveKey(masterKey, salt)
+	block, err := aes.NewCipher(encKey)
+	if err != nil {
+		return plaintext
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return plaintext
+	}
+	nonce := make([]byte, aesGCM.NonceSize())
+	rand.Read(nonce)
+	ciphertext := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
+	result := make([]byte, 0, 16+12+len(ciphertext))
+	result = append(result, salt...)
+	result = append(result, nonce...)
+	result = append(result, ciphertext...)
+	return base64.StdEncoding.EncodeToString(result)
+}
+
+// decryptSecret decrypts a base64-encoded ciphertext with the master key.
+func decryptSecret(ciphertext string) string {
+	if len(masterKey) == 0 || ciphertext == "" {
+		return ciphertext
+	}
+	data, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil || len(data) < 28 {
+		return ciphertext
+	}
+	salt := data[:16]
+	nonce := data[16:28]
+	encrypted := data[28:]
+	// Derive the same unique key from masterKey + salt.
+	encKey := deriveKey(masterKey, salt)
+	block, err := aes.NewCipher(encKey)
+	if err != nil {
+		return ciphertext
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return ciphertext
+	}
+	plaintext, err := aesGCM.Open(nil, nonce, encrypted, nil)
+	if err != nil {
+		return ciphertext
+	}
+	return string(plaintext)
+}
+
+// logDebug logs a message only when log level is "debug".
+func logDebug(format string, args ...interface{}) {
+	if config.LogLevel == "debug" {
+		log.Printf("[DEBUG] "+format, args...)
+	}
+}
 
 // updateInfo caches the latest release info from GitHub.
 type updateInfo struct {
@@ -649,7 +869,7 @@ func permissionScopeForPath(method, path string) (resource string, itemID string
 		return "preferences", "", toAction(method)
 	case "rags":
 		return "rags", "", toAction(method)
-	case "providers", "apikeys", "settings", "wipe-database", "import":
+	case "providers", "apikeys", "settings", "wipe-database", "import", "logout":
 		// Admin-only: never accessible via external API keys.
 		return "admin_only", "", ""
 	default:
@@ -733,10 +953,9 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		adminTokenMu.RUnlock()
 		if currentAdminToken != "" && token == currentAdminToken && time.Now().Before(tokenExp) {
 			if requiresRecentReauth(r) {
+				// Only accept password-based reauth — no header spoofing.
 				reauthOK := false
-				if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Reauth-Verified")), "true") {
-					reauthOK = true
-				} else if pw := r.Header.Get("X-Reauth-Password"); pw != "" {
+				if pw := r.Header.Get("X-Reauth-Password"); pw != "" {
 					reauthOK = a.verifyAdminPassword(pw)
 				}
 				if !reauthOK {
@@ -1370,7 +1589,14 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("[HTTP] %s %s", r.Method, r.URL.Path)
+		if config.LogLevel == "debug" {
+			log.Printf("[HTTP] %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+		} else {
+			// Info level: only log API paths.
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				log.Printf("[HTTP] %s %s", r.Method, r.URL.Path)
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -1466,6 +1692,7 @@ func main() {
 		db.Exec("INSERT INTO projects (id, name, description, flow_json) VALUES (?, ?, ?, ?)", "proj_default", "Default Router", "System default routing pipeline.", defaultFlow)
 	}
 
+	loadConfig()
 	loadOrCreateMasterKey()
 	go startDBWorker()
 	go func() {
@@ -1600,6 +1827,7 @@ func main() {
 			http.Error(w, `{"error":"provider not found"}`, http.StatusNotFound)
 			return
 		}
+		apiKey = decryptSecret(apiKey)
 		// SSRF guard: Ollama is intentionally local, but block private hosts for other provider types.
 		parsedEP, epErr := url.ParseRequestURI(strings.TrimRight(endpoint, "/"))
 		if epErr != nil || (parsedEP.Scheme != "http" && parsedEP.Scheme != "https") {
@@ -1749,7 +1977,10 @@ func main() {
 			return
 		}
 		i.ID = fmt.Sprintf("ak_%d", time.Now().UnixNano())
-		i.Token = "zuv-" + hex.EncodeToString([]byte(i.ID))
+		// Generate cryptographically random token instead of predictable ID-based token.
+		randBytes := make([]byte, 24)
+		rand.Read(randBytes)
+		i.Token = "zuv-" + hex.EncodeToString(randBytes)
 		if i.RateLimit == 0 {
 			i.RateLimit = 60
 		}
@@ -1777,10 +2008,19 @@ func main() {
 
 	mux.HandleFunc("POST /api/v1/login", app.handleLogin)
 	mux.HandleFunc("POST /api/v1/logout", func(w http.ResponseWriter, r *http.Request) {
+		// Require password reauth to prevent stolen token from logging out admin.
+		pw := r.Header.Get("X-Reauth-Password")
+		if pw == "" || !app.verifyAdminPassword(pw) {
+			app.appendSecurityEvent("logout_denied", r.URL.Path, "admin", "logout requires password reauth")
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, `{"error": "Password required to logout"}`, http.StatusUnauthorized)
+			return
+		}
 		adminTokenMu.Lock()
 		adminToken = ""
 		adminTokenExp = time.Time{}
 		adminTokenMu.Unlock()
+		app.appendSecurityEvent("logout_success", r.URL.Path, "admin", "admin logged out")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
@@ -1864,7 +2104,8 @@ func main() {
 		var events []SecurityEvent
 		for rows.Next() {
 			var e SecurityEvent
-			rows.Scan(&e.Timestamp, &e.Timestamp, &e.Action, &e.Path, &e.Actor, &e.Detail)
+			var discardID int
+			rows.Scan(&discardID, &e.Timestamp, &e.Action, &e.Path, &e.Actor, &e.Detail)
 			events = append(events, e)
 		}
 		if events == nil {
@@ -2177,8 +2418,8 @@ func main() {
 		// Generate CSRF token for this import session.
 		csrfToken := generateCSRFToken()
 
-		// Fetch the remote config JSON (timeout 10 s).
-		client := &http.Client{Timeout: 10 * time.Second}
+		// Fetch the remote config JSON (timeout 10 s, DNS rebinding protected).
+		client := safeHTTPClient(10 * time.Second)
 		resp, err := client.Get(configURL)
 		if err != nil || resp.StatusCode != http.StatusOK {
 			http.Error(w, "Failed to fetch config from remote URL.", http.StatusBadGateway)
@@ -2208,7 +2449,9 @@ func main() {
 
 		// Validate structure and sanitize the remote payload before displaying or importing.
 		if err := validateImportPayload(itemType, preview); err != nil {
-			http.Error(w, "Remote config failed validation: "+err.Error(), http.StatusUnprocessableEntity)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Remote config failed validation: " + err.Error()})
 			return
 		}
 
@@ -2374,7 +2617,8 @@ async function doImport(e) {
 		// Validate structure and sanitize before any DB write.
 		if err := validateImportPayload(req.Type, req.Data); err != nil {
 			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error":"validation failed: `+err.Error()+`"}`, http.StatusUnprocessableEntity)
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"error": "validation failed: " + err.Error()})
 			return
 		}
 
@@ -2395,7 +2639,7 @@ async function doImport(e) {
 				str("api_method"), str("api_url"), str("api_headers"), str("api_body"),
 			)
 			if err != nil {
-				http.Error(w, `{"error":"database error: `+err.Error()+`"}`, http.StatusInternalServerError)
+				http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id})
@@ -2413,7 +2657,7 @@ async function doImport(e) {
 				"[]", "[]", "[]", "[]", str("input_methods"), str("output_methods"),
 			)
 			if err != nil {
-				http.Error(w, `{"error":"database error: `+err.Error()+`"}`, http.StatusInternalServerError)
+				http.Error(w, `{"error":"database error"}`, http.StatusInternalServerError)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id, "note": "Provider not set — assign one in the Agent editor."})
@@ -2492,26 +2736,71 @@ async function doImport(e) {
 		w.Write(out)
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "18806"
+	// Override config with environment variables.
+	if envPort := os.Getenv("PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			config.HTTPPort = p
+		}
+	}
+
+	// Headless mode: skip serving static files.
+	if config.Headless {
+		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
 	}
 
 	handler := app.securityHeadersMiddleware(globalRateLimitMiddleware(loggingMiddleware(app.authMiddleware(mux))))
 	server := &http.Server{
-		Addr:              ":" + port,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		// Keep WriteTimeout long enough for streamed chat/SSE responses and large model replies.
-		WriteTimeout:   10 * time.Minute,
-		IdleTimeout:    60 * time.Second,
-		MaxHeaderBytes: 1 << 20,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
-	log.Printf("Starting Zuver OS Framework on port %s", port)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal("HTTP server failed:", err)
+	// Start HTTP server (unless HTTPS-only mode is enabled).
+	if !config.HTTPSOnly {
+		httpServer := &http.Server{
+			Addr:              fmt.Sprintf(":%d", config.HTTPPort),
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      10 * time.Minute,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+		}
+		go func() {
+			log.Printf("[HTTP] Starting on port %d", config.HTTPPort)
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("[HTTP] Server error: %v", err)
+			}
+		}()
+	}
+
+	// Start HTTPS server if enabled.
+	if config.HTTPSEnabled {
+		certFile := config.CertFile
+		keyFile := config.KeyFile
+		if certFile == "" || keyFile == "" {
+			certFile = "cert.pem"
+			keyFile = "key.pem"
+		}
+		if err := ensureSelfSignedCert(certFile, keyFile); err != nil {
+			log.Printf("[TLS] Warning: %v", err)
+		}
+		server.Addr = fmt.Sprintf(":%d", config.HTTPSPort)
+		log.Printf("[HTTPS] Starting on port %d (cert: %s)", config.HTTPSPort, certFile)
+		if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+			log.Fatal("[HTTPS] Server failed:", err)
+		}
+	} else {
+		server.Addr = fmt.Sprintf(":%d", config.HTTPPort)
+		log.Printf("[HTTP] Starting on port %d", config.HTTPPort)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("[HTTP] Server failed:", err)
+		}
 	}
 }
 
@@ -2798,6 +3087,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"reply": "[SYSTEM] Failed to find the assigned model provider.", "logs": []string{}})
 		return
 	}
+	prov.APIKey = decryptSecret(prov.APIKey)
 
 	var executionLogs []string
 	processedUserMsg := req.Message
@@ -3315,6 +3605,7 @@ skipPresidio:
 					apiReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
 				}
 			}
+			logDebug("Provider API call: %s %s (model=%s)", apiReq.Method, apiURL, agent.Model)
 
 			// ---------- STREAMING PATH (all loops) ----------
 			if useStream {
@@ -3891,8 +4182,8 @@ func (a *App) executeCommand(
 			return "[SYSTEM ERROR] Unauthorized."
 		}
 		var sID, sType, sFile string
-		var sPageSize int
-		a.ConfigDB.QueryRow("SELECT id, type, page_size, file_path FROM sources WHERE name=?", sName).Scan(&sID, &sType, &sPageSize, &sFile)
+		a.ConfigDB.QueryRow("SELECT id, type, file_path FROM sources WHERE name=?", sName).Scan(&sID, &sType, &sFile)
+		var sPageSize int = 1000 // default page size for pagination
 		var finalData string
 		if sType == "Local File" {
 			if b, err := os.ReadFile(sFile); err != nil {
@@ -4248,24 +4539,27 @@ func (a *App) executeCommand(
 					default:
 						tmpExt = ".go"
 					}
-					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
-					if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
-						return "[SKILL ERROR] failed to write temp script"
-					}
-					defer os.Remove(tmp)
-					switch sType {
-					case "Bash":
-						execCmd = exec.Command("sh", tmp)
-					case "JavaScript":
-						execCmd = exec.Command("node", tmp)
-					default:
-						execCmd = exec.Command("go", "run", tmp)
-					}
-					out, e := execCmd.CombinedOutput()
-					result = "[RESULT]\n" + string(out)
-					if e != nil {
-						result += "\nErr: " + e.Error()
-					}
+				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
+				if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
+					return "[SKILL ERROR] failed to write temp script"
+				}
+				defer os.Remove(tmp)
+				// Execute with a 30-second timeout to prevent infinite hangs.
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				switch sType {
+				case "Bash":
+					execCmd = exec.CommandContext(ctx, "sh", tmp)
+				case "JavaScript":
+					execCmd = exec.CommandContext(ctx, "node", tmp)
+				default:
+					execCmd = exec.CommandContext(ctx, "go", "run", tmp)
+				}
+				out, e := execCmd.CombinedOutput()
+				result = "[RESULT]\n" + string(out)
+				if e != nil {
+					result += "\nErr: " + e.Error()
+				}
 				}
 				return result
 			case "API":
@@ -4687,7 +4981,7 @@ func encryptBackup(data []byte, password string) ([]byte, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return nil, err
 	}
-	key := deriveKey(password, salt)
+	key := deriveKey([]byte(password), salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -4717,7 +5011,7 @@ func decryptBackup(data []byte, password string) ([]byte, error) {
 	salt := data[:16]
 	nonce := data[16:28]
 	ciphertext := data[28:]
-	key := deriveKey(password, salt)
+	key := deriveKey([]byte(password), salt)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -4734,110 +5028,10 @@ func decryptBackup(data []byte, password string) ([]byte, error) {
 }
 
 // deriveKey derives a 32-byte AES key from a password using PBKDF2-SHA256.
-func deriveKey(password string, salt []byte) []byte {
-	return pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+func deriveKey(password []byte, salt []byte) []byte {
+	return pbkdf2.Key(password, salt, 100000, 32, sha256.New)
 }
 
-// Master key for encrypting API keys at rest.
-// Loaded from ZUVER_MASTER_KEY env var, or auto-generated and stored in .zuver_master_key.
-var masterKey []byte
-
-func loadOrCreateMasterKey() {
-	// Try environment variable first.
-	if envKey := os.Getenv("ZUVER_MASTER_KEY"); envKey != "" {
-		// Derive a 32-byte key from the env var.
-		masterKey = deriveKey(envKey, []byte("zuver-master-key-salt"))
-		log.Printf("[Security] Master key loaded from ZUVER_MASTER_KEY environment variable.")
-		return
-	}
-	// Try loading from file.
-	keyFile := ".zuver_master_key"
-	if data, err := os.ReadFile(keyFile); err == nil && len(data) == 64 {
-		// File contains hex-encoded 32-byte key.
-		key, err := hex.DecodeString(string(data))
-		if err == nil && len(key) == 32 {
-			masterKey = key
-			log.Printf("[Security] Master key loaded from %s.", keyFile)
-			return
-		}
-	}
-	// Generate new master key and save to file.
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		log.Printf("[Security] Failed to generate master key: %v. API keys will not be encrypted.", err)
-		return
-	}
-	masterKey = b
-	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(b)), 0600); err != nil {
-		log.Printf("[Security] Failed to save master key to %s: %v", keyFile, err)
-	} else {
-		log.Printf("[Security] New master key generated and saved to %s. KEEP THIS FILE SAFE!", keyFile)
-	}
-}
-
-// encryptSecret encrypts a string with the master key using AES-256-GCM.
-// Returns base64-encoded ciphertext. Returns plaintext if master key is not available.
-func encryptSecret(plaintext string) string {
-	if len(masterKey) == 0 || plaintext == "" {
-		return plaintext
-	}
-	salt := make([]byte, 16)
-	rand.Read(salt)
-	block, err := aes.NewCipher(masterKey)
-	if err != nil {
-		return plaintext
-	}
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return plaintext
-	}
-	nonce := make([]byte, aesGCM.NonceSize())
-	rand.Read(nonce)
-	ciphertext := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
-	// Format: base64(salt + nonce + ciphertext)
-	result := make([]byte, 0, 16+12+len(ciphertext))
-	result = append(result, salt...)
-	result = append(result, nonce...)
-	result = append(result, ciphertext...)
-	return base64.StdEncoding.EncodeToString(result)
-}
-
-// decryptSecret decrypts a base64-encoded ciphertext with the master key.
-// Returns plaintext. Returns the input unchanged if master key is not available or decryption fails.
-func decryptSecret(ciphertext string) string {
-	if len(masterKey) == 0 || ciphertext == "" {
-		return ciphertext
-	}
-	data, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil || len(data) < 28 {
-		return ciphertext // Not encrypted or invalid, return as-is.
-	}
-	salt := data[:16]
-	nonce := data[16:28]
-	encrypted := data[28:]
-	block, err := aes.NewCipher(masterKey)
-	if err != nil {
-		return ciphertext
-	}
-	aesGCM, err := cipher.NewGCM(block)
-	if err != nil {
-		return ciphertext
-	}
-	plaintext, err := aesGCM.Open(nil, nonce, encrypted, salt)
-	if err != nil {
-		return ciphertext // Decryption failed, return as-is (legacy plaintext).
-	}
-	return string(plaintext)
-}
-
-// isEncrypted checks if a string looks like base64-encoded encrypted data.
-func isEncrypted(s string) bool {
-	if len(s) < 50 {
-		return false
-	}
-	_, err := base64.StdEncoding.DecodeString(s)
-	return err == nil && len(s) > 40
-}
 
 // TOTP functions (RFC 6238)
 const totpPeriod = 30 // seconds
@@ -6198,6 +6392,7 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			a.ConfigDB.QueryRow(
 				"SELECT COALESCE(type,'OpenAI'), endpoint, api_key, COALESCE(extra_config,'{}') FROM providers WHERE id=?", agentProviderID,
 			).Scan(&provType, &provEndpoint, &provKey, &agentExtraConfig)
+			provKey = decryptSecret(provKey)
 
 			userMsg := interpolate(lastResult)
 			if userPrefix != "" {
@@ -6400,14 +6595,16 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 						break
 					}
 					defer os.Remove(tmp)
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
 					var cmd *exec.Cmd
 					switch sType {
 					case "Bash":
-						cmd = exec.Command("sh", tmp)
+						cmd = exec.CommandContext(ctx, "sh", tmp)
 					case "JavaScript":
-						cmd = exec.Command("node", tmp)
+						cmd = exec.CommandContext(ctx, "node", tmp)
 					default:
-						cmd = exec.Command("go", "run", tmp)
+						cmd = exec.CommandContext(ctx, "go", "run", tmp)
 					}
 					out, err := cmd.CombinedOutput()
 					if err != nil {
