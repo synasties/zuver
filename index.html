@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -23,7 +23,7 @@
 		rel="stylesheet">
 	<style>
 		/* ===================================================
-		 * PAGE TRANSITION �?fade + slight lift on view enter
+		 * PAGE TRANSITION fade + slight lift on view enter
 		 * =================================================== */
 		@keyframes page-enter {
 			from {
@@ -43,7 +43,7 @@
 		}
 
 		/* ===================================================
-		 * STREAMING TEXT �?fade-in each incoming delta chunk
+		 * STREAMING TEXT —fade-in each incoming delta chunk
 		 * =================================================== */
 		@keyframes chunk-in {
 			from {
@@ -747,23 +747,23 @@
 					<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Tokens (24h)</p>
-							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">�?/h3>
+							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">—/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Calls (24h)</p>
-							<h3 id="an-global-calls" class="text-2xl font-black mt-1">�?/h3>
+							<h3 id="an-global-calls" class="text-2xl font-black mt-1">—/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Est. Cost (24h)</p>
-							<h3 id="an-global-cost" class="text-2xl font-black mt-1">�?/h3>
+							<h3 id="an-global-cost" class="text-2xl font-black mt-1">—/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Active Agents</p>
-							<h3 id="an-active-agents" class="text-2xl font-black mt-1">�?/h3>
+							<h3 id="an-active-agents" class="text-2xl font-black mt-1">—/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Avg Success Rate</p>
-							<h3 id="an-avg-success" class="text-2xl font-black mt-1">�?/h3>
+							<h3 id="an-avg-success" class="text-2xl font-black mt-1">—/h3>
 						</div>
 					</div>
 					<!-- Usage trend chart (merged: global / agent / provider filter) -->
@@ -838,7 +838,7 @@
 				<div id="view-projects" class="page-view hidden h-[calc(100vh-140px)] flex flex-col">
 					<div id="view-projects-list" class="space-y-6 overflow-y-auto">
 						<div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-							<p class="text-sm text-gray-500">Design and run visual AI pipelines �?connect Agents, Skills, HTTP calls,
+							<p class="text-sm text-gray-500">Design and run visual AI pipelines —connect Agents, Skills, HTTP calls,
 								conditionals and more.</p>
 							<div class="flex gap-2 shrink-0">
 								<input id="proj-search" type="text" placeholder="Search..."
@@ -1297,7 +1297,7 @@
 							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
 							<div>
 								<span class="font-bold flex items-center gap-2"><i data-lucide="share-2"
-										class="w-4 h-4 text-orange-500"></i> CORS �?Cross-Origin Resource Sharing</span>
+										class="w-4 h-4 text-orange-500"></i> CORS - Cross-Origin Resource Sharing</span>
 								<p class="text-xs text-gray-500 mt-1">Restrict which origins can access the API. Use <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">*</code> for all, or comma-separated origins (e.g. <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">https://app.example.com,http://localhost:3000</code>).</p>
 							</div>
 							<input type="checkbox" id="toggle-cors" onchange="updateCORSUI(); saveSettings()"
@@ -1319,7 +1319,7 @@
 							<select id="lang-select" onchange="switchLanguage(this.value)"
 								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-sm outline-none font-bold shadow-sm">
 								<option value="en">English</option>
-								<option value="zh">简体中�?/option>
+								<option value="zh">简体中文</option>
 								<option value="de">Deutsch</option>
 							</select>
 						</div>
@@ -2311,7 +2311,7 @@
 				class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
 				<div>
 					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
-					<input type="password" id="login-pwd" placeholder="•••••••�?
+					<input type="password" id="login-pwd" placeholder="••••••••"
 						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
 						onkeypress="if(event.key === 'Enter') doLogin()">
 				</div>
@@ -2333,7 +2333,7 @@
 
 	<script>
 		// ================================================================
-		// AUTH + UI UTILITY FUNCTIONS �?defined first so api() can call
+		// AUTH + UI UTILITY FUNCTIONS —defined first so api() can call
 		// them synchronously during the very first loadAllData() call.
 		// ================================================================
 		function showLoginPage() {
@@ -2608,7 +2608,7 @@
 		let currentLang = localStorage.getItem('zuver_lang') || 'en';
 
 		/**
-		 * Core i18n engine �?replaces text on all tagged elements and
+		 * Core i18n engine —replaces text on all tagged elements and
 		 * also handles placeholder/title attributes on inputs.
 		 * Icon SVGs inside elements are preserved.
 		 */
@@ -2915,7 +2915,7 @@
 							lucide.createIcons();
 						}
 						// Show toast notification on every data load.
-						showToast(`Update available: ${info.latest} �?visit Settings to learn more.`, 'info', 6000);
+						showToast(`Update available: ${info.latest} —visit Settings to learn more.`, 'info', 6000);
 					}
 				}).catch(() => { });
 
@@ -3029,7 +3029,7 @@
 			});
 		}
 
-		/** Intercepts modality selection �?triggers file picker for non-text types */
+		/** Intercepts modality selection —triggers file picker for non-text types */
 		function handleTypeChange(val) {
 			document.getElementById('chat-input-type').value = val;
 			// Highlight selected button
@@ -3127,7 +3127,7 @@
 							class="mcp-tool-chip inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-700 cursor-grab active:cursor-grabbing select-none"
 							title="Drag to assign to an agent"
 						><i data-lucide="terminal" class="w-2.5 h-2.5"></i>${escapeHTML(t)}</span>`).join('')
-					: '<span class="text-[10px] text-gray-400 italic">No tools resolved yet �?click Resolve.</span>';
+					: '<span class="text-[10px] text-gray-400 italic">No tools resolved yet —click Resolve.</span>';
 				return `
 				<div class="p-4 border border-yellow-200 dark:border-yellow-900 bg-yellow-50/50 dark:bg-yellow-900/10 rounded-md space-y-3">
 					<div class="flex justify-between items-start">
@@ -3178,7 +3178,7 @@
 		                <div class="p-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-lg"><i data-lucide="server" class="w-4 h-4 text-gray-600 dark:text-gray-400"></i></div>
 		                <div>
 		                    <p class="font-bold text-sm">${escapeHTML(p.name)}</p>
-		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(p.type)} �?${escapeHTML(p.endpoint)}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(p.type)} —${escapeHTML(p.endpoint)}</p>
 		                </div>
 		            </div>
 		        <div class="flex flex-col items-end gap-1">
@@ -3202,7 +3202,7 @@
 		                <div class="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg"><i data-lucide="database" class="w-4 h-4"></i></div>
 		                <div>
 		                    <p class="font-bold text-sm">${escapeHTML(s.name)}</p>
-		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(s.type)} �?${timeStr}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(s.type)} —${timeStr}</p>
 		                </div>
 		            </div>
 		            <div class="flex flex-col items-end gap-1">
@@ -3653,7 +3653,7 @@
 					const contentType = resp.headers.get('content-type') || '';
 
 					if (contentType.includes('text/event-stream')) {
-						// Create the AI reply bubble (initially empty �?filled by delta events).
+						// Create the AI reply bubble (initially empty —filled by delta events).
 						const aiBubble = document.createElement('div');
 						aiBubble.className = 'chat-bubble-ai markdown-body';
 						chatBox.appendChild(aiBubble);
@@ -3707,15 +3707,15 @@
 								if (parsed.tool_start != null) {
 									const card = document.createElement('div');
 									card.className = 'tool-step-card running';
-									const cmdLabel = parsed.tool_start.length > 60
-										? parsed.tool_start.slice(0, 60) + '�?
+								const cmdLabel = parsed.tool_start.length > 60
+										? parsed.tool_start.slice(0, 60) + '...'
 										: parsed.tool_start;
 									card.innerHTML = `<span class="tool-step-dot"></span>
 		                                <span class="flex-1 truncate">${escapeHTML(cmdLabel)}</span>
 		                                <span class="tool-step-timer text-gray-400" data-start="${Date.now()}">0ms</span>`;
 									chatBox.insertBefore(card, aiBubble);
 
-									// Live timer tick �?shows elapsed ms while running.
+									// Live timer tick —shows elapsed ms while running.
 									const timerEl = card.querySelector('.tool-step-timer');
 									const startMs = Date.now();
 									const ticker = setInterval(() => {
@@ -3727,7 +3727,7 @@
 										if (elapsedMs > 1000 && !card.querySelector('.bg-indicator')) {
 											const bg = document.createElement('span');
 											bg.className = 'bg-indicator text-[10px] text-blue-500 font-mono ml-1';
-											bg.textContent = 'executing�?;
+											bg.textContent = 'executing...';
 											timerEl.parentNode.insertBefore(bg, timerEl);
 										}
 									}, 50);
@@ -3774,7 +3774,7 @@
 							}
 						}
 					} else {
-						// Provider returned non-SSE despite stream flag �?fall back to JSON.
+						// Provider returned non-SSE despite stream flag —fall back to JSON.
 						const data = await resp.json();
 						if (data.logs) {
 							data.logs.forEach(log => {
@@ -3871,7 +3871,7 @@
 			switch (n.type) {
 				case 'Agent': return dataStore.agents.find(a => a.id === n.agentId)?.name || 'Not configured';
 				case 'Skill': return dataStore.skills.find(s => s.id === n.skillId)?.name || 'Not configured';
-				case 'HTTP': return (n.httpMethod || 'GET') + ' ' + (n.httpUrl ? n.httpUrl.substring(0, 22) + '�? : '(no url)');
+				case 'HTTP': return (n.httpMethod || 'GET') + ' ' + (n.httpUrl ? n.httpUrl.substring(0, 22) + ' ' : '(no url)');
 				case 'If': return (n.condition || 'contains') + ': ' + (n.condValue || '(value)');
 				case 'Transform': return n.operation || 'trim';
 				case 'Wait': return (n.seconds || 1) + 's';
@@ -3902,7 +3902,7 @@
 			}
 			selectedNode = null;
 			undoStack = []; // Reset undo history when opening a new project
-			if (typeof window.markClean === 'function') window.markClean('project'); // Fresh open �?not dirty yet
+			if (typeof window.markClean === 'function') window.markClean('project'); // Fresh open not dirty yet
 			renderCanvas(); renderProps(); lucide.createIcons();
 		};
 
@@ -4056,7 +4056,7 @@
 			}
 		});
 
-		// Undo last action (snapshot-based) �?Ctrl+Z / toolbar button
+		// Undo last action (snapshot-based) Ctrl+Z / toolbar button
 		window.undoEdge = () => {
 			if (undoStack.length > 0) {
 				const snap = undoStack.pop();
@@ -4119,7 +4119,7 @@
 				hitPath.setAttribute('stroke', 'transparent'); hitPath.setAttribute('stroke-width', '12');
 				hitPath.setAttribute('fill', 'none');
 				hitPath.style.pointerEvents = 'stroke'; hitPath.style.cursor = 'pointer';
-				hitPath.title = isParam ? `param: ${edge.paramName} �?click to delete` : 'click to delete';
+				hitPath.title = isParam ? `param: ${edge.paramName} —click to delete` : 'click to delete';
 				hitPath.onclick = (ev) => {
 					ev.stopPropagation();
 					pushUndo();
@@ -4127,7 +4127,7 @@
 					drawLines();
 				};
 
-				// Visible styled path (no pointer events �?handled by hitPath)
+				// Visible styled path (no pointer events handled by hitPath)
 				const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 				path.setAttribute('d', d);
 				path.setAttribute('stroke', color); path.setAttribute('stroke-width', isParam ? '1.5' : '2');
@@ -4302,7 +4302,7 @@
 			try {
 				await api(endpoint, method, { id: activeId, name, description: desc, flow_json: JSON.stringify({ nodes, edges }), is_active: true });
 				await loadAllData();
-				window.markClean('project'); // Saved �?no longer dirty
+				window.markClean('project'); // Saved —no longer dirty
 				showToast(`"${name}" saved successfully.`, 'success');
 			} catch (e) {
 				showToast('Failed to save pipeline.', 'error');
@@ -4543,7 +4543,7 @@
 			try {
 				const res = await api(`/providers/${id}/health`);
 				const label = res.ok
-					? `Online �?${res.latency_ms}ms`
+					? `Online —${res.latency_ms}ms`
 					: `Offline (HTTP ${res.status})`;
 				const color = res.ok ? 'text-emerald-500' : 'text-red-500';
 				if (badge) { badge.textContent = label; badge.className = `text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 border ${res.ok ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50'} ${color}`; }
@@ -4633,7 +4633,7 @@
 			}
 		};
 
-		// Global dragstart handler for MCP tool chips �?sets transfer data so the
+		// Global dragstart handler for MCP tool chips —sets transfer data so the
 		// agent editor drop zone knows which server and tool are being dragged.
 		document.addEventListener('dragstart', (e) => {
 			const chip = e.target.closest('.mcp-tool-chip');
@@ -5279,7 +5279,7 @@
 			const id = document.getElementById('apikey-id-input').value;
 			const perms = { preferences: {} };
 
-			// Per-item checkboxes (agents + projects) �?build nested {resource: {id: {action: true}}}
+			// Per-item checkboxes (agents + projects) —build nested {resource: {id: {action: true}}}
 			document.querySelectorAll('.ak-item-cb:checked').forEach(cb => {
 				const res = cb.getAttribute('data-res');
 				const itemId = cb.getAttribute('data-id');
@@ -5441,7 +5441,7 @@
 			const sel = document.getElementById('task-agent-id');
 		sel.innerHTML = dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join('');
 		if (id) {
-				// Find task from last loaded list �?we'll store it
+				// Find task from last loaded list —we'll store it
 				const t = (window._lastTasks || []).find(x => x.id === id);
 				if (t) {
 					document.getElementById('task-id-input').value = t.id;
@@ -5730,7 +5730,7 @@
 		};
 
 		/* ==========================================
-			 * NAVIGATION �?data-target click delegation
+			 * NAVIGATION —data-target click delegation
 			 * ==========================================
 			 * Each sidebar .nav-item has data-target="<name>" which maps to
 			 * a section with id="view-<name>". Clicking a nav item hides all
@@ -5819,10 +5819,10 @@
 				}
 			}
 
-			// --- Public showView �?bypasses dirty guard (for programmatic navigation after save) ---
+			// --- Public showView —bypasses dirty guard (for programmatic navigation after save) ---
 			window.showView = applyShowView;
 
-			// --- showViewGuarded �?checks dirty state, used by nav clicks ---
+			// --- showViewGuarded —checks dirty state, used by nav clicks ---
 			async function showViewGuarded(target) {
 				if (dirtyEditors.size > 0) {
 					const label = dirtyLabel();
@@ -5904,7 +5904,7 @@
 				}
 			});
 
-			// Initial load �?only if a session token is present (auth guard will redirect if not).
+			// Initial load —only if a session token is present (auth guard will redirect if not).
 			if (getSessionToken()) loadAllData();
 		})();
 
@@ -6114,7 +6114,7 @@
 					headers: { 'Authorization': 'Bearer ' + token }
 				});
 				if (!r.ok) {
-					// Token is stale (server restarted) �?clear and show login.
+					// Token is stale (server restarted) —clear and show login.
 					clearSessionToken();
 					showLoginPage();
 					return;

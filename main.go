@@ -2810,11 +2810,11 @@ func main() {
   <div class="footer">Zuver Framework &mdash; Importing will add this ` + itemType + ` to your instance permanently.</div>
 </div>
 <script>
-const RAW_JSON = atob("` + safeJSONB64 + `");
+const RAW_JSON = JSON.parse(atob("` + safeJSONB64 + `"));
 const ITEM_TYPE = "` + itemType + `";
 const CONFIG_URL = "` + escapedConfigURL + `";
 const CSRF_TOKEN = "` + csrfToken + `";
-document.getElementById('json-preview').textContent = RAW_JSON;
+document.getElementById('json-preview').textContent = JSON.stringify(RAW_JSON, null, 2);
 async function doImport(e) {
   e.preventDefault();
   const pw = document.getElementById('pw').value;
