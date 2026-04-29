@@ -536,7 +536,7 @@ func ensureSelfSignedCert(certFile, keyFile string) error {
 }
 
 // Master key for encrypting API keys at rest.
-// Derived from a password at startup; never stored in plaintext.
+// Derived at startup; used to encrypt/decrypt API keys at rest.
 var masterKey []byte
 
 func loadOrCreateMasterKey() {
@@ -547,47 +547,28 @@ func loadOrCreateMasterKey() {
 		return
 	}
 
-	saltFile := ".zuver_master_salt"
-	data, err := os.ReadFile(saltFile)
-
-	if err == nil && len(data) >= 32 {
-		// Salt exists — this is a subsequent boot. Prompt for password.
-		fmt.Print("Enter master password to decrypt API keys: ")
-		reader := bufio.NewReader(os.Stdin)
-		password, _ := reader.ReadString('\n')
-		password = strings.TrimSpace(password)
-		if password == "" {
-			log.Println("[Security] No password entered. API keys will not be encrypted.")
+	// Try loading existing key from file.
+	keyFile := ".zuver_master_key"
+	if data, err := os.ReadFile(keyFile); err == nil && len(data) == 64 {
+		key, err := hex.DecodeString(string(data))
+		if err == nil && len(key) == 32 {
+			masterKey = key
+			log.Printf("[Security] Master key loaded from %s.", keyFile)
 			return
 		}
-		masterKey = deriveKey([]byte(password), data[:16])
-		log.Printf("[Security] Master key derived from password.")
-		return
 	}
 
-	// First boot: generate salt, prompt for new password, derive key.
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		log.Printf("[Security] Failed to generate salt: %v", err)
+	// Generate new random key and save to file.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("[Security] Failed to generate master key: %v. API keys will not be encrypted.", err)
 		return
 	}
-	fmt.Print("Set master password for API key encryption: ")
-	reader := bufio.NewReader(os.Stdin)
-	password, _ := reader.ReadString('\n')
-	password = strings.TrimSpace(password)
-	if password == "" {
-		log.Println("[Security] No password entered. API keys will not be encrypted.")
-		return
-	}
-	if len(password) < 8 {
-		log.Println("[Security] Password too short (min 8 chars). API keys will not be encrypted.")
-		return
-	}
-	masterKey = deriveKey([]byte(password), salt)
-	if err := os.WriteFile(saltFile, salt, 0600); err != nil {
-		log.Printf("[Security] Failed to save salt to %s: %v", saltFile, err)
+	masterKey = b
+	if err := os.WriteFile(keyFile, []byte(hex.EncodeToString(b)), 0600); err != nil {
+		log.Printf("[Security] Failed to save master key to %s: %v", keyFile, err)
 	} else {
-		log.Printf("[Security] Master key derived and salt saved to %s.", saltFile)
+		log.Printf("[Security] New master key generated and saved to %s.", keyFile)
 	}
 }
 
