@@ -3,7 +3,7 @@
 
 <head>
 	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Zuver Framework Console</title>
 	<link rel="icon" type="image/x-icon" href="https://zuver.cc/6x6logo.png">
 	<!-- UI Framework & Utilities -->
@@ -11,10 +11,10 @@
 	<script>
 		tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } } }
 	</script>
-	<script src="https://unpkg.com/lucide@latest"></script>
+	<script src="https://unpkg.com/lucide@0.468.0"></script>
 	<!-- Vendor Libraries -->
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7"></script>
+	<script src="https://cdn.jsdelivr.net/npm/marked@15.0.4/marked.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.1/dist/purify.min.js"></script>
 	<!-- Fonts -->
 	<link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,7 +23,7 @@
 		rel="stylesheet">
 	<style>
 		/* ===================================================
-		 * PAGE TRANSITION — fade + slight lift on view enter
+		 * PAGE TRANSITION �?fade + slight lift on view enter
 		 * =================================================== */
 		@keyframes page-enter {
 			from {
@@ -43,7 +43,7 @@
 		}
 
 		/* ===================================================
-		 * STREAMING TEXT — fade-in each incoming delta chunk
+		 * STREAMING TEXT �?fade-in each incoming delta chunk
 		 * =================================================== */
 		@keyframes chunk-in {
 			from {
@@ -553,7 +553,11 @@
 
 		.markdown-body a {
 			color: #3b82f6;
-			text-decoration: hover;
+			text-decoration: none;
+		}
+
+		.markdown-body a:hover {
+			text-decoration: underline;
 		}
 
 		.markdown-body strong {
@@ -725,7 +729,7 @@
 						</div>
 						<div class="bg-white dark:bg-[#111] p-6 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-xs font-bold text-gray-400 uppercase">Preferences</p>
-							<h3 id="stat-RAGs" class="text-3xl font-black mt-1">0</h3>
+							<h3 id="stat-preferences" class="text-3xl font-black mt-1">0</h3>
 						</div>
 						<div class="bg-black dark:bg-white p-6 rounded-lg text-white dark:text-black">
 							<p class="text-xs font-bold text-gray-400 uppercase">Tokens</p>
@@ -743,23 +747,23 @@
 					<div class="grid grid-cols-2 lg:grid-cols-5 gap-4">
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Tokens (24h)</p>
-							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">—</h3>
+							<h3 id="an-global-tokens" class="text-2xl font-black mt-1">�?/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Calls (24h)</p>
-							<h3 id="an-global-calls" class="text-2xl font-black mt-1">—</h3>
+							<h3 id="an-global-calls" class="text-2xl font-black mt-1">�?/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Est. Cost (24h)</p>
-							<h3 id="an-global-cost" class="text-2xl font-black mt-1">—</h3>
+							<h3 id="an-global-cost" class="text-2xl font-black mt-1">�?/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Active Agents</p>
-							<h3 id="an-active-agents" class="text-2xl font-black mt-1">—</h3>
+							<h3 id="an-active-agents" class="text-2xl font-black mt-1">�?/h3>
 						</div>
 						<div class="bg-white dark:bg-[#111] p-5 rounded-lg border border-gray-200 dark:border-gray-800">
 							<p class="text-[10px] font-bold text-gray-400 uppercase">Avg Success Rate</p>
-							<h3 id="an-avg-success" class="text-2xl font-black mt-1">—</h3>
+							<h3 id="an-avg-success" class="text-2xl font-black mt-1">�?/h3>
 						</div>
 					</div>
 					<!-- Usage trend chart (merged: global / agent / provider filter) -->
@@ -834,7 +838,7 @@
 				<div id="view-projects" class="page-view hidden h-[calc(100vh-140px)] flex flex-col">
 					<div id="view-projects-list" class="space-y-6 overflow-y-auto">
 						<div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-							<p class="text-sm text-gray-500">Design and run visual AI pipelines — connect Agents, Skills, HTTP calls,
+							<p class="text-sm text-gray-500">Design and run visual AI pipelines �?connect Agents, Skills, HTTP calls,
 								conditionals and more.</p>
 							<div class="flex gap-2 shrink-0">
 								<input id="proj-search" type="text" placeholder="Search..."
@@ -1203,7 +1207,7 @@
 				</div>
 				<!-- View: Chat Console -->
 				<div id="view-chat"
-					class="page-view hidden h-[calc(100vh-140px)] flex flex-col bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shadow-md border border-gray-200/60">
+					class="page-view hidden h-[calc(100vh-140px)] flex flex-col bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shadow-md">
 					<div class="p-4 border-b dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-black/20">
 						<div class="flex items-center gap-2">
 							<span class="text-sm font-medium text-gray-500">Agent:</span>
@@ -1275,6 +1279,9 @@
 						<input id="chat-input" type="text" placeholder="Type /help for tools, or just chat..."
 							class="flex-1 w-full bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-md px-4 py-3 outline-none font-mono text-sm focus:border-blue-500 transition-colors"
 							onkeypress="if(event.key === 'Enter') sendMessage()">
+						<label class="flex items-center gap-1 text-[10px] text-gray-400 whitespace-nowrap cursor-pointer select-none" title="Use cached response">
+							<input type="checkbox" id="toggle-cache" checked class="w-3 h-3 accent-blue-500"> Cache
+						</label>
 						<button onclick="sendMessage()" id="send-btn"
 							class="bg-blue-600 hover:bg-blue-700 text-white px-6 md:px-8 py-3 rounded-md font-bold shadow-sm w-full md:w-auto">Send</button>
 					</div>
@@ -1289,21 +1296,18 @@
 						<div
 							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
 							<div>
-								<span class="font-bold flex items-center gap-2"><i data-lucide="zap"
-										class="w-4 h-4 text-yellow-500"></i> Cache Hit Optimization</span>
-								<p class="text-xs text-gray-500 mt-1">Enable zero-latency memory cache to save API tokens.</p>
-							</div>
-							<input type="checkbox" id="toggle-cache" checked class="w-4 h-4 cursor-pointer accent-blue-500">
-						</div>
-						<div
-							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
-							<div>
 								<span class="font-bold flex items-center gap-2"><i data-lucide="share-2"
-										class="w-4 h-4 text-orange-500"></i> CORS — Cross-Origin Resource Sharing</span>
-								<p class="text-xs text-gray-500 mt-1">Adds <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">Access-Control-Allow-Origin: *</code> to all API responses. Enable when accessing the API from a browser on a different origin.</p>
+										class="w-4 h-4 text-orange-500"></i> CORS �?Cross-Origin Resource Sharing</span>
+								<p class="text-xs text-gray-500 mt-1">Restrict which origins can access the API. Use <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">*</code> for all, or comma-separated origins (e.g. <code class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">https://app.example.com,http://localhost:3000</code>).</p>
 							</div>
-							<input type="checkbox" id="toggle-cors" onchange="saveSettings()"
+							<input type="checkbox" id="toggle-cors" onchange="updateCORSUI(); saveSettings()"
 								class="w-4 h-4 cursor-pointer accent-orange-500 shrink-0 ml-4">
+						</div>
+						<div id="cors-origins-area" class="px-4 pb-4 hidden">
+							<label class="text-[10px] text-gray-500 font-bold uppercase">Allowed Origins</label>
+							<input type="text" id="cors-origins" value="*" onchange="saveSettings()"
+								placeholder="* or https://app.example.com,http://localhost:3000"
+								class="w-full border dark:border-gray-700 bg-transparent p-2 rounded-lg text-sm font-mono mt-1">
 						</div>
 						<div
 							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
@@ -1315,7 +1319,7 @@
 							<select id="lang-select" onchange="switchLanguage(this.value)"
 								class="bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-lg p-2 text-sm outline-none font-bold shadow-sm">
 								<option value="en">English</option>
-								<option value="zh">简体中文</option>
+								<option value="zh">简体中�?/option>
 								<option value="de">Deutsch</option>
 							</select>
 						</div>
@@ -1439,6 +1443,61 @@
 									<label class="text-[10px] text-gray-500 font-bold uppercase">Embedding URL</label>
 									<input type="text" id="rag-local-embedding-url" placeholder="http://localhost:11434/api/embeddings" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs font-mono mt-1">
 								</div>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-cyan-600"><i data-lucide="database"
+											class="w-4 h-4"></i> Response Cache</span>
+									<p class="text-xs text-gray-500 mt-1">Cache LLM responses to save API tokens and reduce latency.</p>
+								</div>
+								<input type="checkbox" id="toggle-response-cache" onchange="saveSettings()"
+									class="w-4 h-4 cursor-pointer accent-cyan-500">
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-amber-600"><i data-lucide="timer"
+											class="w-4 h-4"></i> Chat Retention</span>
+									<p class="text-xs text-gray-500 mt-1">Auto-prune chat history older than N days. Set 0 to disable.</p>
+								</div>
+								<div class="flex items-center gap-2">
+									<input type="number" id="chat-retention-days" value="30" min="0" max="365"
+										onchange="saveSettings()"
+										class="w-20 border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs text-center">
+									<span class="text-xs text-gray-500">days</span>
+								</div>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-violet-600"><i data-lucide="sliders"
+											class="w-4 h-4"></i> Advanced Tuning</span>
+									<p class="text-xs text-gray-500 mt-1">Fine-tune rate limiting, session duration, and retrieval thresholds.</p>
+								</div>
+							</div>
+							<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">Rate Limit (req/min)</label><input type="number" id="global-rate-limit" value="60" min="0" max="100000" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">Session TTL</label><input type="text" id="admin-token-ttl" value="24h" onchange="saveSettings()" placeholder="24h" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs font-mono mt-1"></div>
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">History Window</label><input type="number" id="chat-history-window" value="40" min="1" max="1000" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">RAG Min Score</label><input type="number" id="rag-min-score" value="0.3" min="0" max="1" step="0.05" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+							</div>
+						</div>
+						<div class="p-4 space-y-4">
+							<div class="flex items-center justify-between">
+								<div>
+									<span class="font-bold flex items-center gap-2 text-slate-600"><i data-lucide="server"
+											class="w-4 h-4"></i> Server Settings</span>
+									<p class="text-xs text-gray-500 mt-1">HTTP timeouts, header limits, and TLS certificate validity.</p>
+								</div>
+							</div>
+							<div class="grid grid-cols-3 gap-3">
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">Write Timeout (sec)</label><input type="number" id="write-timeout-sec" value="600" min="30" max="86400" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">Max Header Bytes</label><input type="number" id="max-header-bytes" value="1048576" min="1024" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
+								<div><label class="text-[10px] text-gray-500 font-bold uppercase">Cert Validity (days)</label><input type="number" id="cert-validity-days" value="365" min="1" max="3650" onchange="saveSettings()" class="w-full border dark:border-gray-700 bg-transparent p-1.5 rounded text-xs mt-1"></div>
 							</div>
 						</div>
 						<div class="p-4 space-y-4">
@@ -2252,7 +2311,7 @@
 				class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
 				<div>
 					<label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5">Password</label>
-					<input type="password" id="login-pwd" placeholder="••••••••"
+					<input type="password" id="login-pwd" placeholder="•••••••�?
 						class="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-black p-3 rounded-lg font-mono text-sm focus:border-blue-500 outline-none transition-colors"
 						onkeypress="if(event.key === 'Enter') doLogin()">
 				</div>
@@ -2274,7 +2333,7 @@
 
 	<script>
 		// ================================================================
-		// AUTH + UI UTILITY FUNCTIONS — defined first so api() can call
+		// AUTH + UI UTILITY FUNCTIONS �?defined first so api() can call
 		// them synchronously during the very first loadAllData() call.
 		// ================================================================
 		function showLoginPage() {
@@ -2549,7 +2608,7 @@
 		let currentLang = localStorage.getItem('zuver_lang') || 'en';
 
 		/**
-		 * Core i18n engine — replaces text on all tagged elements and
+		 * Core i18n engine �?replaces text on all tagged elements and
 		 * also handles placeholder/title attributes on inputs.
 		 * Icon SVGs inside elements are preserved.
 		 */
@@ -2624,7 +2683,7 @@
 		lucide.createIcons();
 
 		function escapeHTML(str) {
-			return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
 		}
 
 		function toggleMobileMenu() {
@@ -2802,7 +2861,7 @@
 				const sel = document.getElementById('skill-agent-id');
 				const current = sel.value;
 				sel.innerHTML = dataStore.agents.map(a =>
-					`<option value="${a.id}" ${a.id === current ? 'selected' : ''}>${a.name}</option>`
+					`<option value="${escapeHTML(a.id)}" ${a.id === current ? 'selected' : ''}>${escapeHTML(a.name)}</option>`
 				).join('');
 			}
 		}
@@ -2856,7 +2915,7 @@
 							lucide.createIcons();
 						}
 						// Show toast notification on every data load.
-						showToast(`Update available: ${info.latest} — visit Settings to learn more.`, 'info', 6000);
+						showToast(`Update available: ${info.latest} �?visit Settings to learn more.`, 'info', 6000);
 					}
 				}).catch(() => { });
 
@@ -2879,21 +2938,27 @@
 
 				// Populate analytical chart filters
 				if (document.getElementById('chart-filter-agents')) {
-					safeHtml('chart-filter-agents', dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join(''));
-					safeHtml('chart-filter-providers', dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join(''));
+				safeHtml('chart-filter-agents', dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join(''));
+				safeHtml('chart-filter-providers', dataStore.providers.map(p => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join(''));
 					if (window.loadChartData) window.loadChartData(document.getElementById('chart-filter').value);
 				}
 
 				// Initialize settings controls from remote settings
 				const set = await api('/settings');
-				if (set.presidio_enabled) {
-					document.getElementById('toggle-presidio').checked = (set.presidio_enabled === 'true');
-					document.getElementById('presidio-analyzer-url').value = set.presidio_analyzer;
-					document.getElementById('presidio-anonymizer-url').value = set.presidio_anonymizer;
+				if (set.presidio_enabled !== undefined) {
+					document.getElementById('toggle-presidio').checked = set.presidio_enabled;
+					document.getElementById('presidio-analyzer-url').value = set.presidio_analyzer || 'http://localhost:3000';
+					document.getElementById('presidio-anonymizer-url').value = set.presidio_anonymizer || 'http://localhost:3001';
 				}
-				document.getElementById('toggle-cors').checked = (set.cors_enabled === 'true');
-				if (set.docker_enabled) {
-					document.getElementById('toggle-docker').checked = (set.docker_enabled === 'true');
+				document.getElementById('toggle-cors').checked = set.cors_enabled || false;
+				if (set.cors_origins !== undefined) {
+					const ci = document.getElementById('cors-origins');
+					if (ci) ci.value = set.cors_origins;
+					const ca = document.getElementById('cors-origins-area');
+					if (ca) { if (set.cors_enabled) ca.classList.remove('hidden'); else ca.classList.add('hidden'); }
+				}
+				if (set.docker_enabled !== undefined) {
+					document.getElementById('toggle-docker').checked = set.docker_enabled;
 					document.getElementById('docker-host').value = set.docker_host || 'tcp://localhost:2375';
 					document.getElementById('docker-image').value = set.docker_image || 'zuver-skill:latest';
 				}
@@ -2901,24 +2966,37 @@
 				const errSel = document.getElementById('error-output-select');
 				if (errSel) {
 					const webhookOutputs = dataStore.outputs.filter(o => o.type === 'Webhook');
-					errSel.innerHTML = '<option value="">Disabled</option>' + webhookOutputs.map(o => `<option value="${o.id}" ${set.error_output_id === o.id ? 'selected' : ''}>${escapeHTML(o.name)}</option>`).join('');
+					errSel.innerHTML = '<option value="">Disabled</option>' + webhookOutputs.map(o => `<option value="${escapeHTML(o.id)}" ${(set.error_output_id || '') === o.id ? 'selected' : ''}>${escapeHTML(o.name)}</option>`).join('');
 				}
 				// Load RAG enhancement settings.
-				if (set.rag_chunking) document.getElementById('rag-chunking').checked = (set.rag_chunking === 'true');
+				if (set.rag_chunking !== undefined) document.getElementById('rag-chunking').checked = set.rag_chunking;
 				if (set.rag_chunk_size) document.getElementById('rag-chunk-size').value = set.rag_chunk_size;
 				if (set.rag_chunk_overlap) document.getElementById('rag-chunk-overlap').value = set.rag_chunk_overlap;
-				if (set.rag_embedding_cache) document.getElementById('rag-embedding-cache').checked = (set.rag_embedding_cache === 'true');
-				if (set.rag_hybrid_search) document.getElementById('rag-hybrid-search').checked = (set.rag_hybrid_search === 'true');
-				if (set.rag_local_embedding) document.getElementById('rag-local-embedding').checked = (set.rag_local_embedding === 'true');
+				if (set.rag_embedding_cache !== undefined) document.getElementById('rag-embedding-cache').checked = set.rag_embedding_cache;
+				if (set.rag_hybrid_search !== undefined) document.getElementById('rag-hybrid-search').checked = set.rag_hybrid_search;
+				if (set.rag_local_embedding !== undefined) document.getElementById('rag-local-embedding').checked = set.rag_local_embedding;
 				if (set.rag_local_embedding_url) document.getElementById('rag-local-embedding-url').value = set.rag_local_embedding_url;
+				// Load chat & cache settings.
+				if (set.response_cache_enabled !== undefined) document.getElementById('toggle-response-cache').checked = set.response_cache_enabled;
+				if (set.chat_retention_days !== undefined) document.getElementById('chat-retention-days').value = set.chat_retention_days;
+				if (set.chat_history_window !== undefined) { const e = document.getElementById('chat-history-window'); if (e) e.value = set.chat_history_window; }
+				if (set.rag_min_score !== undefined) { const e = document.getElementById('rag-min-score'); if (e) e.value = set.rag_min_score; }
+				// Load advanced tuning settings.
+				if (set.global_rate_limit !== undefined) { const e = document.getElementById('global-rate-limit'); if (e) e.value = set.global_rate_limit; }
+				if (set.admin_token_ttl !== undefined) { const e = document.getElementById('admin-token-ttl'); if (e) e.value = set.admin_token_ttl; }
+				// Load server settings.
+				if (set.write_timeout_sec !== undefined) { const e = document.getElementById('write-timeout-sec'); if (e) e.value = set.write_timeout_sec; }
+				if (set.max_header_bytes !== undefined) { const e = document.getElementById('max-header-bytes'); if (e) e.value = set.max_header_bytes; }
+				if (set.cert_validity_days !== undefined) { const e = document.getElementById('cert-validity-days'); if (e) e.value = set.cert_validity_days; }
 				updateRagChunkingUI();
 				updateRagEmbeddingUI();
 				updatePresidioUI();
 				updateDockerUI();
+				updateCORSUI();
 				loadTOTPStatus();
 
 				const sel = document.getElementById('chat-agent-select'); const old = sel.value;
-				sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+				sel.innerHTML = dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join('');
 				if (old && dataStore.agents.find(a => a.id === old)) sel.value = old;
 				loadSessions();
 				renderLists();
@@ -2951,7 +3029,7 @@
 			});
 		}
 
-		/** Intercepts modality selection — triggers file picker for non-text types */
+		/** Intercepts modality selection �?triggers file picker for non-text types */
 		function handleTypeChange(val) {
 			document.getElementById('chat-input-type').value = val;
 			// Highlight selected button
@@ -2992,7 +3070,7 @@
 					const nodeCount = (flow.nodes || []).length;
 					const edgeCount = (flow.edges || []).length;
 					const typeSet = new Set((flow.nodes || []).map(n => n.type).filter(t => t !== 'Start' && t !== 'End'));
-					const tagBadges = (p.tags || '').split(',').filter(Boolean).map(t => `<span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded text-[9px] font-mono">${t.trim()}</span>`).join('');
+					const tagBadges = (p.tags || '').split(',').filter(Boolean).map(t => `<span class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded text-[9px] font-mono">${escapeHTML(t.trim())}</span>`).join('');
 					const typeBadges = [...typeSet].slice(0, 4).map(t => {
 						const colors = { Agent: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20', Skill: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20', Code: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20', HTTP: 'text-green-500 bg-green-50 dark:bg-green-900/20', If: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20', Transform: 'text-teal-500 bg-teal-50 dark:bg-teal-900/20' };
 						const c = colors[t] || 'text-gray-500 bg-gray-50 dark:bg-gray-900/20';
@@ -3000,7 +3078,7 @@
 					}).join('');
 					return `
 		            <div class="group bg-white dark:bg-[#111] border dark:border-gray-800 rounded-xl shadow-sm hover:border-blue-400 dark:hover:border-blue-700 hover:shadow-md transition-all flex flex-col overflow-hidden">
-		                <div data-action="open-editor" data-id="${p.id}" class="p-5 flex-1 cursor-pointer">
+		                <div data-action="open-editor" data-id="${escapeHTML(p.id)}" class="p-5 flex-1 cursor-pointer">
 		                    <div class="flex items-start justify-between gap-2">
 		                        <div class="flex items-center gap-2.5">
 		                            <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
@@ -3023,50 +3101,50 @@
 		                        <span class="flex items-center gap-1"><i data-lucide="arrow-right" class="w-3 h-3"></i> ${edgeCount} edges</span>
 		                    </div>
 		                    <div class="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-		                        <button data-action="run-project" data-id="${p.id}" class="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500" title="Run"><i data-lucide="play" class="w-3.5 h-3.5"></i></button>
-		                        <button data-action="open-editor" data-id="${p.id}" class="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500" title="Edit"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
-		                        <button data-action="delete-project" data-id="${p.id}" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="run-project" data-id="${escapeHTML(p.id)}" class="p-1.5 rounded hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500" title="Run"><i data-lucide="play" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="open-editor" data-id="${escapeHTML(p.id)}" class="p-1.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500" title="Edit"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+		                        <button data-action="delete-project" data-id="${escapeHTML(p.id)}" class="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500" title="Delete"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
 		                    </div>
 		                </div>
 		            </div>`;
 				}).join(''));
-			safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} data-action="toggle-privacy" data-id="${a.id}" class="accent-green-500"> ${a.name}</label>`).join(''));
+			safeHtml('settings-privacy-agents', dataStore.agents.map(a => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"><input type="checkbox" ${a.privacy_enabled ? 'checked' : ''} data-action="toggle-privacy" data-id="${escapeHTML(a.id)}" class="accent-green-500"> ${escapeHTML(a.name)}</label>`).join(''));
 			window.filteredAgents = dataStore.agents;
 			renderAgentPage();
 			window.filteredSkills = dataStore.skills;
 			renderSkillPage();
-			safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i data-action="edit-pref" data-id="${r.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-pref" data-id="${r.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
-			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${r.name}</h3><p class="text-[10px] text-gray-400 mt-1">${r.table_name}</p></div><div class="flex gap-2"><i data-action="edit-rag" data-id="${r.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-rag" data-id="${r.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
-			safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${p.name}</h3><p class="text-[10px] text-gray-400 mt-1">${p.endpoint}</p></div><div class="flex gap-2"><i data-action="edit-provider" data-id="${p.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-provider" data-id="${p.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('preferences-list', dataStore.preferences.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${escapeHTML(r.name)}</h3><p class="text-[10px] text-gray-400 mt-1">${escapeHTML(r.table_name)}</p></div><div class="flex gap-2"><i data-action="edit-pref" data-id="${escapeHTML(r.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-pref" data-id="${escapeHTML(r.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('rags-list', dataStore.rags.map(r => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-indigo-500">${escapeHTML(r.name)}</h3><p class="text-[10px] text-gray-400 mt-1">${escapeHTML(r.table_name)}</p></div><div class="flex gap-2"><i data-action="edit-rag" data-id="${escapeHTML(r.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-rag" data-id="${escapeHTML(r.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('providers-list', dataStore.providers.map(p => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm">${escapeHTML(p.name)}</h3><p class="text-[10px] text-gray-400 mt-1">${escapeHTML(p.endpoint)}</p></div><div class="flex gap-2"><i data-action="edit-provider" data-id="${escapeHTML(p.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-provider" data-id="${escapeHTML(p.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 			safeHtml('mcp-grid', dataStore.mcp.map(m => {
 				const tools = (() => { try { const p = JSON.parse(m.tools || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } })();
 				const toolChips = tools.length
 					? tools.map(t => `<span
 							draggable="true"
-							data-mcp-id="${m.id}"
-							data-mcp-name="${m.name}"
-							data-tool="${t}"
+							data-mcp-id="${escapeHTML(m.id)}"
+							data-mcp-name="${escapeHTML(m.name)}"
+							data-tool="${escapeHTML(t)}"
 							class="mcp-tool-chip inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-700 cursor-grab active:cursor-grabbing select-none"
 							title="Drag to assign to an agent"
-						><i data-lucide="terminal" class="w-2.5 h-2.5"></i>${t}</span>`).join('')
-					: '<span class="text-[10px] text-gray-400 italic">No tools resolved yet — click Resolve.</span>';
+						><i data-lucide="terminal" class="w-2.5 h-2.5"></i>${escapeHTML(t)}</span>`).join('')
+					: '<span class="text-[10px] text-gray-400 italic">No tools resolved yet �?click Resolve.</span>';
 				return `
 				<div class="p-4 border border-yellow-200 dark:border-yellow-900 bg-yellow-50/50 dark:bg-yellow-900/10 rounded-md space-y-3">
 					<div class="flex justify-between items-start">
 						<div>
-							<h3 class="font-bold text-sm text-yellow-600">${m.name}</h3>
-							<p class="text-[10px] text-gray-400 mt-0.5 font-mono">${m.url || m.command}</p>
+							<h3 class="font-bold text-sm text-yellow-600">${escapeHTML(m.name)}</h3>
+							<p class="text-[10px] text-gray-400 mt-0.5 font-mono">${escapeHTML(m.url || m.command)}</p>
 						</div>
 						<div class="flex items-center gap-2">
-							<button data-action="resolve-mcp" data-id="${m.id}" id="resolve-btn-${m.id}"
+							<button data-action="resolve-mcp" data-id="${escapeHTML(m.id)}" id="resolve-btn-${escapeHTML(m.id)}"
 								class="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded bg-yellow-500 hover:bg-yellow-600 text-white transition-colors">
 								<i data-lucide="refresh-cw" class="w-3 h-3"></i> Resolve
 							</button>
-							<i data-action="edit-mcp" data-id="${m.id}" data-lucide="edit-2" class="w-4 h-4 text-yellow-600 hover:text-yellow-700 cursor-pointer"></i>
-							<i data-action="delete-mcp" data-id="${m.id}" data-lucide="trash-2" class="w-4 h-4 text-yellow-600 hover:text-red-500 cursor-pointer"></i>
+							<i data-action="edit-mcp" data-id="${escapeHTML(m.id)}" data-lucide="edit-2" class="w-4 h-4 text-yellow-600 hover:text-yellow-700 cursor-pointer"></i>
+							<i data-action="delete-mcp" data-id="${escapeHTML(m.id)}" data-lucide="trash-2" class="w-4 h-4 text-yellow-600 hover:text-red-500 cursor-pointer"></i>
 						</div>
 					</div>
-					<div class="flex flex-wrap gap-1.5 pt-1 border-t border-yellow-200 dark:border-yellow-800/50 mcp-tools-container" id="mcp-tools-${m.id}">
+					<div class="flex flex-wrap gap-1.5 pt-1 border-t border-yellow-200 dark:border-yellow-800/50 mcp-tools-container" id="mcp-tools-${escapeHTML(m.id)}">
 						${toolChips}
 					</div>
 				</div>`;
@@ -3075,17 +3153,17 @@
 		        <div class="p-5 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md flex flex-col justify-between">
 		            <div>
 		                <div class="flex justify-between items-start">
-		                    <h3 class="font-bold text-indigo-600 dark:text-indigo-400">${k.name}</h3>
+		                    <h3 class="font-bold text-indigo-600 dark:text-indigo-400">${escapeHTML(k.name)}</h3>
 		                    <div class="flex gap-2">
-		                        <i data-action="edit-apikey" data-id="${k.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-indigo-500 cursor-pointer"></i>
-		                        <i data-action="delete-apikey" data-id="${k.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                        <i data-action="edit-apikey" data-id="${escapeHTML(k.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-indigo-500 cursor-pointer"></i>
+		                        <i data-action="delete-apikey" data-id="${escapeHTML(k.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                    </div>
 		                </div>
-		                <p class="text-[10px] text-gray-400 mt-1">${k.description}</p>
+		                <p class="text-[10px] text-gray-400 mt-1">${escapeHTML(k.description)}</p>
 		            </div>
 		            <div class="mt-4 pt-3 border-t dark:border-gray-800 flex justify-between items-center">
-		                <code id="apikey-token-${k.id}" class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${k.token}</code>
-                <i data-action="copy-apikey" data-id="${k.id}" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer" title="Copy token"></i>
+		                <code id="apikey-token-${escapeHTML(k.id)}" class="text-[10px] bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded text-gray-500 truncate max-w-[150px]">${escapeHTML(k.token)}</code>
+                <i data-action="copy-apikey" data-id="${escapeHTML(k.id)}" data-lucide="copy" class="w-3.5 h-3.5 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer" title="Copy token"></i>
 		            </div>
 		        </div>
 		    `).join(''));
@@ -3099,17 +3177,17 @@
 		            <div class="flex items-center gap-3">
 		                <div class="p-2 bg-gray-100 dark:bg-[#1a1a1a] rounded-lg"><i data-lucide="server" class="w-4 h-4 text-gray-600 dark:text-gray-400"></i></div>
 		                <div>
-		                    <p class="font-bold text-sm">${p.name}</p>
-		                    <p class="text-[10px] text-gray-500 font-mono">${p.type} • ${p.endpoint}</p>
+		                    <p class="font-bold text-sm">${escapeHTML(p.name)}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(p.type)} �?${escapeHTML(p.endpoint)}</p>
 		                </div>
 		            </div>
 		        <div class="flex flex-col items-end gap-1">
 		                <div class="flex gap-2">
-		                    <i data-action="ping-provider" data-id="${p.id}" data-lucide="activity" class="w-4 h-4 text-gray-400 hover:text-emerald-500 cursor-pointer" title="Ping provider"></i>
-		                    <i data-action="edit-provider" data-id="${p.id}" data-lucide="edit-3" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
-		                    <i data-action="delete-provider" data-id="${p.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                    <i data-action="ping-provider" data-id="${escapeHTML(p.id)}" data-lucide="activity" class="w-4 h-4 text-gray-400 hover:text-emerald-500 cursor-pointer" title="Ping provider"></i>
+		                    <i data-action="edit-provider" data-id="${escapeHTML(p.id)}" data-lucide="edit-3" class="w-4 h-4 text-gray-400 hover:text-black dark:hover:text-white cursor-pointer"></i>
+		                    <i data-action="delete-provider" data-id="${escapeHTML(p.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                </div>
-		                <span id="provider-health-${p.id}" class="text-[10px] px-1.5 py-0.5 rounded bg-${color}-50 dark:bg-${color}-900/20 text-${color}-500 font-bold mt-1 border border-${color}-200 dark:border-${color}-800/50">${st.success_rate.toFixed(1)}% Success | ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
+		                <span id="provider-health-${escapeHTML(p.id)}" class="text-[10px] px-1.5 py-0.5 rounded bg-${color}-50 dark:bg-${color}-900/20 text-${color}-500 font-bold mt-1 border border-${color}-200 dark:border-${color}-800/50">${st.success_rate.toFixed(1)}% Success | ${st.tokens_24h.toLocaleString()} TKs (24h)</span>
 		            </div>
 		        </div>
 		    `}).join(''));
@@ -3123,12 +3201,12 @@
 		            <div class="flex items-center gap-3">
 		                <div class="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg"><i data-lucide="database" class="w-4 h-4"></i></div>
 		                <div>
-		                    <p class="font-bold text-sm">${s.name}</p>
-		                    <p class="text-[10px] text-gray-500 font-mono">${s.type} • ${timeStr}</p>
+		                    <p class="font-bold text-sm">${escapeHTML(s.name)}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(s.type)} �?${timeStr}</p>
 		                </div>
 		            </div>
 		            <div class="flex flex-col items-end gap-1">
-		                <i data-action="delete-source" data-id="${s.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <i data-action="delete-source" data-id="${escapeHTML(s.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                <span class="text-[10px] font-bold text-gray-400 mt-1">${st.calls_24h} Calls (24h)</span>
 		            </div>
 		        </div>
@@ -3146,12 +3224,12 @@
 		                    <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-[#111] rounded-full animate-pulse"></span>
 		                </div>
 		                <div>
-		                    <p class="font-bold text-sm">${m.name}</p>
-		                    <p class="text-[10px] text-gray-500 font-mono">${label}</p>
+		                    <p class="font-bold text-sm">${escapeHTML(m.name)}</p>
+		                    <p class="text-[10px] text-gray-500 font-mono">${escapeHTML(label)}</p>
 		                </div>
 		            </div>
 		            <div class="flex flex-col items-end gap-1">
-		                <i data-action="delete-mcp" data-id="${m.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
+		                <i data-action="delete-mcp" data-id="${escapeHTML(m.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i>
 		                <span class="text-[10px] font-bold text-emerald-500 mt-1">${st.calls_24h} Calls (24h)</span>
 		            </div>
 		        </div>
@@ -3159,7 +3237,7 @@
 
 			// Render unified outputs interface (combining Base Outputs and Omni Skills)
 			const combinedOutputs = [
-				...dataStore.outputs.map(o => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><h3 class="font-bold text-sm">${o.name}</h3><div class="flex gap-2"><i data-action="edit-output" data-id="${o.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-output" data-id="${o.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
+				...dataStore.outputs.map(o => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between"><h3 class="font-bold text-sm">${escapeHTML(o.name)}</h3><div class="flex gap-2"><i data-action="edit-output" data-id="${escapeHTML(o.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-output" data-id="${escapeHTML(o.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`),
 				...dataStore.skills.map(s => `<div class="p-4 border border-orange-200 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/10 rounded-md"><div class="flex justify-between"><div><h3 class="font-bold text-sm text-orange-600">${s.name}</h3><p class="text-[10px] text-orange-500/70 mt-1">Skill | ${s.type}</p></div><i data-action="goto-skills" data-lucide="arrow-right" class="w-4 h-4 text-orange-400 hover:text-orange-600 cursor-pointer"></i></div></div>`)
 			].join('');
 			safeHtml('outputs-list', combinedOutputs);
@@ -3203,10 +3281,10 @@
 		                    </div>
 		                </div>
 			<div class="flex items-center gap-3 z-20">
-				                    <i data-action="export-agent" data-id="${a.id}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" title="Export agent JSON"></i>
-				                    <i data-action="clone-agent" data-id="${a.id}" data-lucide="copy" class="w-4 h-4 text-gray-400 hover:text-indigo-500 transition-colors" title="Clone agent"></i>
-				                    <i data-action="edit-agent" data-id="${a.id}" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
-				                    <i data-action="delete-agent" data-id="${a.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
+			                    <i data-action="export-agent" data-id="${escapeHTML(a.id)}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 transition-colors" title="Export agent JSON"></i>
+			                    <i data-action="clone-agent" data-id="${escapeHTML(a.id)}" data-lucide="copy" class="w-4 h-4 text-gray-400 hover:text-indigo-500 transition-colors" title="Clone agent"></i>
+			                    <i data-action="edit-agent" data-id="${escapeHTML(a.id)}" data-lucide="settings" class="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors"></i>
+			                    <i data-action="delete-agent" data-id="${escapeHTML(a.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors"></i>
 		                </div>
 		            </div>
 		            <div class="text-[10px] text-gray-500 mt-auto flex gap-2 flex-wrap relative z-10 pt-4 border-t dark:border-gray-800/50">
@@ -3236,7 +3314,7 @@
 			const filtered = window.filteredSkills;
 			const start = (window.skillsPage - 1) * ITEMS_PER_PAGE;
 			const pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
-			safeHtml('skills-list', pageItems.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between items-center"><div><h3 class="font-bold text-sm">${s.name}</h3><p class="text-[10px] text-gray-400 mt-1">${s.type}${s.use_docker ? ' <span class="text-purple-500">(Docker)</span>' : ''}</p></div><div class="flex gap-2"><i data-action="export-skill" data-id="${s.id}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 cursor-pointer" title="Export skill JSON"></i><i data-action="edit-skill" data-id="${s.id}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-skill" data-id="${s.id}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
+			safeHtml('skills-list', pageItems.map(s => `<div class="p-4 border dark:border-gray-800 bg-white dark:bg-[#111] rounded-md"><div class="flex justify-between items-center"><div><h3 class="font-bold text-sm">${escapeHTML(s.name)}</h3><p class="text-[10px] text-gray-400 mt-1">${escapeHTML(s.type)}${s.use_docker ? ' <span class="text-purple-500">(Docker)</span>' : ''}</p></div><div class="flex gap-2"><i data-action="export-skill" data-id="${escapeHTML(s.id)}" data-lucide="download" class="w-4 h-4 text-gray-400 hover:text-green-500 cursor-pointer" title="Export skill JSON"></i><i data-action="edit-skill" data-id="${escapeHTML(s.id)}" data-lucide="edit-2" class="w-4 h-4 text-gray-400 hover:text-blue-500 cursor-pointer"></i><i data-action="delete-skill" data-id="${escapeHTML(s.id)}" data-lucide="trash-2" class="w-4 h-4 text-gray-400 hover:text-red-500 cursor-pointer"></i></div></div></div>`).join(''));
 			renderPagination('skills', filtered.length);
 			lucide.createIcons();
 		}
@@ -3263,7 +3341,7 @@
 		/* ==========================================
 		 * PERSISTENT CHAT & CONSOLE ENGINE
 		 * ========================================== */
-		document.getElementById('chat-agent-select').addEventListener('change', loadChatHistory);
+		// loadChatHistory is called from the agent select change handler below.
 
 		async function loadChatHistory() {
 			const agentId = document.getElementById('chat-agent-select').value;
@@ -3275,7 +3353,6 @@
 			const emptyKey = 'Memory clean. Start chatting!';
 			const loadingText = currentLang === 'en' ? loadingKey : (i18nDict[loadingKey]?.[currentLang] || loadingKey);
 			const emptyText = currentLang === 'en' ? emptyKey : (i18nDict[emptyKey]?.[currentLang] || emptyKey);
-			chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${emptyText.replace('...', '...')}</div>`;
 			chatBox.innerHTML = `<div class="text-center text-xs text-gray-400 p-4">${loadingText}</div>`;
 			try {
 				const url = sessionId ? `/history/${agentId}?session_id=${sessionId}` : `/history/${agentId}`;
@@ -3358,7 +3435,7 @@
 					const formData = new FormData();
 					formData.append('file', file);
 					if (agentId) formData.append('agent_id', agentId);
-					const r = await fetch('/api/upload', {
+					const r = await fetch('/api/v1/upload', {
 						method: 'POST',
 						headers: { 'Authorization': 'Bearer ' + token },
 						body: formData
@@ -3391,7 +3468,7 @@
 			try {
 				const sessions = await api(`/sessions/${agentId}`, 'GET', null, true);
 				const current = sel.value;
-				sel.innerHTML = '<option value="">Default</option>' + (sessions || []).map(s => `<option value="${s.id}">${escapeHTML(s.name)}</option>`).join('');
+				sel.innerHTML = '<option value="">Default</option>' + (sessions || []).map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(s.name)}</option>`).join('');
 				if (current) sel.value = current;
 			} catch (e) { }
 		}
@@ -3421,7 +3498,7 @@
 			// Populate agent filter dropdown.
 			const agentSel = document.getElementById('sessions-agent-filter');
 			if (agentSel && agentSel.options.length <= 1) {
-				agentSel.innerHTML = '<option value="">All Agents</option>' + dataStore.agents.map(a => `<option value="${a.id}">${escapeHTML(a.name)}</option>`).join('');
+				agentSel.innerHTML = '<option value="">All Agents</option>' + dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join('');
 			}
 
 			try {
@@ -3576,7 +3653,7 @@
 					const contentType = resp.headers.get('content-type') || '';
 
 					if (contentType.includes('text/event-stream')) {
-						// Create the AI reply bubble (initially empty — filled by delta events).
+						// Create the AI reply bubble (initially empty �?filled by delta events).
 						const aiBubble = document.createElement('div');
 						aiBubble.className = 'chat-bubble-ai markdown-body';
 						chatBox.appendChild(aiBubble);
@@ -3631,14 +3708,14 @@
 									const card = document.createElement('div');
 									card.className = 'tool-step-card running';
 									const cmdLabel = parsed.tool_start.length > 60
-										? parsed.tool_start.slice(0, 60) + '…'
+										? parsed.tool_start.slice(0, 60) + '�?
 										: parsed.tool_start;
 									card.innerHTML = `<span class="tool-step-dot"></span>
 		                                <span class="flex-1 truncate">${escapeHTML(cmdLabel)}</span>
 		                                <span class="tool-step-timer text-gray-400" data-start="${Date.now()}">0ms</span>`;
 									chatBox.insertBefore(card, aiBubble);
 
-									// Live timer tick — shows elapsed ms while running.
+									// Live timer tick �?shows elapsed ms while running.
 									const timerEl = card.querySelector('.tool-step-timer');
 									const startMs = Date.now();
 									const ticker = setInterval(() => {
@@ -3650,7 +3727,7 @@
 										if (elapsedMs > 1000 && !card.querySelector('.bg-indicator')) {
 											const bg = document.createElement('span');
 											bg.className = 'bg-indicator text-[10px] text-blue-500 font-mono ml-1';
-											bg.textContent = 'executing…';
+											bg.textContent = 'executing�?;
 											timerEl.parentNode.insertBefore(bg, timerEl);
 										}
 									}, 50);
@@ -3697,7 +3774,7 @@
 							}
 						}
 					} else {
-						// Provider returned non-SSE despite stream flag — fall back to JSON.
+						// Provider returned non-SSE despite stream flag �?fall back to JSON.
 						const data = await resp.json();
 						if (data.logs) {
 							data.logs.forEach(log => {
@@ -3794,7 +3871,7 @@
 			switch (n.type) {
 				case 'Agent': return dataStore.agents.find(a => a.id === n.agentId)?.name || 'Not configured';
 				case 'Skill': return dataStore.skills.find(s => s.id === n.skillId)?.name || 'Not configured';
-				case 'HTTP': return (n.httpMethod || 'GET') + ' ' + (n.httpUrl ? n.httpUrl.substring(0, 22) + '…' : '(no url)');
+				case 'HTTP': return (n.httpMethod || 'GET') + ' ' + (n.httpUrl ? n.httpUrl.substring(0, 22) + '�? : '(no url)');
 				case 'If': return (n.condition || 'contains') + ': ' + (n.condValue || '(value)');
 				case 'Transform': return n.operation || 'trim';
 				case 'Wait': return (n.seconds || 1) + 's';
@@ -3825,7 +3902,7 @@
 			}
 			selectedNode = null;
 			undoStack = []; // Reset undo history when opening a new project
-			if (typeof window.markClean === 'function') window.markClean('project'); // Fresh open — not dirty yet
+			if (typeof window.markClean === 'function') window.markClean('project'); // Fresh open �?not dirty yet
 			renderCanvas(); renderProps(); lucide.createIcons();
 		};
 
@@ -3899,7 +3976,7 @@
 				if (skillParams.length > 0) {
 					paramPortsHTML = skillParams.map((p, i) => {
 						const topPct = 44 + i * 22; // px from top of node body (below header)
-						return `<div class="wf-port wf-port-in" style="top:${topPct}px;left:-7px;transform:none;" title="param: ${escapeHTML(p)}" data-param="${escapeHTML(p)}" onmouseup="connectParam(event,'${n.id}','${escapeHTML(p)}')">
+						return `<div class="wf-port wf-port-in" style="top:${topPct}px;left:-7px;transform:none;" title="param: ${escapeHTML(p)}" data-param="${escapeHTML(p)}" onmouseup="connectParam(event,'${escapeHTML(n.id)}','${escapeHTML(p)}')">
 		                    <span style="position:absolute;left:10px;top:-2px;font-size:9px;color:#9ca3af;white-space:nowrap;pointer-events:none;">${escapeHTML(p)}</span>
 		                </div>`;
 					}).join('');
@@ -3911,13 +3988,10 @@
 		                    <i data-lucide="${style.icon}" class="w-3 h-3" style="color:${style.color}"></i>
 		                    <span class="text-[11px] font-bold" style="color:${style.color}">${style.label}</span>
 		                </div>
-		                ${canDel ? `<i onclick="event.stopPropagation();delNode('${n.id}')" data-lucide="x" class="w-3 h-3 text-gray-400 hover:text-red-500 cursor-pointer"></i>` : ''}
-		            </div>
-		            <div class="px-2.5 py-1.5" style="min-height:${Math.max(22, extraPortsHeight)}px"><p class="text-[10px] text-gray-400 truncate">${escapeHTML(subtitle || '\u00a0')}</p></div>
-		            ${n.type !== 'Start' ? '<div class="wf-port wf-port-in" style="top:28px"></div>' : ''}
-		            ${paramPortsHTML}
-		            ${n.type !== 'End' ? `<div class="wf-port wf-port-out" onmousedown="startLine(event,'${n.id}')"></div>` : ''}
-		            ${n.type === 'If' ? `<div class="wf-port" style="right:-7px;top:72%;transform:translateY(-50%);background:#eab308;border-color:#ca8a04" title="False branch" onmousedown="startLine(event,'${n.id}',true)"></div>` : ''}
+	                ${canDel ? `<i onclick="event.stopPropagation();delNode('${escapeHTML(n.id)}')" data-lucide="x" class="w-3 h-3 text-gray-400 hover:text-red-500 cursor-pointer"></i>` : ''}
+	            </div>
+	            ${n.type !== 'End' ? `<div class="wf-port wf-port-out" onmousedown="startLine(event,'${escapeHTML(n.id)}')"></div>` : ''}
+	            ${n.type === 'If' ? `<div class="wf-port" style="right:-7px;top:72%;transform:translateY(-50%);background:#eab308;border-color:#ca8a04" title="False branch" onmousedown="startLine(event,'${escapeHTML(n.id)}',true)"></div>` : ''}
 		        `;
 				d.onmousedown = (e) => {
 					if (e.target.classList.contains('wf-port') || e.target.closest('[data-lucide="x"]')) return;
@@ -3982,7 +4056,7 @@
 			}
 		});
 
-		// Undo last action (snapshot-based) — Ctrl+Z / toolbar button
+		// Undo last action (snapshot-based) �?Ctrl+Z / toolbar button
 		window.undoEdge = () => {
 			if (undoStack.length > 0) {
 				const snap = undoStack.pop();
@@ -4045,7 +4119,7 @@
 				hitPath.setAttribute('stroke', 'transparent'); hitPath.setAttribute('stroke-width', '12');
 				hitPath.setAttribute('fill', 'none');
 				hitPath.style.pointerEvents = 'stroke'; hitPath.style.cursor = 'pointer';
-				hitPath.title = isParam ? `param: ${edge.paramName} — click to delete` : 'click to delete';
+				hitPath.title = isParam ? `param: ${edge.paramName} �?click to delete` : 'click to delete';
 				hitPath.onclick = (ev) => {
 					ev.stopPropagation();
 					pushUndo();
@@ -4053,7 +4127,7 @@
 					drawLines();
 				};
 
-				// Visible styled path (no pointer events — handled by hitPath)
+				// Visible styled path (no pointer events �?handled by hitPath)
 				const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 				path.setAttribute('d', d);
 				path.setAttribute('stroke', color); path.setAttribute('stroke-width', isParam ? '1.5' : '2');
@@ -4121,7 +4195,7 @@
 					h += `<label class="${FL}">Target Agent</label>
 		                  <select onchange="updateNode('agentId',this.value);renderCanvas()" class="${FI}">
 		                      <option value="">-- Select Agent --</option>
-		                      ${dataStore.agents.map(a => `<option value="${a.id}"${n.agentId === a.id ? ' selected' : ''}>${escapeHTML(a.name)}</option>`).join('')}
+		                      ${dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}"${n.agentId === a.id ? ' selected' : ''}>${escapeHTML(a.name)}</option>`).join('')}
 		                  </select>
 		                  <label class="${FL}">System Prompt Override</label>
 		                  <textarea oninput="updateNode('sysPrompt',this.value)" placeholder="Leave blank for agent default" rows="3" class="${FI} font-mono">${escapeHTML(n.sysPrompt || '')}</textarea>
@@ -4132,7 +4206,7 @@
 					h += `<label class="${FL}">Target Skill</label>
 		                  <select onchange="updateNode('skillId',this.value);renderCanvas();renderProps()" class="${FI}">
 		                      <option value="">-- Choose Skill --</option>
-		                      ${dataStore.skills.map(s => `<option value="${s.id}"${n.skillId === s.id ? ' selected' : ''}>${escapeHTML(s.name)} [${s.type}]</option>`).join('')}
+		                      ${dataStore.skills.map(s => `<option value="${escapeHTML(s.id)}"${n.skillId === s.id ? ' selected' : ''}>${escapeHTML(s.name)} [${escapeHTML(s.type)}]</option>`).join('')}
 		                  </select>`;
 					if (n.skillId) {
 						const sk = dataStore.skills.find(s => s.id === n.skillId);
@@ -4199,7 +4273,7 @@
 					h += `<label class="${FL}">Sub-Pipeline</label>
 		                  <select onchange="updateNode('projectId',this.value);renderCanvas()" class="${FI}">
 		                      <option value="">-- Select Pipeline --</option>
-		                      ${dataStore.projects.filter(x => x.id !== activeId).map(pr => `<option value="${pr.id}"${n.projectId === pr.id ? ' selected' : ''}>${escapeHTML(pr.name)}</option>`).join('')}
+		                      ${dataStore.projects.filter(x => x.id !== activeId).map(pr => `<option value="${escapeHTML(pr.id)}"${n.projectId === pr.id ? ' selected' : ''}>${escapeHTML(pr.name)}</option>`).join('')}
 		                  </select>`;
 					break;
 				case 'SetVariable': case 'GetVariable':
@@ -4228,7 +4302,7 @@
 			try {
 				await api(endpoint, method, { id: activeId, name, description: desc, flow_json: JSON.stringify({ nodes, edges }), is_active: true });
 				await loadAllData();
-				window.markClean('project'); // Saved — no longer dirty
+				window.markClean('project'); // Saved �?no longer dirty
 				showToast(`"${name}" saved successfully.`, 'success');
 			} catch (e) {
 				showToast('Failed to save pipeline.', 'error');
@@ -4428,10 +4502,11 @@
 				id,
 				name: document.getElementById('source-name-input').value,
 				type: document.getElementById('source-type-input').value,
-				mode: document.getElementById('source-mode-input').value,
-				api_key: document.getElementById('source-key-input').value
+				mode: document.getElementById('source-mode-input')?.value || '',
+				api_key: document.getElementById('source-key-input').value.trim(),
+				file_path: document.getElementById('source-file-input')?.value || ''
 			});
-			closeModal('modal-source'); loadAllData();
+			closeModal('modal-source'); loadAllData(); showToast('Source saved.', 'success');
 		};
 
 		window.toggleOutputTypeUI = () => {
@@ -4468,7 +4543,7 @@
 			try {
 				const res = await api(`/providers/${id}/health`);
 				const label = res.ok
-					? `Online — ${res.latency_ms}ms`
+					? `Online �?${res.latency_ms}ms`
 					: `Offline (HTTP ${res.status})`;
 				const color = res.ok ? 'text-emerald-500' : 'text-red-500';
 				if (badge) { badge.textContent = label; badge.className = `text-[10px] px-1.5 py-0.5 rounded font-bold mt-1 border ${res.ok ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50'} ${color}`; }
@@ -4487,7 +4562,7 @@
 			tag.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-yellow-200 dark:bg-yellow-800/40 text-yellow-800 dark:text-yellow-300 border border-yellow-400 dark:border-yellow-600';
 			tag.dataset.mcpId = mcpId;
 			tag.dataset.tool = tool;
-			tag.innerHTML = `<i data-lucide="terminal" class="w-2.5 h-2.5 shrink-0"></i><span>${mcpName}: ${tool}</span><button onclick="this.parentElement.remove(); window.updateMCPDropHint();" class="ml-0.5 text-yellow-600 hover:text-red-500 leading-none">&times;</button>`;
+			tag.innerHTML = `<i data-lucide="terminal" class="w-2.5 h-2.5 shrink-0"></i><span>${escapeHTML(mcpName)}: ${escapeHTML(tool)}</span><button onclick="this.parentElement.remove(); window.updateMCPDropHint();" class="ml-0.5 text-yellow-600 hover:text-red-500 leading-none">&times;</button>`;
 			return tag;
 		}
 
@@ -4558,7 +4633,7 @@
 			}
 		};
 
-		// Global dragstart handler for MCP tool chips — sets transfer data so the
+		// Global dragstart handler for MCP tool chips �?sets transfer data so the
 		// agent editor drop zone knows which server and tool are being dragged.
 		document.addEventListener('dragstart', (e) => {
 			const chip = e.target.closest('.mcp-tool-chip');
@@ -4691,7 +4766,7 @@
 			const sel = document.getElementById('rag-test-id');
 			if (sel && dataStore.rags) {
 				const current = sel.value;
-				sel.innerHTML = dataStore.rags.map(r => `<option value="${r.id}">${escapeHTML(r.name)}</option>`).join('');
+				sel.innerHTML = dataStore.rags.map(r => `<option value="${escapeHTML(r.id)}">${escapeHTML(r.name)}</option>`).join('');
 				if (current) sel.value = current;
 			}
 		});
@@ -4855,6 +4930,18 @@
 			}
 		}
 
+		function updateCORSUI() {
+			const el = document.getElementById('cors-origins-area');
+			if (el) {
+				if (document.getElementById('toggle-cors').checked) {
+					el.classList.remove('hidden');
+				} else {
+					el.classList.add('hidden');
+				}
+			}
+		}
+		document.getElementById('toggle-cors')?.addEventListener('change', function() { updateCORSUI(); saveSettings(); });
+
 		function updateRagChunkingUI() {
 			const el = document.getElementById('rag-chunking-config');
 			if (el) {
@@ -4881,21 +4968,31 @@
 		/** Persists core settings configurations implicitly */
 		async function saveSettings() {
 			await api('/settings', 'POST', {
-				presidio_enabled: document.getElementById('toggle-presidio').checked.toString(),
+				presidio_enabled: document.getElementById('toggle-presidio').checked,
 				presidio_analyzer: document.getElementById('presidio-analyzer-url').value,
 				presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
-				cors_enabled: document.getElementById('toggle-cors').checked.toString(),
-				docker_enabled: document.getElementById('toggle-docker').checked.toString(),
+				cors_enabled: document.getElementById('toggle-cors').checked,
+				cors_origins: document.getElementById('cors-origins')?.value || '*',
+				docker_enabled: document.getElementById('toggle-docker').checked,
 				docker_host: document.getElementById('docker-host').value,
 				docker_image: document.getElementById('docker-image').value,
 				error_output_id: document.getElementById('error-output-select')?.value || '',
-				rag_chunking: document.getElementById('rag-chunking').checked.toString(),
-				rag_chunk_size: document.getElementById('rag-chunk-size').value,
-				rag_chunk_overlap: document.getElementById('rag-chunk-overlap').value,
-				rag_embedding_cache: document.getElementById('rag-embedding-cache').checked.toString(),
-				rag_hybrid_search: document.getElementById('rag-hybrid-search').checked.toString(),
-				rag_local_embedding: document.getElementById('rag-local-embedding').checked.toString(),
-				rag_local_embedding_url: document.getElementById('rag-local-embedding-url').value
+				rag_chunking: document.getElementById('rag-chunking').checked,
+				rag_chunk_size: parseInt(document.getElementById('rag-chunk-size').value) || 500,
+				rag_chunk_overlap: parseInt(document.getElementById('rag-chunk-overlap').value) || 50,
+				rag_embedding_cache: document.getElementById('rag-embedding-cache').checked,
+				rag_hybrid_search: document.getElementById('rag-hybrid-search').checked,
+				rag_local_embedding: document.getElementById('rag-local-embedding').checked,
+				rag_local_embedding_url: document.getElementById('rag-local-embedding-url').value,
+				rag_min_score: parseFloat(document.getElementById('rag-min-score')?.value) || 0.3,
+				response_cache_enabled: document.getElementById('toggle-response-cache').checked,
+				chat_retention_days: parseInt(document.getElementById('chat-retention-days').value) || 0,
+				chat_history_window: parseInt(document.getElementById('chat-history-window')?.value) || 40,
+				global_rate_limit: parseInt(document.getElementById('global-rate-limit')?.value) || 0,
+				admin_token_ttl: document.getElementById('admin-token-ttl')?.value || '24h',
+				write_timeout_sec: parseInt(document.getElementById('write-timeout-sec')?.value) || 600,
+				max_header_bytes: parseInt(document.getElementById('max-header-bytes')?.value) || 1048576,
+				cert_validity_days: parseInt(document.getElementById('cert-validity-days')?.value) || 365
 			});
 		}
 
@@ -4911,15 +5008,6 @@
 			}
 		}
 
-		window.submitSource = async () => {
-			const id = document.getElementById('source-id-input').value || 'src_' + Date.now();
-				await api(document.getElementById('source-id-input').value ? `/sources/${id}` : '/sources', document.getElementById('source-id-input').value ? 'PUT' : 'POST', {
-					id, name: document.getElementById('source-name-input').value, type: document.getElementById('source-type-input').value,
-					api_key: document.getElementById('source-key-input').value.trim(), file_path: document.getElementById('source-file-input').value
-				});
-			closeModal('modal-source'); loadAllData(); showToast('Source saved.', 'success');
-		};
-
 		/** Dynamically updates resource mounts available to the currently selected agent */
 		window.renderAgentSources = () => {
 			const ins = Array.from(document.querySelectorAll('.in-cb:checked')).map(cb => cb.value);
@@ -4931,21 +5019,21 @@
 				return ins.includes(s.type);
 			});
 
-			container.innerHTML =
-				filteredSources.map(s => `
-		            <div class="border border-blue-200 dark:border-blue-900/30 rounded-lg p-2 bg-blue-50/20 dark:bg-blue-900/10">
-		                <label class="flex items-center gap-2 text-xs font-bold"><input type="checkbox" value="${s.id}" class="src-cb accent-blue-600"> ${s.name} [${s.type}]</label>
-		                <div class="ml-5 mt-1 space-y-1">
-		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="push_${s.id}"> Prompt when received POST update</label>
-		                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="fetch_${s.id}"> Fetch & Contain on User Prompt</label>
-		                </div>
-		            </div>
-		        `).join('') +
-				dataStore.rags.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-indigo-500"> ${r.name} [Vector RAG]</label>`).join('') +
-				dataStore.preferences.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${r.id}" class="src-cb accent-teal-500"> ${r.name} [Preferences]</label>`).join('') +
-				dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-orange-600"><input type="checkbox" value="${sk.id}" class="sk-cb accent-orange-500"> ${sk.name} [Skill]</label>`).join('') +
-				dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-purple-600"><input type="checkbox" value="${o.id}" class="out-cb accent-purple-500"> ${o.name} [Output]</label>`).join('') +
-				dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-yellow-600"><input type="checkbox" value="${m.id}" class="mcp-cb accent-yellow-500"> ${m.name} [MCP]</label>`).join('') +
+		container.innerHTML =
+			filteredSources.map(s => `
+	            <div class="border border-blue-200 dark:border-blue-900/30 rounded-lg p-2 bg-blue-50/20 dark:bg-blue-900/10">
+	                <label class="flex items-center gap-2 text-xs font-bold"><input type="checkbox" value="${escapeHTML(s.id)}" class="src-cb accent-blue-600"> ${escapeHTML(s.name)} [${escapeHTML(s.type)}]</label>
+	                <div class="ml-5 mt-1 space-y-1">
+	                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="push_${escapeHTML(s.id)}"> Prompt when received POST update</label>
+	                    <label class="flex items-center gap-2 text-[10px] text-gray-500"><input type="checkbox" id="fetch_${escapeHTML(s.id)}"> Fetch & Contain on User Prompt</label>
+	                </div>
+	            </div>
+	        `).join('') +
+			dataStore.rags.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${escapeHTML(r.id)}" class="src-cb accent-indigo-500"> ${escapeHTML(r.name)} [Vector RAG]</label>`).join('') +
+			dataStore.preferences.map(r => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs"><input type="checkbox" value="${escapeHTML(r.id)}" class="src-cb accent-teal-500"> ${escapeHTML(r.name)} [Preferences]</label>`).join('') +
+			dataStore.skills.map(sk => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-orange-600"><input type="checkbox" value="${escapeHTML(sk.id)}" class="sk-cb accent-orange-500"> ${escapeHTML(sk.name)} [Skill]</label>`).join('') +
+			dataStore.outputs.map(o => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-purple-600"><input type="checkbox" value="${escapeHTML(o.id)}" class="out-cb accent-purple-500"> ${escapeHTML(o.name)} [Output]</label>`).join('') +
+			dataStore.mcp.map(m => `<label class="flex items-center gap-2 p-2 border dark:border-gray-700 rounded-lg text-xs text-yellow-600"><input type="checkbox" value="${escapeHTML(m.id)}" class="mcp-cb accent-yellow-500"> ${escapeHTML(m.name)} [MCP]</label>`).join('') +
 				`<div id="mcp-tools-drop-zone"
 					class="mt-2 min-h-[56px] rounded-lg border-2 border-dashed border-yellow-300 dark:border-yellow-700 bg-yellow-50/40 dark:bg-yellow-900/10 p-2 flex flex-wrap gap-1.5 items-start transition-colors"
 					ondragover="event.preventDefault(); event.dataTransfer.dropEffect='copy'; this.classList.add('border-yellow-500','bg-yellow-100/60','dark:bg-yellow-800/20');"
@@ -4965,7 +5053,7 @@
 			window.showView('agent-editor');
 			document.getElementById('view-agent-editor').classList.add('flex');
 			if (typeof window.markClean === 'function') window.markClean('agent'); // Fresh open
-			document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+			document.getElementById('agent-provider-input').innerHTML = dataStore.providers.map(p => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');
 
 			const a = dataStore.agents.find(x => x.id === id);
 			window.activeAgentEditing = a;
@@ -5087,7 +5175,7 @@
 				const itemPerms = perms[item.id] || {};
 				const cells = actions.map(action => {
 					const checked = itemPerms[action] === true ? 'checked' : '';
-					return `<td class="px-2 py-2 text-center"><input type="checkbox" data-res="${resource}" data-id="${item.id}" data-action="${action}" class="ak-item-cb ${AK_ACTION_COLORS[action]}" ${checked}></td>`;
+					return `<td class="px-2 py-2 text-center"><input type="checkbox" data-res="${escapeHTML(resource)}" data-id="${escapeHTML(item.id)}" data-action="${escapeHTML(action)}" class="ak-item-cb ${AK_ACTION_COLORS[action]}" ${checked}></td>`;
 				}).join('');
 				return `<tr class="hover:bg-gray-50 dark:hover:bg-[#1c1c1c] transition-colors">
 		            <td class="px-3 py-2">
@@ -5191,7 +5279,7 @@
 			const id = document.getElementById('apikey-id-input').value;
 			const perms = { preferences: {} };
 
-			// Per-item checkboxes (agents + projects) — build nested {resource: {id: {action: true}}}
+			// Per-item checkboxes (agents + projects) �?build nested {resource: {id: {action: true}}}
 			document.querySelectorAll('.ak-item-cb:checked').forEach(cb => {
 				const res = cb.getAttribute('data-res');
 				const itemId = cb.getAttribute('data-id');
@@ -5336,9 +5424,9 @@
 							</div>
 						</div>
 						<div class="flex items-center gap-2 shrink-0">
-							<button data-action="toggle-task" data-id="${t.id}" data-active="${t.active}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
-							<button data-action="edit-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
-							<button data-action="delete-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
+							<button data-action="toggle-task" data-id="${escapeHTML(t.id)}" data-active="${escapeHTML(String(t.active))}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
+							<button data-action="edit-task" data-id="${escapeHTML(t.id)}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
+							<button data-action="delete-task" data-id="${escapeHTML(t.id)}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
 						</div>
 					</div>`;
 				}).join('');
@@ -5351,9 +5439,9 @@
 		window.openTaskModal = (id = null) => {
 			openModal('modal-task');
 			const sel = document.getElementById('task-agent-id');
-			sel.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-			if (id) {
-				// Find task from last loaded list — we'll store it
+		sel.innerHTML = dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join('');
+		if (id) {
+				// Find task from last loaded list �?we'll store it
 				const t = (window._lastTasks || []).find(x => x.id === id);
 				if (t) {
 					document.getElementById('task-id-input').value = t.id;
@@ -5428,9 +5516,9 @@
 						</div>
 					</div>
 					<div class="flex items-center gap-2 shrink-0">
-						<button data-action="toggle-task" data-id="${t.id}" data-active="${t.active}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
-						<button data-action="edit-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
-						<button data-action="delete-task" data-id="${t.id}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
+						<button data-action="toggle-task" data-id="${escapeHTML(t.id)}" data-active="${escapeHTML(String(t.active))}" class="px-2 py-1 rounded text-[10px] font-bold ${t.active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}">${t.active ? 'Active' : 'Paused'}</button>
+						<button data-action="edit-task" data-id="${escapeHTML(t.id)}" class="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><i data-lucide="edit-2" class="w-3.5 h-3.5 text-gray-400 hover:text-blue-500"></i></button>
+						<button data-action="delete-task" data-id="${escapeHTML(t.id)}" class="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20"><i data-lucide="trash-2" class="w-3.5 h-3.5 text-gray-400 hover:text-red-500"></i></button>
 					</div>
 				</div>`;
 			}).join('');
@@ -5642,7 +5730,7 @@
 		};
 
 		/* ==========================================
-			 * NAVIGATION — data-target click delegation
+			 * NAVIGATION �?data-target click delegation
 			 * ==========================================
 			 * Each sidebar .nav-item has data-target="<name>" which maps to
 			 * a section with id="view-<name>". Clicking a nav item hides all
@@ -5731,10 +5819,10 @@
 				}
 			}
 
-			// --- Public showView — bypasses dirty guard (for programmatic navigation after save) ---
+			// --- Public showView �?bypasses dirty guard (for programmatic navigation after save) ---
 			window.showView = applyShowView;
 
-			// --- showViewGuarded — checks dirty state, used by nav clicks ---
+			// --- showViewGuarded �?checks dirty state, used by nav clicks ---
 			async function showViewGuarded(target) {
 				if (dirtyEditors.size > 0) {
 					const label = dirtyLabel();
@@ -5816,7 +5904,7 @@
 				}
 			});
 
-			// Initial load — only if a session token is present (auth guard will redirect if not).
+			// Initial load �?only if a session token is present (auth guard will redirect if not).
 			if (getSessionToken()) loadAllData();
 		})();
 
@@ -5895,8 +5983,8 @@
 				// Populate the unified chart-filter select with agents and providers, then render chart.
 				const agentsOptgroup = document.getElementById('chart-filter-agents');
 				const providersOptgroup = document.getElementById('chart-filter-providers');
-				if (agentsOptgroup) agentsOptgroup.innerHTML = dataStore.agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-				if (providersOptgroup) providersOptgroup.innerHTML = dataStore.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+			if (agentsOptgroup) agentsOptgroup.innerHTML = dataStore.agents.map(a => `<option value="${escapeHTML(a.id)}">${escapeHTML(a.name)}</option>`).join('');
+			if (providersOptgroup) providersOptgroup.innerHTML = dataStore.providers.map(p => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');
 				window.loadChartData('global');
 
 				// Per-agent breakdown table
@@ -6026,7 +6114,7 @@
 					headers: { 'Authorization': 'Bearer ' + token }
 				});
 				if (!r.ok) {
-					// Token is stale (server restarted) — clear and show login.
+					// Token is stale (server restarted) �?clear and show login.
 					clearSessionToken();
 					showLoginPage();
 					return;

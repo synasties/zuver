@@ -257,12 +257,19 @@ func sanitizeTableName(name string) (string, error) {
 	return name, nil
 }
 
+// sanitizeFilename removes or replaces characters unsafe for use in
+// Content-Disposition headers to prevent header injection.
+func sanitizeFilename(name string) string {
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_\-\.]`)
+	return reg.ReplaceAllString(name, "_")
+}
+
 // allowedUploadExts is the explicit allowlist of file extensions accepted by
 // handleFileUpload. Extensions not in this map are rejected.
 var allowedUploadExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true,
 	".pdf": true, ".txt": true, ".md": true, ".csv": true,
-	".json": true, ".yaml": true, ".yml": true, ".html": true,
+	".json": true, ".yaml": true, ".yml": true,
 	".mp3": true, ".wav": true, ".mp4": true,
 }
 
@@ -383,13 +390,24 @@ func safeHTTPClient(timeout time.Duration) *http.Client {
 // Access-Control-Allow-Origin: * and handles OPTIONS preflight requests.
 func (a *App) securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read CORS setting live so changes take effect without restart.
-		var corsVal string
-		a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='cors_enabled'").Scan(&corsVal)
-		corsEnabled := corsVal == "true"
+		// Read CORS setting from config so changes take effect after save.
+		cfg := readConfig()
+		corsEnabled := cfg.CORSEnabled
 
 		if corsEnabled {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			origin := r.Header.Get("Origin")
+			allowedOrigins := cfg.CORSOrigins
+			if allowedOrigins == "*" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if origin != "" {
+				for _, ao := range strings.Split(allowedOrigins, ",") {
+					if strings.TrimSpace(ao) == origin {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+						w.Header().Set("Vary", "Origin")
+						break
+					}
+				}
+			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
 			// Short-circuit OPTIONS preflight — no further processing needed.
@@ -435,7 +453,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.4.2"
+const CurrentVersion = "v1.5.0"
 
 // Config holds all runtime configuration for the Zuver framework.
 type Config struct {
@@ -447,9 +465,51 @@ type Config struct {
 	KeyFile      string `json:"key_file"`
 	Headless     bool   `json:"headless"`
 	LogLevel     string `json:"log_level"` // "info" or "debug"
+
+	// CORS
+	CORSEnabled  bool   `json:"cors_enabled"`
+	CORSOrigins  string `json:"cors_origins"` // comma-separated list of allowed origins, or "*" for all
+
+	// Presidio PII Shield
+	PresidioEnabled    bool   `json:"presidio_enabled"`
+	PresidioAnalyzer   string `json:"presidio_analyzer"`
+	PresidioAnonymizer string `json:"presidio_anonymizer"`
+
+	// Docker Skill Execution
+	DockerEnabled bool   `json:"docker_enabled"`
+	DockerHost    string `json:"docker_host"`
+	DockerImage   string `json:"docker_image"`
+
+	// Error Notifications
+	ErrorOutputID string `json:"error_output_id"`
+
+	// RAG Enhancement
+	RAGChunking          bool    `json:"rag_chunking"`
+	RAGChunkSize         int     `json:"rag_chunk_size"`
+	RAGChunkOverlap      int     `json:"rag_chunk_overlap"`
+	RAGEmbeddingCache    bool    `json:"rag_embedding_cache"`
+	RAGHybridSearch      bool    `json:"rag_hybrid_search"`
+	RAGLocalEmbedding    bool    `json:"rag_local_embedding"`
+	RAGLocalEmbeddingURL string  `json:"rag_local_embedding_url"`
+	RAGMinScore          float64 `json:"rag_min_score"` // minimum similarity score for RAG retrieval (0.0-1.0)
+
+	// Chat & Cache
+	ChatRetentionDays    int  `json:"chat_retention_days"`    // auto-prune chat history older than N days (0 = disabled)
+	ChatHistoryWindow    int  `json:"chat_history_window"`    // number of recent messages to load for context
+	ResponseCacheEnabled bool `json:"response_cache_enabled"` // enable LLM response caching
+
+	// Rate Limiting & Auth
+	GlobalRateLimit int    `json:"global_rate_limit"` // requests per minute per IP, 0 = unlimited
+	AdminTokenTTL   string `json:"admin_token_ttl"`   // admin session duration (e.g. "24h", "7d")
+
+	// Server
+	WriteTimeoutSec int `json:"write_timeout_sec"` // HTTP write timeout in seconds
+	MaxHeaderBytes   int `json:"max_header_bytes"`  // max HTTP header size in bytes
+	CertValidityDays int `json:"cert_validity_days"` // self-signed cert validity in days
 }
 
 var config Config
+var configMu sync.RWMutex
 
 func defaultConfig() Config {
 	return Config{
@@ -461,6 +521,39 @@ func defaultConfig() Config {
 		KeyFile:      "",
 		Headless:     false,
 		LogLevel:     "info",
+
+		CORSEnabled: false,
+		CORSOrigins: "*",
+
+		PresidioEnabled:    false,
+		PresidioAnalyzer:   "http://localhost:3000",
+		PresidioAnonymizer: "http://localhost:3001",
+
+		DockerEnabled: false,
+		DockerHost:    "tcp://localhost:2375",
+		DockerImage:   "zuver-skill:latest",
+
+		ErrorOutputID: "",
+
+		RAGChunking:          false,
+		RAGChunkSize:         500,
+		RAGChunkOverlap:      50,
+		RAGEmbeddingCache:    false,
+		RAGHybridSearch:      false,
+		RAGLocalEmbedding:    false,
+		RAGLocalEmbeddingURL: "http://localhost:11434/api/embeddings",
+		RAGMinScore:          0.3,
+
+		ChatRetentionDays:    30,
+		ChatHistoryWindow:    40,
+		ResponseCacheEnabled: true,
+
+		GlobalRateLimit: 60,
+		AdminTokenTTL:   "24h",
+
+		WriteTimeoutSec: 600,
+		MaxHeaderBytes:   1 << 20,
+		CertValidityDays: 365,
 	}
 }
 
@@ -468,19 +561,27 @@ func loadConfig() {
 	configFile := "zuver.json"
 	data, err := os.ReadFile(configFile)
 	if err != nil {
+		configMu.Lock()
 		config = defaultConfig()
+		configMu.Unlock()
 		saveConfig()
 		log.Printf("[Config] Default config created at %s", configFile)
 		return
 	}
+	// Load defaults first, then overlay from JSON so missing fields keep their defaults.
+	configMu.Lock()
+	config = defaultConfig()
 	if err := json.Unmarshal(data, &config); err != nil {
 		log.Printf("[Config] Failed to parse %s, using defaults: %v", configFile, err)
 		config = defaultConfig()
 	}
+	configMu.Unlock()
 }
 
 func saveConfig() {
+	configMu.Lock()
 	data, err := json.MarshalIndent(config, "", "  ")
+	configMu.Unlock()
 	if err != nil {
 		log.Printf("[Config] Failed to marshal config: %v", err)
 		return
@@ -488,6 +589,13 @@ func saveConfig() {
 	if err := os.WriteFile("zuver.json", data, 0644); err != nil {
 		log.Printf("[Config] Failed to write config file: %v", err)
 	}
+}
+
+// readConfig returns a shallow copy of the current config (thread-safe).
+func readConfig() Config {
+	configMu.RLock()
+	defer configMu.RUnlock()
+	return config
 }
 
 // ensureSelfSignedCert generates a self-signed TLS certificate if cert/key files don't exist.
@@ -502,10 +610,14 @@ func ensureSelfSignedCert(certFile, keyFile string) error {
 		}
 	}
 	log.Printf("[TLS] Generating self-signed certificate (cert: %s, key: %s)...", certFile, keyFile)
+	certDays := readConfig().CertValidityDays
+	if certDays <= 0 {
+		certDays = 365
+	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(time.Duration(certDays) * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
@@ -523,13 +635,19 @@ func ensureSelfSignedCert(certFile, keyFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create cert file: %w", err)
 	}
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		certOut.Close()
+		return fmt.Errorf("failed to write certificate: %w", err)
+	}
 	certOut.Close()
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create key file: %w", err)
 	}
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}); err != nil {
+		keyOut.Close()
+		return fmt.Errorf("failed to write private key: %w", err)
+	}
 	keyOut.Close()
 	log.Printf("[TLS] Self-signed certificate generated successfully.")
 	return nil
@@ -578,7 +696,9 @@ func encryptSecret(plaintext string) string {
 		return plaintext
 	}
 	salt := make([]byte, 16)
-	rand.Read(salt)
+	if _, err := rand.Read(salt); err != nil {
+		return plaintext
+	}
 	// Derive a unique key from masterKey + salt for this encryption.
 	encKey := deriveKey(masterKey, salt)
 	block, err := aes.NewCipher(encKey)
@@ -590,7 +710,9 @@ func encryptSecret(plaintext string) string {
 		return plaintext
 	}
 	nonce := make([]byte, aesGCM.NonceSize())
-	rand.Read(nonce)
+	if _, err := rand.Read(nonce); err != nil {
+		return plaintext
+	}
 	ciphertext := aesGCM.Seal(nil, nonce, []byte(plaintext), nil)
 	result := make([]byte, 0, 16+12+len(ciphertext))
 	result = append(result, salt...)
@@ -630,7 +752,7 @@ func decryptSecret(ciphertext string) string {
 
 // logDebug logs a message only when log level is "debug".
 func logDebug(format string, args ...interface{}) {
-	if config.LogLevel == "debug" {
+	if readConfig().LogLevel == "debug" {
 		log.Printf("[DEBUG] "+format, args...)
 	}
 }
@@ -699,8 +821,7 @@ func checkForUpdate() {
 
 var (
 	dbWriteQueue  = make(chan DBTask, 10000)
-	adminToken    string
-	adminTokenExp time.Time
+	adminSessions = make(map[string]time.Time) // token → expiry (supports multiple concurrent sessions)
 	adminTokenMu  sync.RWMutex
 	loginAttempts = make(map[string]int)
 	lockoutTime   = make(map[string]time.Time)
@@ -708,7 +829,16 @@ var (
 	dbWriteMu     sync.Mutex
 )
 
-const adminTokenTTL = 24 * time.Hour
+const maxLoginAttemptsEntries = 10000
+
+// getAdminTokenTTL returns the configured admin token TTL.
+func getAdminTokenTTL() time.Duration {
+	d, err := time.ParseDuration(readConfig().AdminTokenTTL)
+	if err != nil || d <= 0 {
+		return 24 * time.Hour
+	}
+	return d
+}
 
 // CSRF token store: token → timestamp
 var (
@@ -759,10 +889,9 @@ func cleanupCSRFTokens() {
 	}
 }
 
-// cleanupAuthState removes stale login attempts and lockout entries.
+// cleanupAuthState removes stale login attempts, lockout entries, and pagination state.
 func cleanupAuthState() {
 	authMu.Lock()
-	defer authMu.Unlock()
 	now := time.Now()
 	for ip, expiresAt := range lockoutTime {
 		if now.After(expiresAt.Add(5 * time.Minute)) {
@@ -770,6 +899,53 @@ func cleanupAuthState() {
 			delete(loginAttempts, ip)
 		}
 	}
+	// Evict stale pagination state (older than 30 minutes) to prevent memory leaks.
+	paginationMu.Lock()
+	for id, created := range paginationCreatedAt {
+		if now.After(created.Add(30 * time.Minute)) {
+			delete(paginationStore, id)
+			delete(paginationStep, id)
+			delete(paginationCreatedAt, id)
+		}
+	}
+	paginationMu.Unlock()
+	// Evict stale skill editor sessions (older than 15 minutes) to prevent memory leaks.
+	skillEditorMu.Lock()
+	for id, created := range skillEditorCreated {
+		if now.After(created.Add(15 * time.Minute)) {
+			delete(skillEditorStore, id)
+			delete(skillEditorCreated, id)
+		}
+	}
+	skillEditorMu.Unlock()
+	authMu.Unlock()
+
+	// Cleanup stale rate-limit buckets for external API keys (older than 2 minutes).
+	rateBucketsMu.Lock()
+	for k, b := range rateBuckets {
+		if now.After(b.windowEnd.Add(2 * time.Minute)) {
+			delete(rateBuckets, k)
+		}
+	}
+	rateBucketsMu.Unlock()
+
+	// Cleanup expired admin sessions.
+	adminTokenMu.Lock()
+	for tok, exp := range adminSessions {
+		if now.After(exp) {
+			delete(adminSessions, tok)
+		}
+	}
+	adminTokenMu.Unlock()
+
+	// Cleanup stale global rate-limit buckets.
+	globalRateMu.Lock()
+	for k, b := range globalRateBuckets {
+		if now.After(b.windowEnd.Add(2 * time.Minute)) {
+			delete(globalRateBuckets, k)
+		}
+	}
+	globalRateMu.Unlock()
 }
 
 // SyncDBExec executes a synchronous database write protected by a global mutex.
@@ -922,18 +1098,24 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Accept token from Authorization header OR ?token= query param (used for download links).
+		// Accept token from Authorization header. Query param only allowed for
+		// specific download endpoints where headers can't be set.
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token == "" {
-			token = r.URL.Query().Get("token")
+			// Only allow query param for export/download endpoints.
+			for _, p := range []string{"/export", "/backup"} {
+				if strings.HasSuffix(r.URL.Path, p) {
+					token = r.URL.Query().Get("token")
+					break
+				}
+			}
 		}
 
 		// Admin token always passes without scope restriction.
 		adminTokenMu.RLock()
-		currentAdminToken := adminToken
-		tokenExp := adminTokenExp
+		expiry, tokenValid := adminSessions[token]
 		adminTokenMu.RUnlock()
-		if currentAdminToken != "" && token == currentAdminToken && time.Now().Before(tokenExp) {
+		if tokenValid && time.Now().Before(expiry) {
 			if requiresRecentReauth(r) {
 				// Only accept password-based reauth — no header spoofing.
 				reauthOK := false
@@ -967,10 +1149,10 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 		// Enforce per-minute rate limit when configured (0 = unlimited).
 		if rateLimit > 0 {
 			rateBucketsMu.Lock()
-			b, exists := rateBuckets[token]
+			b, exists := rateBuckets[tokenHash]
 			now := time.Now()
 			if !exists || now.After(b.windowEnd) {
-				rateBuckets[token] = &rateBucket{count: 1, windowEnd: now.Add(time.Minute)}
+				rateBuckets[tokenHash] = &rateBucket{count: 1, windowEnd: now.Add(time.Minute)}
 			} else {
 				b.count++
 				if b.count > rateLimit {
@@ -1149,9 +1331,7 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 
 // handleLogin manages system authentication and rate-limiting against brute force attacks.
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
-	// Security: limit body size to prevent DoS.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-
 	var req struct {
 		Password string `json:"password"`
 		TOTPCode string `json:"totp_code"`
@@ -1160,18 +1340,18 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "Invalid request"}`, http.StatusBadRequest)
 		return
 	}
-
-	// Security: reject obviously-empty passwords.
-	if strings.TrimSpace(req.Password) == "" {
-		http.Error(w, `{"error": "Password required"}`, http.StatusBadRequest)
-		return
-	}
-
-	// Get real client IP (handles reverse proxy headers).
 	ip := getClientIP(r)
 
+	// Evict oldest entries if map grows too large (memory exhaustion guard).
+	// Single lock for both eviction and lockout check to avoid redundant lock/unlock.
 	authMu.Lock()
 	defer authMu.Unlock()
+
+	if len(loginAttempts) > maxLoginAttemptsEntries {
+		// Clear all entries — aggressive but prevents OOM.
+		loginAttempts = make(map[string]int)
+		lockoutTime = make(map[string]time.Time)
+	}
 
 	if time.Now().Before(lockoutTime[ip]) {
 		http.Error(w, `{"error": "Too many failed attempts. Try again in 1 minute."}`, http.StatusTooManyRequests)
@@ -1207,16 +1387,19 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Return the generated password so the user can see it.
 		loginAttempts[ip] = 0
 		b := make([]byte, 32)
-		rand.Read(b)
+		if _, randErr := rand.Read(b); randErr != nil {
+			log.Printf("[Security] Admin token generation failed during first boot: %v", randErr)
+			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+			return
+		}
 		adminTokenMu.Lock()
-		adminToken = "tok_" + hex.EncodeToString(b)
-		adminTokenExp = time.Now().Add(adminTokenTTL)
-		newAdminToken := adminToken
+		newToken := "tok_" + hex.EncodeToString(b)
+		adminSessions[newToken] = time.Now().Add(getAdminTokenTTL())
 		adminTokenMu.Unlock()
 		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login - auto-generated password")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token":        newAdminToken,
+			"token":        newToken,
 			"password":     generatedPassword,
 			"password_set": "true",
 		})
@@ -1274,9 +1457,8 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		adminTokenMu.Lock()
-		adminToken = "tok_" + hex.EncodeToString(b)
-		adminTokenExp = time.Now().Add(adminTokenTTL)
-		currentToken := adminToken
+		currentToken := "tok_" + hex.EncodeToString(b)
+		adminSessions[currentToken] = time.Now().Add(getAdminTokenTTL())
 		adminTokenMu.Unlock()
 		a.appendSecurityEvent("login_success", r.URL.Path, ip, "admin login succeeded")
 		w.Header().Set("Content-Type", "application/json")
@@ -1337,10 +1519,9 @@ func getEmbedding(text string, db *sql.DB) []float32 {
 	}
 
 	// Check embedding cache first.
-	var cacheEnabled string
-	db.QueryRow("SELECT value FROM settings WHERE key='rag_embedding_cache'").Scan(&cacheEnabled)
 	cacheKey := fmt.Sprintf("%x", sha256.Sum256([]byte(text)))
-	if cacheEnabled == "true" {
+	cfg := readConfig()
+	if cfg.RAGEmbeddingCache {
 		var cachedEmbedding string
 		if db.QueryRow("SELECT embedding FROM embedding_cache WHERE hash=? AND model='default'", cacheKey).Scan(&cachedEmbedding) == nil {
 			var vec []float32
@@ -1350,20 +1531,15 @@ func getEmbedding(text string, db *sql.DB) []float32 {
 		}
 	}
 
-	// Check if local embedding is enabled.
-	var localEnabled, localURL string
-	db.QueryRow("SELECT value FROM settings WHERE key='rag_local_embedding'").Scan(&localEnabled)
-	db.QueryRow("SELECT value FROM settings WHERE key='rag_local_embedding_url'").Scan(&localURL)
-
 	var vec []float32
-	if localEnabled == "true" && localURL != "" {
-		vec = getEmbeddingLocal(text, localURL)
+	if cfg.RAGLocalEmbedding && cfg.RAGLocalEmbeddingURL != "" {
+		vec = getEmbeddingLocal(text, cfg.RAGLocalEmbeddingURL)
 	} else {
 		vec = getEmbeddingOpenAI(text, db)
 	}
 
 	// Store in cache.
-	if cacheEnabled == "true" && len(vec) > 0 {
+	if cfg.RAGEmbeddingCache && len(vec) > 0 {
 		if vBytes, err := json.Marshal(vec); err == nil {
 			db.Exec("INSERT OR REPLACE INTO embedding_cache (hash, embedding, model) VALUES (?, ?, 'default')", cacheKey, string(vBytes))
 		}
@@ -1391,7 +1567,7 @@ func generateImage(prompt, model, apiKey, endpoint string) (string, string, erro
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
+	resp, err := safeHTTPClient(120 * time.Second).Do(req)
 	if err != nil {
 		return "", "", err
 	}
@@ -1419,7 +1595,7 @@ func getEmbeddingLocal(text, endpoint string) []float32 {
 		"model":  "nomic-embed-text",
 		"prompt": text,
 	})
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Post(endpoint, "application/json", bytes.NewBuffer(reqBody))
+	resp, err := safeHTTPClient(10 * time.Second).Post(endpoint, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil
 	}
@@ -1482,7 +1658,8 @@ func extractPlaceholders(text string) []string {
 }
 
 // estimateTokens provides a rudimentary token calculation fallback.
-func estimateTokens(text string) int { return len(text) / 3 }
+// Uses rune count to handle multi-byte characters (CJK etc.) more accurately.
+func estimateTokens(text string) int { return len([]rune(text)) / 2 }
 
 // chunkText splits text into overlapping chunks of approximately chunkSize characters.
 func chunkText(text string, chunkSize, overlap int) []string {
@@ -1505,11 +1682,13 @@ func chunkText(text string, chunkSize, overlap int) []string {
 }
 
 var (
-	paginationStore  = make(map[string][]string)
-	paginationStep   = make(map[string]int)
-	paginationMu     sync.Mutex
-	skillEditorMu    sync.Mutex
-	skillEditorStore = make(map[string]map[string]string)
+	paginationStore     = make(map[string][]string)
+	paginationStep      = make(map[string]int)
+	paginationCreatedAt = make(map[string]time.Time)
+	paginationMu        sync.Mutex
+	skillEditorMu       sync.Mutex
+	skillEditorStore    = make(map[string]map[string]string)
+	skillEditorCreated  = make(map[string]time.Time)
 )
 
 // triggerPagination breaks large responses into readable chunks for context window optimization.
@@ -1529,6 +1708,7 @@ func triggerPagination(agentID string, data string, pageSize int) string {
 	paginationMu.Lock()
 	paginationStore[agentID] = chunks
 	paginationStep[agentID] = 0
+	paginationCreatedAt[agentID] = time.Now()
 	paginationMu.Unlock()
 	return fmt.Sprintf("%s\n\n[Page 1 of %d, reply \"/nextPage\" to view next page.]", chunks[0], len(chunks))
 }
@@ -1538,7 +1718,6 @@ func triggerPagination(agentID string, data string, pageSize int) string {
 var (
 	globalRateBuckets = make(map[string]*rateBucket)
 	globalRateMu      sync.Mutex
-	globalRateLimit   = 60 // requests per minute per IP
 )
 
 func globalRateLimitMiddleware(next http.Handler) http.Handler {
@@ -1556,7 +1735,8 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 			globalRateBuckets[ip] = &rateBucket{count: 1, windowEnd: now.Add(time.Minute)}
 		} else {
 			b.count++
-			if b.count > globalRateLimit {
+			rl := readConfig().GlobalRateLimit
+			if rl > 0 && b.count > rl {
 				globalRateMu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
@@ -1571,7 +1751,21 @@ func globalRateLimitMiddleware(next http.Handler) http.Handler {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if config.LogLevel == "debug" {
+		// Limit request body size for POST/PUT to prevent memory exhaustion.
+		// Endpoints that need larger bodies (chat, upload, restore) set their own limits.
+		if r.Method == http.MethodPost || r.Method == http.MethodPut {
+			switch {
+			case r.URL.Path == "/api/v1/chat":
+				// handleChat sets its own 32 MB limit.
+			case r.URL.Path == "/api/v1/upload":
+				// handleFileUpload sets its own 64 MB limit via ParseMultipartForm.
+			case r.URL.Path == "/api/v1/restore":
+				// handleRestore sets its own 50 MB limit.
+			default:
+				r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB default
+			}
+		}
+		if readConfig().LogLevel == "debug" {
 			log.Printf("[HTTP] %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
 		} else {
 			// Info level: only log API paths.
@@ -1659,14 +1853,13 @@ func main() {
 	autoMigrateColumn(db, "agents", "mcp_tools", "TEXT DEFAULT '[]'")  // JSON array of {mcpId, tool} pairs assigned to this agent
 	autoMigrateColumn(db, "skills", "use_docker", "INTEGER DEFAULT 0") // Run skill inside Docker container
 
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cors_enabled', 'false')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('docker_enabled', 'false'), ('docker_host', 'tcp://localhost:2375'), ('docker_image', 'zuver-skill:latest')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('error_output_id', '')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_chunking', 'false'), ('rag_chunk_size', '500'), ('rag_chunk_overlap', '50')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_embedding_cache', 'false')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_hybrid_search', 'false')")
-	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('rag_local_embedding', 'false'), ('rag_local_embedding_url', 'http://localhost:11434/api/embeddings')")
+	// Create indexes for frequently queried columns to avoid full table scans.
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(active)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_chat_history_agent_session ON chat_history(agent_id, session_id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_chat_history_agent ON chat_history(agent_id)")
+
+	// Legacy settings previously stored in the DB are now in zuver.json (Config struct).
+	// Only security-critical settings remain in the DB.
 
 	var pCount int
 	db.QueryRow("SELECT COUNT(*) FROM projects").Scan(&pCount)
@@ -1683,6 +1876,13 @@ func main() {
 			time.Sleep(5 * time.Minute)
 			cleanupCSRFTokens()
 			cleanupAuthState()
+			// Prune chat history older than configured retention days to prevent unbounded growth.
+			cfg := readConfig()
+			if cfg.ChatRetentionDays > 0 {
+				SyncDBExec(db, "DELETE FROM chat_history WHERE timestamp < datetime('now', ?)", fmt.Sprintf("-%d days", cfg.ChatRetentionDays))
+			}
+			// Prune response cache entries older than 24 hours.
+			SyncDBExec(db, "DELETE FROM response_cache WHERE timestamp < datetime('now', '-1 day')")
 		}
 	}()
 
@@ -1699,29 +1899,49 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			rows, err := db.Query("SELECT id, agent_id, session_id, regex, command, repeat FROM tasks WHERE active=1")
-			if err != nil {
-				continue
-			}
-			for rows.Next() {
-				var tID, aID, sID, regx, cmd string
-				var repeat int
-				rows.Scan(&tID, &aID, &sID, &regx, &cmd, &repeat)
-				var lastMsg string
-				// Monitor the specific session if set, otherwise monitor the default (empty) session.
-				if sID != "" {
-					db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND session_id=? ORDER BY id DESC LIMIT 1", aID, sID).Scan(&lastMsg)
-				} else {
-					db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND (session_id='' OR session_id IS NULL) ORDER BY id DESC LIMIT 1", aID).Scan(&lastMsg)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[Task Monitor] Panic recovered: %v", r)
+					}
+				}()
+				rows, err := db.Query("SELECT id, agent_id, session_id, regex, command, repeat FROM tasks WHERE active=1")
+				if err != nil {
+					return
 				}
-				if matched, _ := regexp.MatchString(regx, lastMsg); matched {
-					db.Exec("INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aID, sID, "user", cmd)
-					if repeat == 0 {
-						db.Exec("UPDATE tasks SET active=0 WHERE id=?", tID)
+				defer rows.Close()
+				for rows.Next() {
+					var tID, aID, sID, regx, cmd string
+					var repeat int
+					if err := rows.Scan(&tID, &aID, &sID, &regx, &cmd, &repeat); err != nil {
+						log.Printf("[Task Monitor] Scan error: %v", err)
+						continue
+					}
+					var lastMsg string
+					// Monitor the specific session if set, otherwise monitor the default (empty) session.
+					if sID != "" {
+						db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND session_id=? ORDER BY id DESC LIMIT 1", aID, sID).Scan(&lastMsg)
+					} else {
+						db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND (session_id='' OR session_id IS NULL) ORDER BY id DESC LIMIT 1", aID).Scan(&lastMsg)
+					}
+					// Guard against ReDoS: reject overly long regex patterns and messages.
+					if len(regx) > 256 || len(lastMsg) > 10000 {
+						log.Printf("[Task Monitor] Skipping task %s: regex or message too long", tID)
+						continue
+					}
+					matched, err := regexp.MatchString(regx, lastMsg)
+					if err != nil {
+						log.Printf("[Task Monitor] Invalid regex in task %s: %v", tID, err)
+						continue
+					}
+					if matched {
+						db.Exec("INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aID, sID, "user", cmd)
+						if repeat == 0 {
+							db.Exec("UPDATE tasks SET active=0 WHERE id=?", tID)
+						}
 					}
 				}
-			}
-			rows.Close()
+			}()
 		}
 	}()
 
@@ -1734,6 +1954,28 @@ func main() {
 		} else {
 			http.NotFound(w, r)
 		}
+	})
+	// Health check endpoint for load balancers and monitoring
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		health := map[string]interface{}{
+			"status":  "ok",
+			"version": CurrentVersion,
+		}
+		// Check database connectivity
+		if err := db.Ping(); err != nil {
+			health["status"] = "degraded"
+			health["database"] = "unreachable"
+		} else {
+			health["database"] = "connected"
+		}
+		// Check RAG database
+		if err := ragDb.Ping(); err != nil {
+			health["rag_database"] = "unreachable"
+		} else {
+			health["rag_database"] = "connected"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(health)
 	})
 	mux.HandleFunc("GET /api/v1/stats", app.handleGetStats)
 	mux.HandleFunc("GET /api/v1/providers", app.handleGetProviders)
@@ -1772,12 +2014,12 @@ func main() {
 		srcID := r.PathValue("id")
 		var ag Agent
 		err := app.ConfigDB.QueryRow(
-			`SELECT name, provider_id, model, sources, skills, outputs, mcps, projects,
+			`SELECT name, provider_id, model, sources, skills, outputs, mcps, COALESCE(mcp_tools,'[]'), projects,
 			        system_prompt, token_usage, input_methods, output_methods, user_prompt_prefix,
 			        temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled
 			 FROM agents WHERE id=?`, srcID,
 		).Scan(&ag.Name, &ag.ProviderID, &ag.Model, &ag.Sources, &ag.Skills, &ag.Outputs,
-			&ag.MCPs, &ag.Projects, &ag.SystemPrompt, &ag.TokenUsage,
+			&ag.MCPs, &ag.MCPTools, &ag.Projects, &ag.SystemPrompt, &ag.TokenUsage,
 			&ag.InputMethods, &ag.OutputMethods, &ag.UserPromptPrefix,
 			&ag.Temperature, &ag.MaxTokens, &ag.TopP,
 			&ag.PrivacyEnabled, &ag.CanCreateSkills, &ag.StreamEnabled)
@@ -1788,12 +2030,12 @@ func main() {
 		newID := fmt.Sprintf("ag_%d", time.Now().UnixNano())
 		newName := ag.Name + " (Copy)"
 		_, dbErr := SyncDBExec(app.ConfigDB,
-			`INSERT INTO agents (id, name, provider_id, model, sources, skills, outputs, mcps, projects,
+			`INSERT INTO agents (id, name, provider_id, model, sources, skills, outputs, mcps, mcp_tools, projects,
 			  system_prompt, token_usage, input_methods, output_methods, user_prompt_prefix,
 			  temperature, max_tokens, top_p, privacy_enabled, can_create_skills, stream_enabled)
-			 VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
+			 VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`,
 			newID, newName, ag.ProviderID, ag.Model, ag.Sources, ag.Skills, ag.Outputs,
-			ag.MCPs, ag.Projects, ag.SystemPrompt,
+			ag.MCPs, ag.MCPTools, ag.Projects, ag.SystemPrompt,
 			ag.InputMethods, ag.OutputMethods, ag.UserPromptPrefix,
 			ag.Temperature, ag.MaxTokens, ag.TopP,
 			ag.PrivacyEnabled, ag.CanCreateSkills, ag.StreamEnabled)
@@ -1967,7 +2209,10 @@ func main() {
 		i.ID = fmt.Sprintf("ak_%d", time.Now().UnixNano())
 		// Generate cryptographically random token instead of predictable ID-based token.
 		randBytes := make([]byte, 24)
-		rand.Read(randBytes)
+		if _, err := rand.Read(randBytes); err != nil {
+			http.Error(w, `{"error":"failed to generate API key"}`, http.StatusInternalServerError)
+			return
+		}
 		i.Token = "zuv-" + hex.EncodeToString(randBytes)
 		if i.RateLimit == 0 {
 			i.RateLimit = 60
@@ -2005,8 +2250,7 @@ func main() {
 			return
 		}
 		adminTokenMu.Lock()
-		adminToken = ""
-		adminTokenExp = time.Time{}
+		adminSessions = make(map[string]time.Time)
 		adminTokenMu.Unlock()
 		app.appendSecurityEvent("logout_success", r.URL.Path, "admin", "admin logged out")
 		w.Header().Set("Content-Type", "application/json")
@@ -2238,7 +2482,7 @@ func main() {
 		tableNames := []string{"agents", "skills", "sources", "source_logs", "projects", "rags", "outputs", "mcp_servers", "chat_history", "tasks", "response_cache"}
 		for _, t := range tableNames {
 			// Security: table names are hardcoded — safe from injection.
-			app.ConfigDB.Exec("DELETE FROM " + t)
+			app.ConfigDB.Exec("DELETE FROM " + t) // Security: t is from hardcoded tableNames slice — safe from injection.
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -2313,6 +2557,15 @@ func main() {
 		}
 
 		app.appendSecurityEvent("database_restore", r.URL.Path, "admin", "database restore initiated")
+
+		// Wrap the entire restore in a transaction so a partial failure doesn't
+		// leave the database in an inconsistent state.
+		tx, txErr := app.ConfigDB.Begin()
+		if txErr != nil {
+			http.Error(w, `{"error":"failed to start transaction"}`, http.StatusInternalServerError)
+			return
+		}
+
 		tables := []string{"agents", "skills", "sources", "projects", "rags", "outputs", "mcp_servers", "tasks", "api_keys", "settings", "providers"}
 		imported := 0
 		for _, t := range tables {
@@ -2341,7 +2594,11 @@ func main() {
 				continue
 			}
 			// Clear existing data.
-			app.ConfigDB.Exec("DELETE FROM " + t)
+			if _, err := tx.Exec("DELETE FROM " + t); err != nil {
+				tx.Rollback()
+				http.Error(w, fmt.Sprintf(`{"error":"failed to clear table %s"}`, t), http.StatusInternalServerError)
+				return
+			}
 			// Insert each row.
 			placeholders := make([]string, len(cols))
 			for i := range placeholders {
@@ -2357,11 +2614,34 @@ func main() {
 				for i, col := range cols {
 					args[i] = row[col]
 				}
-				app.ConfigDB.Exec(query, args...)
+				if _, err := tx.Exec(query, args...); err != nil {
+					tx.Rollback()
+					http.Error(w, fmt.Sprintf(`{"error":"failed to insert into table %s"}`, t), http.StatusInternalServerError)
+					return
+				}
 				imported++
 			}
 		}
+		if err := tx.Commit(); err != nil {
+			http.Error(w, `{"error":"failed to commit restore transaction"}`, http.StatusInternalServerError)
+			return
+		}
 		app.appendSecurityEvent("database_restore_done", r.URL.Path, "admin", fmt.Sprintf("restored %d rows", imported))
+
+		// Restore zuver.json config if present in backup.
+		if cfgRaw, ok := backup["zuver_config"]; ok {
+			if cfgBytes, err := json.Marshal(cfgRaw); err == nil {
+				var restored Config
+				if json.Unmarshal(cfgBytes, &restored) == nil {
+					configMu.Lock()
+					config = restored
+					configMu.Unlock()
+					saveConfig()
+					log.Printf("[Restore] zuver.json config restored from backup")
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "rows_imported": imported})
 	})
@@ -2396,8 +2676,13 @@ func main() {
 		}
 		// Block requests to private/loopback ranges.
 		hostLower := strings.ToLower(parsedCfgURL.Hostname())
-		for _, blocked := range []string{"localhost", "127.", "10.", "192.168.", "172.16.", "::1", "0.0.0.0", "169.254."} {
-			if strings.HasPrefix(hostLower, blocked) || hostLower == blocked {
+		for _, blocked := range []string{
+			"localhost", "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.",
+			"172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+			"172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+			"::1", "0.0.0.0", "169.254.", "100.64.", "198.18.", "198.19.",
+		} {
+			if strings.HasPrefix(hostLower, blocked) || hostLower == strings.TrimSuffix(blocked, ".") {
 				http.Error(w, "configURL must point to a public host.", http.StatusForbidden)
 				return
 			}
@@ -2451,9 +2736,8 @@ func main() {
 
 		// Pretty-print JSON for the code preview pane.
 		prettyJSON, _ := json.MarshalIndent(preview, "", "  ")
-		// Escape backticks and backslashes so the JSON can be safely embedded
-		// in a JS template literal (backtick string) without breaking the syntax.
-		safeJSONStr := strings.ReplaceAll(strings.ReplaceAll(string(prettyJSON), `\`, `\\`), "`", "\\`")
+		// Base64-encode the JSON to avoid all JS template literal escaping issues.
+		safeJSONB64 := base64.StdEncoding.EncodeToString(prettyJSON)
 
 		// Inline HTML confirmation page — no external dependencies on this host.
 		escapedTitle := strings.ReplaceAll(title, `"`, `&quot;`)
@@ -2526,7 +2810,7 @@ func main() {
   <div class="footer">Zuver Framework &mdash; Importing will add this ` + itemType + ` to your instance permanently.</div>
 </div>
 <script>
-const RAW_JSON = ` + "`" + safeJSONStr + "`" + `;
+const RAW_JSON = atob("` + safeJSONB64 + `");
 const ITEM_TYPE = "` + itemType + `";
 const CONFIG_URL = "` + escapedConfigURL + `";
 const CSRF_TOKEN = "` + csrfToken + `";
@@ -2727,12 +3011,15 @@ async function doImport(e) {
 	// Override config with environment variables.
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		if p, err := strconv.Atoi(envPort); err == nil {
+			configMu.Lock()
 			config.HTTPPort = p
+			configMu.Unlock()
 		}
 	}
 
 	// Headless mode: skip serving static files.
-	if config.Headless {
+	srvCfg := readConfig()
+	if srvCfg.Headless {
 		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 		})
@@ -2743,34 +3030,34 @@ async function doImport(e) {
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      10 * time.Minute,
+		WriteTimeout:      time.Duration(srvCfg.WriteTimeoutSec) * time.Second,
 		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    1 << 20,
+		MaxHeaderBytes:    srvCfg.MaxHeaderBytes,
 	}
 
 	// Start HTTP server (unless HTTPS-only mode is enabled).
-	if !config.HTTPSOnly {
+	if !srvCfg.HTTPSOnly {
 		httpServer := &http.Server{
-			Addr:              fmt.Sprintf(":%d", config.HTTPPort),
+			Addr:              fmt.Sprintf(":%d", srvCfg.HTTPPort),
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      10 * time.Minute,
+			WriteTimeout:      time.Duration(srvCfg.WriteTimeoutSec) * time.Second,
 			IdleTimeout:       60 * time.Second,
-			MaxHeaderBytes:    1 << 20,
+			MaxHeaderBytes:    srvCfg.MaxHeaderBytes,
 		}
 		go func() {
-			log.Printf("[HTTP] Starting on port %d", config.HTTPPort)
+			log.Printf("[HTTP] Starting on port %d", srvCfg.HTTPPort)
 			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Printf("[HTTP] Server error: %v", err)
 			}
 		}()
 	}
 
-	// Start HTTPS server if enabled.
-	if config.HTTPSEnabled {
-		certFile := config.CertFile
-		keyFile := config.KeyFile
+	// Start HTTPS server if enabled; otherwise block on HTTP server (or exit if none).
+	if srvCfg.HTTPSEnabled {
+		certFile := srvCfg.CertFile
+		keyFile := srvCfg.KeyFile
 		if certFile == "" || keyFile == "" {
 			certFile = "cert.pem"
 			keyFile = "key.pem"
@@ -2778,17 +3065,16 @@ async function doImport(e) {
 		if err := ensureSelfSignedCert(certFile, keyFile); err != nil {
 			log.Printf("[TLS] Warning: %v", err)
 		}
-		server.Addr = fmt.Sprintf(":%d", config.HTTPSPort)
-		log.Printf("[HTTPS] Starting on port %d (cert: %s)", config.HTTPSPort, certFile)
+		server.Addr = fmt.Sprintf(":%d", srvCfg.HTTPSPort)
+		log.Printf("[HTTPS] Starting on port %d (cert: %s)", srvCfg.HTTPSPort, certFile)
 		if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
 			log.Fatal("[HTTPS] Server failed:", err)
 		}
+	} else if !srvCfg.HTTPSOnly {
+		// HTTP-only mode: block forever so the goroutine stays alive.
+		select {}
 	} else {
-		server.Addr = fmt.Sprintf(":%d", config.HTTPPort)
-		log.Printf("[HTTP] Starting on port %d", config.HTTPPort)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("[HTTP] Server failed:", err)
-		}
+		log.Fatal("[Server] No server enabled: HTTPSEnabled=false and HTTPSOnly=true")
 	}
 }
 
@@ -3081,21 +3367,35 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	processedUserMsg := req.Message
 
 	// --- Presidio PII Masking ---
-	if agent.PrivacyEnabled && req.PresidioEnabled {
+	// Use config values by default; request body can override for backward compatibility.
+	presidioCfg := readConfig()
+	presidioEnabled := presidioCfg.PresidioEnabled
+	analyzerURL := presidioCfg.PresidioAnalyzer
+	anonymizerURL := presidioCfg.PresidioAnonymizer
+	if req.PresidioEnabled {
+		presidioEnabled = req.PresidioEnabled
+	}
+	if req.AnalyzerURL != "" {
+		analyzerURL = req.AnalyzerURL
+	}
+	if req.AnonymizerURL != "" {
+		anonymizerURL = req.AnonymizerURL
+	}
+	if agent.PrivacyEnabled && presidioEnabled {
 		executionLogs = append(executionLogs, "[Privacy]: Calling Presidio Engine...")
-		// SSRF guard: Presidio URLs come from the request body; validate scheme only
-		// (Presidio is typically local, so private hosts are allowed, but non-HTTP schemes are not).
-		for _, rawU := range []string{req.AnalyzerURL, req.AnonymizerURL} {
+		// SSRF guard: validate scheme only (Presidio is typically local).
+		for _, rawU := range []string{analyzerURL, anonymizerURL} {
 			if p, err := url.ParseRequestURI(rawU); err != nil || (p.Scheme != "http" && p.Scheme != "https") {
 				executionLogs = append(executionLogs, "[Privacy Error]: Invalid Presidio URL scheme — skipping PII masking.")
 				goto skipPresidio
 			}
 		}
-		analyzerEndpoint := strings.TrimRight(req.AnalyzerURL, "/") + "/analyze"
-		anonymizerEndpoint := strings.TrimRight(req.AnonymizerURL, "/") + "/anonymize"
+		analyzerEndpoint := strings.TrimRight(analyzerURL, "/") + "/analyze"
+		anonymizerEndpoint := strings.TrimRight(anonymizerURL, "/") + "/anonymize"
 
 		aBody, _ := json.Marshal(map[string]interface{}{"text": processedUserMsg, "language": "en"})
-		aResp, errA := http.Post(analyzerEndpoint, "application/json", bytes.NewBuffer(aBody))
+		presidioClient := safeHTTPClient(30 * time.Second)
+		aResp, errA := presidioClient.Post(analyzerEndpoint, "application/json", bytes.NewBuffer(aBody))
 		if errA == nil {
 			var aResults []interface{}
 			json.NewDecoder(aResp.Body).Decode(&aResults)
@@ -3103,7 +3403,7 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 
 			if len(aResults) > 0 {
 				anBody, _ := json.Marshal(map[string]interface{}{"text": processedUserMsg, "analyzer_results": aResults})
-				anResp, errAn := http.Post(anonymizerEndpoint, "application/json", bytes.NewBuffer(anBody))
+				anResp, errAn := presidioClient.Post(anonymizerEndpoint, "application/json", bytes.NewBuffer(anBody))
 				if errAn == nil {
 					var anResult map[string]interface{}
 					json.NewDecoder(anResp.Body).Decode(&anResult)
@@ -3144,9 +3444,12 @@ skipPresidio:
 		if a.ConfigDB.QueryRow("SELECT name, type, file_path FROM sources WHERE id=?", srcID).Scan(&sName, &sType, &sFile) == nil {
 			allowedSources[sName] = true
 			if sm["fetch_prompt"] == true {
-				if sType == "Local File" {
-					if b, err := os.ReadFile(sFile); err == nil {
-						activeInjections += fmt.Sprintf("\n[Source Data %s]\n%s\n", sName, string(b))
+		if sType == "Local File" {
+				if b, err := os.ReadFile(sFile); err == nil {
+					if len(b) > 1<<20 { // cap at 1 MB
+						b = b[:1<<20]
+					}
+					activeInjections += fmt.Sprintf("\n[Source Data %s]\n%s\n", sName, string(b))
 					}
 				} else {
 					var d, ts string
@@ -3203,8 +3506,8 @@ skipPresidio:
 
 	// --- RAG auto-retrieval ---
 	if len(allowedRAGs) > 0 && processedUserMsg != "" {
-		var hybridEnabled string
-		a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_hybrid_search'").Scan(&hybridEnabled)
+		ragCfg := readConfig()
+		hybridEnabled := ragCfg.RAGHybridSearch
 		userVector := getEmbedding(processedUserMsg, a.ConfigDB)
 		keywords := strings.Fields(strings.ToLower(processedUserMsg))
 
@@ -3244,7 +3547,7 @@ skipPresidio:
 				}
 
 				// Hybrid: add keyword match bonus.
-				if hybridEnabled == "true" {
+				if hybridEnabled {
 					dataLower := strings.ToLower(rData)
 					keywordHits := 0
 					for _, kw := range keywords {
@@ -3258,7 +3561,7 @@ skipPresidio:
 					}
 				}
 
-				if score > 0.3 {
+				if score > float32(ragCfg.RAGMinScore) {
 					candidates = append(candidates, ragCandidate{name: rName, data: rData, score: score})
 				}
 			}
@@ -3292,9 +3595,13 @@ skipPresidio:
 	// Base messages list — system prompt is added per-provider inside the loop
 	// because Claude requires it as a top-level key, not a messages entry.
 	var messages []map[string]interface{}
+	histWindow := readConfig().ChatHistoryWindow
+	if histWindow <= 0 {
+		histWindow = 40
+	}
 	histRows, err := a.ConfigDB.Query(
-		"SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE agent_id=? AND (session_id=? OR (session_id='' AND ?='')) ORDER BY id DESC LIMIT 40) ORDER BY id ASC",
-		agent.ID, req.SessionID, req.SessionID,
+		"SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE agent_id=? AND (session_id=? OR (session_id='' AND ?='')) ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+		agent.ID, req.SessionID, req.SessionID, histWindow,
 	)
 	if err == nil {
 		for histRows.Next() {
@@ -3569,7 +3876,7 @@ skipPresidio:
 		cacheKey := hex.EncodeToString(cacheHash[:])
 		var replyContent string
 
-		if !useStream && req.UseCache {
+		if !useStream && req.UseCache && readConfig().ResponseCacheEnabled {
 			var cachedReply string
 			if a.ConfigDB.QueryRow("SELECT response FROM response_cache WHERE hash=?", cacheKey).Scan(&cachedReply) == nil && cachedReply != "" {
 				replyContent = cachedReply
@@ -3599,7 +3906,7 @@ skipPresidio:
 
 			// ---------- STREAMING PATH (all loops) ----------
 			if useStream {
-				client := &http.Client{Timeout: 120 * time.Second}
+				client := safeHTTPClient(120 * time.Second)
 				resp, errDo := client.Do(apiReq)
 				if errDo != nil {
 					executionLogs = append(executionLogs, "[Network Error]: "+errDo.Error())
@@ -3732,7 +4039,7 @@ skipPresidio:
 				totalTokensUsed += estimateTokens(string(payloadBytes)) + estimateTokens(replyContent)
 			} else {
 				// ---------- NON-STREAMING PATH ----------
-				resp2, errDo2 := (&http.Client{Timeout: 120 * time.Second}).Do(apiReq)
+				resp2, errDo2 := safeHTTPClient(120 * time.Second).Do(apiReq)
 				if errDo2 != nil {
 					executionLogs = append(executionLogs, "[Network Error]: "+errDo2.Error())
 					a.logAnalytics("agent", agent.ID, 0, false)
@@ -3743,8 +4050,8 @@ skipPresidio:
 					return
 				}
 
-				bodyBytes, _ := io.ReadAll(resp2.Body)
-				resp2.Body.Close()
+			bodyBytes, _ := io.ReadAll(io.LimitReader(resp2.Body, 10<<20))
+			resp2.Body.Close()
 
 				// Non-2xx: parse and surface the provider error message before attempting to extract content.
 				if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
@@ -3824,7 +4131,7 @@ skipPresidio:
 					return
 				}
 
-				if req.UseCache {
+				if req.UseCache && readConfig().ResponseCacheEnabled {
 					AsyncDBExec(a.ConfigDB, "INSERT OR REPLACE INTO response_cache (hash, response) VALUES (?, ?)", cacheKey, replyContent)
 				}
 				totalTokensUsed += estimateTokens(string(payloadBytes)) + estimateTokens(replyContent)
@@ -3838,6 +4145,7 @@ skipPresidio:
 		editorState, isEditing := skillEditorStore[agent.ID]
 		if isEditing {
 			delete(skillEditorStore, agent.ID)
+			delete(skillEditorCreated, agent.ID)
 		}
 		skillEditorMu.Unlock()
 
@@ -4180,6 +4488,9 @@ func (a *App) executeCommand(
 			if b, err := os.ReadFile(sFile); err != nil {
 				finalData = "Error: " + err.Error()
 			} else {
+				if len(b) > 1<<20 { // cap at 1 MB
+					b = b[:1<<20]
+				}
 				finalData = string(b)
 			}
 		} else {
@@ -4305,19 +4616,15 @@ func (a *App) executeCommand(
 			ragDataStr := strings.Join(parts[3:], " ")
 
 			// Check if chunking is enabled.
-			var chunkingEnabled string
-			a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunking'").Scan(&chunkingEnabled)
-			if chunkingEnabled == "true" {
-				var chunkSizeStr, chunkOverlapStr string
-				a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunk_size'").Scan(&chunkSizeStr)
-				a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_chunk_overlap'").Scan(&chunkOverlapStr)
-				chunkSize := 500
-				chunkOverlap := 50
-				if v, err := strconv.Atoi(chunkSizeStr); err == nil && v > 0 {
-					chunkSize = v
+			chunkCfg := readConfig()
+			if chunkCfg.RAGChunking {
+				chunkSize := chunkCfg.RAGChunkSize
+				chunkOverlap := chunkCfg.RAGChunkOverlap
+				if chunkSize <= 0 {
+					chunkSize = 500
 				}
-				if v, err := strconv.Atoi(chunkOverlapStr); err == nil && v >= 0 {
-					chunkOverlap = v
+				if chunkOverlap < 0 {
+					chunkOverlap = 50
 				}
 				chunks := chunkText(ragDataStr, chunkSize, chunkOverlap)
 				added := 0
@@ -4394,6 +4701,7 @@ func (a *App) executeCommand(
 			"name": parts[1],
 			"desc": strings.Join(parts[2:], " "),
 		}
+		skillEditorCreated[agent.ID] = time.Now()
 		skillEditorMu.Unlock()
 		return "[SYSTEM] ENTERING NATIVE GO CODE EDITOR MODE.\nYour next reply MUST contain ONLY valid Go code. Reply /cancel to abort."
 
@@ -4439,11 +4747,11 @@ func (a *App) executeCommand(
 			if mURL != "" {
 				apiR, _ := http.NewRequest("POST", mURL, bytes.NewBuffer(reqBytes))
 				apiR.Header.Set("Content-Type", "application/json")
-				resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(apiR)
-				if e != nil {
-					return "[MCP HTTP ERROR] " + e.Error()
-				}
-				b, _ := io.ReadAll(resp.Body)
+			resp, e := safeHTTPClient(30 * time.Second).Do(apiR)
+			if e != nil {
+				return "[MCP HTTP ERROR] " + e.Error()
+			}
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 				resp.Body.Close()
 				return fmt.Sprintf("[MCP %s Response]\n%s", mcpName, string(b))
 			} else if mCmd != "" {
@@ -4459,7 +4767,7 @@ func (a *App) executeCommand(
 				execCmd.Start()
 				stdin.Write(append(reqBytes, '\n'))
 				stdin.Close()
-				outBytes, e := io.ReadAll(stdout)
+				outBytes, e := io.ReadAll(io.LimitReader(stdout, 10<<20))
 				execCmd.Wait()
 				if e != nil {
 					return "[MCP STDIO ERROR] " + e.Error()
@@ -4574,12 +4882,12 @@ func (a *App) executeCommand(
 						apiR.Header.Set(k, v)
 					}
 				}
-				extResp, e := (&http.Client{Timeout: 15 * time.Second}).Do(apiR)
-				if e != nil {
-					return "[API ERROR] " + e.Error()
-				}
-				b, _ := io.ReadAll(extResp.Body)
-				extResp.Body.Close()
+			extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
+			if e != nil {
+				return "[API ERROR] " + e.Error()
+			}
+			b, _ := io.ReadAll(io.LimitReader(extResp.Body, 10<<20))
+			extResp.Body.Close()
 				return "[API RESULT]\n" + string(b)
 			}
 		}
@@ -4680,10 +4988,23 @@ func (a *App) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // autoMigrateColumn safely ensures column schema synchronization without truncating data.
+// Table and column names are validated against a safe identifier regex to prevent SQL injection.
 func autoMigrateColumn(db *sql.DB, table string, column string, colDef string) {
+	// Validate identifiers to prevent SQL injection
+	if !safeTableNameRe.MatchString(table) || !safeTableNameRe.MatchString(column) {
+		fmt.Printf("[DB Migration Error] Invalid table or column name: table=%q, column=%q\n", table, column)
+		return
+	}
+	// Validate column definition contains only safe characters (alphanumerics, spaces, quotes, parens, dots, commas)
+	colDefRe := regexp.MustCompile(`^[a-zA-Z0-9_'"(). ,\-]+$`)
+	if !colDefRe.MatchString(colDef) {
+		fmt.Printf("[DB Migration Error] Invalid column definition: %q\n", colDef)
+		return
+	}
 	var name string
-	err := db.QueryRow(fmt.Sprintf("SELECT name FROM pragma_table_info('%s') WHERE name='%s'", table, column)).Scan(&name)
+	err := db.QueryRow("SELECT name FROM pragma_table_info(?) WHERE name=?", table, column).Scan(&name)
 	if err != nil {
+		// Table/column names are validated above — safe to interpolate into DDL.
 		if _, execErr := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef)); execErr == nil {
 			fmt.Printf("[DB Migration]: Upgraded table '%s' -> Added column '%s'\n", table, column)
 		} else {
@@ -4790,18 +5111,21 @@ func (a *App) handleExportChatHistory(w http.ResponseWriter, r *http.Request) {
 		var md strings.Builder
 		fmt.Fprintf(&md, "# Chat History — Agent: %s\n\n", agentID)
 		for _, m := range messages {
-			role := strings.Title(m.Role)
+			if len(m.Role) == 0 {
+				continue
+			}
+			role := strings.ToUpper(m.Role[:1]) + m.Role[1:]
 			fmt.Fprintf(&md, "### %s (%s)\n\n%s\n\n---\n\n", role, m.Timestamp, m.Content)
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.md"`, agentID))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.md"`, sanitizeFilename(agentID)))
 		w.Write([]byte(md.String()))
 		return
 	}
 
 	out, _ := json.MarshalIndent(messages, "", "  ")
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.json"`, agentID))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="chat_%s.json"`, sanitizeFilename(agentID)))
 	w.Write(out)
 }
 
@@ -4876,8 +5200,24 @@ func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCreateTask(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var t Task
-	json.NewDecoder(r.Body).Decode(&t)
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if t.AgentID == "" {
+		http.Error(w, `{"error":"agent_id is required"}`, http.StatusBadRequest)
+		return
+	}
+	if t.Regex == "" {
+		http.Error(w, `{"error":"regex is required"}`, http.StatusBadRequest)
+		return
+	}
+	if t.Command == "" {
+		http.Error(w, `{"error":"command is required"}`, http.StatusBadRequest)
+		return
+	}
 	if t.ID == "" {
 		t.ID = fmt.Sprintf("tsk_%d", time.Now().UnixNano())
 	}
@@ -4896,8 +5236,12 @@ func (a *App) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var t Task
-	json.NewDecoder(r.Body).Decode(&t)
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
 	repeat := 0
 	if t.Repeat {
 		repeat = 1
@@ -4919,13 +5263,14 @@ func (a *App) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetStats(w http.ResponseWriter, r *http.Request) {
-	var ag, sk, rg, tk int
+	var ag, sk, rg, pf, tk int
 	a.ConfigDB.QueryRow("SELECT COUNT(*) FROM agents").Scan(&ag)
 	a.ConfigDB.QueryRow("SELECT COUNT(*) FROM skills").Scan(&sk)
 	a.ConfigDB.QueryRow("SELECT COUNT(*) FROM rags").Scan(&rg)
+	a.ConfigDB.QueryRow("SELECT COUNT(*) FROM preferences").Scan(&pf)
 	a.ConfigDB.QueryRow("SELECT COALESCE(SUM(token_usage), 0) FROM providers").Scan(&tk)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]int{"agents": ag, "skills": sk, "rags": rg, "tokens": tk})
+	json.NewEncoder(w).Encode(map[string]int{"agents": ag, "skills": sk, "rags": rg, "preferences": pf, "tokens": tk})
 }
 
 func maskSecret(secret string) string {
@@ -4971,6 +5316,8 @@ func buildBackupData(app *App) map[string]interface{} {
 		rows.Close()
 		backup[t] = rowsData
 	}
+	// Include zuver.json config in backup so settings survive restore.
+	backup["zuver_config"] = readConfig()
 	backup["_meta"] = map[string]interface{}{
 		"version":     CurrentVersion,
 		"exported_at": time.Now().UTC().Format(time.RFC3339),
@@ -5042,7 +5389,10 @@ const totpDigits = 6
 // generateTOTPSecret generates a random base32-encoded TOTP secret.
 func generateTOTPSecret() string {
 	b := make([]byte, 20) // 160 bits
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("[Security] TOTP secret generation failed: %v", err)
+		return ""
+	}
 	return base32Encode(b)
 }
 
@@ -5186,10 +5536,28 @@ func (a *App) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Provider
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Endpoint == "" {
+		http.Error(w, `{"error":"endpoint is required"}`, http.StatusBadRequest)
+		return
+	}
 	if i.Models == "" {
 		i.Models = "[]"
+	}
+	// SSRF guard: reject private/internal hostnames for non-Ollama providers.
+	// Ollama is typically local, so private hosts are allowed for it.
+	if i.Endpoint != "" && isPrivateHost(i.Endpoint) && strings.ToLower(i.Type) != "ollama" {
+		http.Error(w, `{"error": "Provider endpoint must not point to a private/internal host"}`, http.StatusBadRequest)
+		return
 	}
 	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config, models) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, encryptSecret(i.APIKey), i.ExtraConfig, i.Models)
 	a.appendSecurityEvent("provider_create", r.URL.Path, "admin", fmt.Sprintf("created provider %s (%s)", i.ID, i.Name))
@@ -5198,10 +5566,20 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Provider
 	json.NewDecoder(r.Body).Decode(&i)
 	if i.Models == "" {
 		i.Models = "[]"
+	}
+	// SSRF guard: reject private/internal hostnames for non-Ollama providers.
+	pType := strings.ToLower(i.Type)
+	if pType == "" {
+		a.ConfigDB.QueryRow("SELECT COALESCE(type,'OpenAI') FROM providers WHERE id=?", r.PathValue("id")).Scan(&pType)
+	}
+	if i.Endpoint != "" && isPrivateHost(i.Endpoint) && pType != "ollama" {
+		http.Error(w, `{"error": "Provider endpoint must not point to a private/internal host"}`, http.StatusBadRequest)
+		return
 	}
 	if strings.TrimSpace(i.APIKey) == "" {
 		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, i.Models, r.PathValue("id"))
@@ -5279,6 +5657,7 @@ func (a *App) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 
 // handleSourceUpdate allows remote clients to push structured payloads directly into Agent memory.
 func (a *App) handleSourceUpdate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10 MB limit
 	name := r.PathValue("name")
 	reqKey := r.URL.Query().Get("key")
 	if reqKey == "" {
@@ -5291,7 +5670,7 @@ func (a *App) handleSourceUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dbKey = decryptSecret(dbKey)
-	if dbKey != "" && dbKey != reqKey {
+	if dbKey == "" || !hmac.Equal([]byte(dbKey), []byte(reqKey)) {
 		http.Error(w, `{"error": "Unauthorized or Invalid API Key"}`, http.StatusUnauthorized)
 		return
 	}
@@ -5342,8 +5721,20 @@ func (a *App) handleGetSkills(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Skill
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Type == "" {
+		http.Error(w, `{"error":"type is required"}`, http.StatusBadRequest)
+		return
+	}
 	if i.Type != "Bash" && i.Type != "JavaScript" && i.Type != "Go" {
 		i.UseDocker = false
 	}
@@ -5353,8 +5744,12 @@ func (a *App) handleCreateSkill(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateSkill(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Skill
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
 	if i.Type != "Bash" && i.Type != "JavaScript" && i.Type != "Go" {
 		i.UseDocker = false
 	}
@@ -5453,8 +5848,7 @@ func (a *App) handleQueryRAG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userVector := getEmbedding(req.Query, a.ConfigDB)
-	var hybridEnabled string
-	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='rag_hybrid_search'").Scan(&hybridEnabled)
+	hybridEnabled := readConfig().RAGHybridSearch
 	keywords := strings.Fields(strings.ToLower(req.Query))
 
 	rows, err := a.MemoryDB.Query(fmt.Sprintf("SELECT record_name, data, vector FROM %s", tName))
@@ -5480,7 +5874,7 @@ func (a *App) handleQueryRAG(w http.ResponseWriter, r *http.Request) {
 				score = cosineSimilarity(userVector, dbVector)
 			}
 		}
-		if hybridEnabled == "true" {
+		if hybridEnabled {
 			dataLower := strings.ToLower(rData)
 			keywordHits := 0
 			for _, kw := range keywords {
@@ -5493,7 +5887,7 @@ func (a *App) handleQueryRAG(w http.ResponseWriter, r *http.Request) {
 				score = score*0.7 + keywordScore*0.3
 			}
 		}
-		if score > 0.2 {
+		if score > float32(readConfig().RAGMinScore) {
 			results = append(results, result{Name: rName, Data: rData, Score: float64(score)})
 		}
 	}
@@ -5511,8 +5905,7 @@ func (a *App) handleQueryRAG(w http.ResponseWriter, r *http.Request) {
 // notifySystemError sends an error notification to the configured webhook Output.
 // Called asynchronously — failures are silently logged.
 func (a *App) notifySystemError(title, detail string) {
-	var outputID string
-	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='error_output_id'").Scan(&outputID)
+	outputID := readConfig().ErrorOutputID
 	if outputID == "" {
 		return
 	}
@@ -5538,7 +5931,7 @@ func (a *App) notifySystemError(title, detail string) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Zuver-ErrorNotify/1.0")
 	go func() {
-		resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+		resp, err := safeHTTPClient(10 * time.Second).Do(req)
 		if err == nil {
 			resp.Body.Close()
 		}
@@ -5597,7 +5990,7 @@ func (a *App) dispatchWebhookOutputs(agent Agent, reply string, sessionID string
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "Zuver-Webhook/1.0")
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := safeHTTPClient(10 * time.Second)
 		resp, err := client.Do(req)
 		if err == nil {
 			resp.Body.Close()
@@ -5691,8 +6084,40 @@ func (a *App) handleGetAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Agent
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Name == "" {
+		http.Error(w, `{"error":"name is required"}`, http.StatusBadRequest)
+		return
+	}
+	if i.ProviderID == "" {
+		http.Error(w, `{"error":"provider_id is required"}`, http.StatusBadRequest)
+		return
+	}
+	if i.Model == "" {
+		http.Error(w, `{"error":"model is required"}`, http.StatusBadRequest)
+		return
+	}
+	// Validate temperature range
+	if i.Temperature < 0 || i.Temperature > 2 {
+		http.Error(w, `{"error":"temperature must be between 0 and 2"}`, http.StatusBadRequest)
+		return
+	}
+	// Validate max_tokens
+	if i.MaxTokens <= 0 {
+		i.MaxTokens = 4096
+	}
+	if i.MaxTokens > 128000 {
+		i.MaxTokens = 128000
+	}
+	// Validate top_p range
+	if i.TopP < 0 || i.TopP > 1 {
+		i.TopP = 1.0
+	}
 	if i.MCPTools == "" {
 		i.MCPTools = "[]"
 	}
@@ -5710,8 +6135,28 @@ func (a *App) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Agent
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	// Validate temperature range
+	if i.Temperature < 0 || i.Temperature > 2 {
+		http.Error(w, `{"error":"temperature must be between 0 and 2"}`, http.StatusBadRequest)
+		return
+	}
+	// Validate max_tokens
+	if i.MaxTokens <= 0 {
+		i.MaxTokens = 4096
+	}
+	if i.MaxTokens > 128000 {
+		i.MaxTokens = 128000
+	}
+	// Validate top_p range
+	if i.TopP < 0 || i.TopP > 1 {
+		i.TopP = 1.0
+	}
 	if i.MCPTools == "" {
 		i.MCPTools = "[]"
 	}
@@ -5878,7 +6323,7 @@ func mcpResolveHTTP(mcpURL string) ([]string, error) {
 		"jsonrpc": "2.0", "id": 1,
 		"method": "tools/list", "params": map[string]interface{}{},
 	})
-	resp, err := (&http.Client{Timeout: 8 * time.Second}).Post(mcpURL, "application/json", bytes.NewReader(payload))
+	resp, err := safeHTTPClient(8 * time.Second).Post(mcpURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -6156,23 +6601,179 @@ func (a *App) handleDeletePreference(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	rows, _ := a.ConfigDB.Query("SELECT key, value FROM settings")
-	defer rows.Close()
-	res := make(map[string]string)
-	for rows.Next() {
-		var k, v string
-		rows.Scan(&k, &v)
-		res[k] = v
+	cfg := readConfig()
+	// Redact internal service URLs for non-admin callers to avoid leaking
+	// internal network topology. Admin callers (with token) get full config.
+	isAdmin := false
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	adminTokenMu.RLock()
+	if exp, ok := adminSessions[token]; ok && time.Now().Before(exp) {
+		isAdmin = true
+	}
+	adminTokenMu.RUnlock()
+	if !isAdmin {
+		cfg.PresidioAnalyzer = "***"
+		cfg.PresidioAnonymizer = "***"
+		cfg.RAGLocalEmbeddingURL = "***"
+		cfg.DockerHost = "***"
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
+	json.NewEncoder(w).Encode(cfg)
 }
 
 func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
-	var data map[string]string
-	json.NewDecoder(r.Body).Decode(&data)
-	for k, v := range data {
-		a.ConfigDB.Exec("UPDATE settings SET value=? WHERE key=?", v, k)
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	var data map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	configMu.Lock()
+
+	// Helper: get bool from map (supports both bool and string types).
+	getBool := func(key string) (bool, bool) {
+		if v, ok := data[key].(bool); ok {
+			return v, true
+		}
+		if v, ok := data[key].(string); ok {
+			return v == "true", true
+		}
+		return false, false
+	}
+	// Helper: get int from map (supports both float64 and string types).
+	getInt := func(key string, min, max int) (int, bool) {
+		var n int
+		if v, ok := data[key].(float64); ok {
+			n = int(v)
+		} else if v, ok := data[key].(string); ok {
+			var err error
+			n, err = strconv.Atoi(v)
+			if err != nil {
+				return 0, false
+			}
+		} else {
+			return 0, false
+		}
+		if n < min || n > max {
+			return 0, false
+		}
+		return n, true
+	}
+	// Helper: get string from map.
+	getString := func(key string) (string, bool) {
+		if v, ok := data[key].(string); ok {
+			return v, true
+		}
+		return "", false
+	}
+	// Helper: validate URL scheme.
+	validURL := func(u string) bool {
+		if u == "" {
+			return true
+		}
+		p, err := url.Parse(u)
+		return err == nil && (p.Scheme == "http" || p.Scheme == "https")
+	}
+
+	// Boolean fields.
+	if v, ok := getBool("cors_enabled"); ok {
+		config.CORSEnabled = v
+	}
+	if v, ok := getBool("presidio_enabled"); ok {
+		config.PresidioEnabled = v
+	}
+	if v, ok := getBool("docker_enabled"); ok {
+		config.DockerEnabled = v
+	}
+	if v, ok := getBool("rag_chunking"); ok {
+		config.RAGChunking = v
+	}
+	if v, ok := getBool("rag_embedding_cache"); ok {
+		config.RAGEmbeddingCache = v
+	}
+	if v, ok := getBool("rag_hybrid_search"); ok {
+		config.RAGHybridSearch = v
+	}
+	if v, ok := getBool("rag_local_embedding"); ok {
+		config.RAGLocalEmbedding = v
+	}
+	if v, ok := getBool("response_cache_enabled"); ok {
+		config.ResponseCacheEnabled = v
+	}
+
+	// String fields with URL validation.
+	if v, ok := getString("presidio_analyzer"); ok && validURL(v) {
+		config.PresidioAnalyzer = v
+	}
+	if v, ok := getString("presidio_anonymizer"); ok && validURL(v) {
+		config.PresidioAnonymizer = v
+	}
+	if v, ok := getString("rag_local_embedding_url"); ok && validURL(v) {
+		config.RAGLocalEmbeddingURL = v
+	}
+	if v, ok := getString("docker_host"); ok {
+		config.DockerHost = v
+	}
+	if v, ok := getString("docker_image"); ok {
+		config.DockerImage = v
+	}
+	if v, ok := getString("error_output_id"); ok {
+		config.ErrorOutputID = v
+	}
+	if v, ok := getString("cors_origins"); ok {
+		config.CORSOrigins = v
+	}
+
+	// Integer fields with range validation.
+	if v, ok := getInt("rag_chunk_size", 100, 100000); ok {
+		config.RAGChunkSize = v
+	}
+	if v, ok := getInt("rag_chunk_overlap", 0, 99999); ok {
+		config.RAGChunkOverlap = v
+	}
+	if v, ok := getInt("chat_retention_days", 0, 3650); ok {
+		config.ChatRetentionDays = v
+	}
+	if v, ok := getInt("chat_history_window", 1, 1000); ok {
+		config.ChatHistoryWindow = v
+	}
+	if v, ok := getInt("global_rate_limit", 0, 100000); ok {
+		config.GlobalRateLimit = v
+	}
+	if v, ok := getInt("write_timeout_sec", 30, 86400); ok {
+		config.WriteTimeoutSec = v
+	}
+	if v, ok := getInt("max_header_bytes", 1024, 100<<20); ok {
+		config.MaxHeaderBytes = v
+	}
+	if v, ok := getInt("cert_validity_days", 1, 3650); ok {
+		config.CertValidityDays = v
+	}
+
+	// RAG min score (float).
+	if v, ok := data["rag_min_score"].(float64); ok && v >= 0 && v <= 1 {
+		config.RAGMinScore = v
+	} else if v, ok := data["rag_min_score"].(string); ok {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			config.RAGMinScore = f
+		}
+	}
+
+	// Duration string fields.
+	if v, ok := getString("admin_token_ttl"); ok {
+		if _, err := time.ParseDuration(v); err == nil {
+			config.AdminTokenTTL = v
+		}
+	}
+
+	// Marshal config to bytes while still holding the write lock,
+	// then release the lock before writing to disk (saveConfig acquires RLock).
+	configBytes, _ := json.MarshalIndent(config, "", "  ")
+	configMu.Unlock()
+
+	if err := os.WriteFile("zuver.json", configBytes, 0644); err != nil {
+		log.Printf("[Config] Failed to write config file: %v", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -6480,13 +7081,13 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 				}
 			}
 
-			resp, errDo := (&http.Client{Timeout: 60 * time.Second}).Do(apiReq)
-			if errDo != nil {
-				lastResult = "[PIPELINE AGENT ERROR] " + errDo.Error()
-				logf("Agent %s HTTP error: %v", aID, errDo)
-				break
-			}
-			resBytes, _ := io.ReadAll(resp.Body)
+		resp, errDo := safeHTTPClient(60 * time.Second).Do(apiReq)
+		if errDo != nil {
+			lastResult = "[PIPELINE AGENT ERROR] " + errDo.Error()
+			logf("Agent %s HTTP error: %v", aID, errDo)
+			break
+		}
+		resBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 			resp.Body.Close()
 
 			var result map[string]interface{}
@@ -6638,7 +7239,7 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 					if e != nil {
 						lastResult = "[SKILL API ERROR] " + e.Error()
 					} else {
-						b, _ := io.ReadAll(extResp.Body)
+						b, _ := io.ReadAll(io.LimitReader(extResp.Body, 10<<20))
 						extResp.Body.Close()
 						lastResult = string(b)
 					}
@@ -6652,8 +7253,10 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			code = interpolate(code)
 			tmp := filepath.Join(os.TempDir(), fmt.Sprintf("pipe_code_%d.go", time.Now().UnixNano()))
 			os.WriteFile(tmp, []byte(code), 0644)
-			cmd := exec.Command("go", "run", tmp)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			cmd := exec.CommandContext(ctx, "go", "run", tmp)
 			out, err := cmd.CombinedOutput()
+			cancel()
 			os.Remove(tmp)
 			if err != nil {
 				lastResult = fmt.Sprintf("[CODE ERROR] %s\n%s", err.Error(), string(out))
@@ -6687,12 +7290,12 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 						req.Header.Set(k, v)
 					}
 				}
-				resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-				if err != nil {
-					lastResult = "[HTTP ERROR] " + err.Error()
-				} else {
-					b, _ := io.ReadAll(resp.Body)
-					resp.Body.Close()
+			resp, err := safeHTTPClient(20 * time.Second).Do(req)
+			if err != nil {
+				lastResult = "[HTTP ERROR] " + err.Error()
+			} else {
+				b, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+				resp.Body.Close()
 					lastResult = string(b)
 				}
 			}
@@ -6883,11 +7486,21 @@ func extractFilePayload(path string) (mime string, pureB64 string, ok bool) {
 }
 
 // fileToBase64 provides a streamlined conversion method for visual engines.
+// Path is confined to the uploads directory to prevent arbitrary file reads.
 func fileToBase64(path string) string {
-	data, err := os.ReadFile(path)
+	// Confinement: only allow reads from the uploads directory.
+	absPath, err := filepath.Abs(path)
+	if err != nil || !strings.HasPrefix(absPath, filepath.Clean("./uploads")+string(filepath.Separator)) {
+		fmt.Printf("[System Warning] fileToBase64: path %q is outside uploads directory\n", path)
+		return ""
+	}
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		fmt.Printf("[System Warning] Failed to read resource: %v\n", err)
 		return ""
+	}
+	if len(data) > 10<<20 { // cap at 10 MB
+		data = data[:10<<20]
 	}
 	mimeType := "image/jpeg"
 	lowerPath := strings.ToLower(path)
@@ -6901,13 +7514,12 @@ func fileToBase64(path string) string {
 
 // executeInDocker runs skill code inside a Docker container and returns the output.
 func executeInDocker(db *sql.DB, code string, language string, args []string) (string, error) {
-	var dockerEnabled, dockerHost, dockerImage string
-	db.QueryRow("SELECT value FROM settings WHERE key='docker_enabled'").Scan(&dockerEnabled)
-	if dockerEnabled != "true" {
+	dockerCfg := readConfig()
+	if !dockerCfg.DockerEnabled {
 		return "", fmt.Errorf("docker execution is disabled")
 	}
-	db.QueryRow("SELECT value FROM settings WHERE key='docker_host'").Scan(&dockerHost)
-	db.QueryRow("SELECT value FROM settings WHERE key='docker_image'").Scan(&dockerImage)
+	dockerHost := dockerCfg.DockerHost
+	dockerImage := dockerCfg.DockerImage
 	if dockerHost == "" || dockerImage == "" {
 		return "", fmt.Errorf("docker host or image not configured")
 	}
@@ -6941,6 +7553,7 @@ func executeInDocker(db *sql.DB, code string, language string, args []string) (s
 	argsSlice := []string{
 		"-H", dockerHost,
 		"run", "--rm",
+		"--network", "none",
 		"-v", tmpDir + ":/code:ro",
 		dockerImage,
 		"sh", "-c", entryCmd,
