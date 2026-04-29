@@ -130,12 +130,13 @@ type Agent struct {
 
 // Task defines an automated background job monitored and executed by the system.
 type Task struct {
-	ID      string `json:"id"`
-	AgentID string `json:"agent_id"`
-	Regex   string `json:"regex"`
-	Command string `json:"command"`
-	Repeat  bool   `json:"repeat"`
-	Active  bool   `json:"active"`
+	ID        string `json:"id"`
+	AgentID   string `json:"agent_id"`
+	SessionID string `json:"session_id"`
+	Regex     string `json:"regex"`
+	Command   string `json:"command"`
+	Repeat    bool   `json:"repeat"`
+	Active    bool   `json:"active"`
 }
 
 // Project represents a visual routing pipeline linking multiple nodes and agents.
@@ -359,15 +360,15 @@ func safeHTTPClient(timeout time.Duration) *http.Client {
 				// Try each resolved IP.
 				var lastErr error
 				for _, ipAddr := range ips {
-				    if isPrivateIP(ipAddr.IP.String()) {
-				        return nil, fmt.Errorf("security block: resolved to private IP %s", ipAddr.IP.String())
-				    }
-				    
-				    conn, err := net.DialTimeout(network, net.JoinHostPort(ipAddr.IP.String(), port), timeout)
-				    if err == nil {
-				        return conn, nil
- 				   }
-				    lastErr = err
+					if isPrivateIP(ipAddr.IP.String()) {
+						return nil, fmt.Errorf("security block: resolved to private IP %s", ipAddr.IP.String())
+					}
+
+					conn, err := net.DialTimeout(network, net.JoinHostPort(ipAddr.IP.String(), port), timeout)
+					if err == nil {
+						return conn, nil
+					}
+					lastErr = err
 				}
 				return nil, lastErr
 			},
@@ -434,7 +435,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.4.1"
+const CurrentVersion = "v1.4.2"
 
 // Config holds all runtime configuration for the Zuver framework.
 type Config struct {
@@ -1234,9 +1235,9 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login - auto-generated password")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"token":         newAdminToken,
-			"password":      generatedPassword,
-			"password_set":  "true",
+			"token":        newAdminToken,
+			"password":     generatedPassword,
+			"password_set": "true",
 		})
 		return
 	}
@@ -1664,17 +1665,18 @@ func main() {
 	autoMigrateColumn(db, "providers", "models", "TEXT DEFAULT '[]'")
 	autoMigrateColumn(db, "analytics_logs", "cost", "REAL DEFAULT 0")
 	autoMigrateColumn(db, "chat_history", "session_id", "TEXT DEFAULT ''")
+	autoMigrateColumn(db, "tasks", "session_id", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "agents", "can_create_skills", "INTEGER DEFAULT 0")
 	autoMigrateColumn(db, "agents", "stream_enabled", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "projects", "tags", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "projects", "is_active", "INTEGER DEFAULT 1")
 	autoMigrateColumn(db, "api_keys", "rate_limit", "INTEGER DEFAULT 0") // requests/minute, 0 = unlimited
 	autoMigrateColumn(db, "api_keys", "token_hash", "TEXT DEFAULT ''")
-	autoMigrateColumn(db, "outputs", "type", "TEXT DEFAULT 'Command'")   // Command | Webhook
+	autoMigrateColumn(db, "outputs", "type", "TEXT DEFAULT 'Command'") // Command | Webhook
 	autoMigrateColumn(db, "outputs", "webhook_url", "TEXT DEFAULT ''")
 	autoMigrateColumn(db, "mcp_servers", "tools", "TEXT DEFAULT '[]'") // JSON array of resolved tool names
 	autoMigrateColumn(db, "agents", "mcp_tools", "TEXT DEFAULT '[]'")  // JSON array of {mcpId, tool} pairs assigned to this agent
-	autoMigrateColumn(db, "skills", "use_docker", "INTEGER DEFAULT 0")  // Run skill inside Docker container
+	autoMigrateColumn(db, "skills", "use_docker", "INTEGER DEFAULT 0") // Run skill inside Docker container
 
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('presidio_enabled', 'false'), ('presidio_analyzer', 'http://localhost:3000'), ('presidio_anonymizer', 'http://localhost:3001')")
 	db.Exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('cors_enabled', 'false')")
@@ -1716,18 +1718,23 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			rows, err := db.Query("SELECT id, agent_id, regex, command, repeat FROM tasks WHERE active=1")
+			rows, err := db.Query("SELECT id, agent_id, session_id, regex, command, repeat FROM tasks WHERE active=1")
 			if err != nil {
 				continue
 			}
 			for rows.Next() {
-				var tID, aID, regx, cmd string
+				var tID, aID, sID, regx, cmd string
 				var repeat int
-				rows.Scan(&tID, &aID, &regx, &cmd, &repeat)
+				rows.Scan(&tID, &aID, &sID, &regx, &cmd, &repeat)
 				var lastMsg string
-				db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? ORDER BY id DESC LIMIT 1", aID).Scan(&lastMsg)
+				// Monitor the specific session if set, otherwise monitor the default (empty) session.
+				if sID != "" {
+					db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND session_id=? ORDER BY id DESC LIMIT 1", aID, sID).Scan(&lastMsg)
+				} else {
+					db.QueryRow("SELECT content FROM chat_history WHERE agent_id=? AND (session_id='' OR session_id IS NULL) ORDER BY id DESC LIMIT 1", aID).Scan(&lastMsg)
+				}
 				if matched, _ := regexp.MatchString(regx, lastMsg); matched {
-					db.Exec("INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", aID, "user", cmd)
+					db.Exec("INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aID, sID, "user", cmd)
 					if repeat == 0 {
 						db.Exec("UPDATE tasks SET active=0 WHERE id=?", tID)
 					}
@@ -1859,9 +1866,9 @@ func main() {
 				pingReq.Header.Set("Authorization", "Bearer "+apiKey)
 			}
 		}
-	client := safeHTTPClient(8 * time.Second)
-	t0 := time.Now()
-	resp, err := client.Do(pingReq)
+		client := safeHTTPClient(8 * time.Second)
+		t0 := time.Now()
+		resp, err := client.Do(pingReq)
 		latency := time.Since(t0).Milliseconds()
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
@@ -3305,8 +3312,8 @@ skipPresidio:
 	// because Claude requires it as a top-level key, not a messages entry.
 	var messages []map[string]interface{}
 	histRows, err := a.ConfigDB.Query(
-		"SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE agent_id=? ORDER BY id DESC LIMIT 40) ORDER BY id ASC",
-		agent.ID,
+		"SELECT role, content FROM (SELECT role, content, id FROM chat_history WHERE agent_id=? AND (session_id=? OR (session_id='' AND ?='')) ORDER BY id DESC LIMIT 40) ORDER BY id ASC",
+		agent.ID, req.SessionID, req.SessionID,
 	)
 	if err == nil {
 		for histRows.Next() {
@@ -3575,7 +3582,9 @@ skipPresidio:
 		payloadBytes, _ := json.Marshal(reqBody)
 
 		// Cache lookup (only for non-streaming, non-loop-0+ tool calls).
-		cacheHash := sha256.Sum256(payloadBytes)
+		// Include session_id in cache key so different sessions don't share cached responses.
+		cachePayload := append(payloadBytes, []byte(req.SessionID)...)
+		cacheHash := sha256.Sum256(cachePayload)
 		cacheKey := hex.EncodeToString(cacheHash[:])
 		var replyContent string
 
@@ -3919,7 +3928,7 @@ skipPresidio:
 				go func(idx int, cLine string) {
 					defer wg.Done()
 					t0 := time.Now()
-					sysMsg := a.executeCommand(cLine, agent, projIDs, allowedSources, allowedRAGs, allowedPreferences, allowedDynamicTools, helpPanel, &executionLogs, &mu)
+					sysMsg := a.executeCommand(cLine, agent, req.SessionID, projIDs, allowedSources, allowedRAGs, allowedPreferences, allowedDynamicTools, helpPanel, &executionLogs, &mu)
 					elapsed := time.Since(t0).Milliseconds()
 					results[idx] = toolResult{cmd: cLine, result: sysMsg, ms: elapsed}
 				}(i, cmdLine)
@@ -4006,7 +4015,7 @@ skipPresidio:
 		}
 
 		// Dispatch webhook outputs asynchronously.
-		go a.dispatchWebhookOutputs(agent, replyContent)
+		go a.dispatchWebhookOutputs(agent, replyContent, req.SessionID)
 
 		if useStream {
 			sseEmit(map[string]interface{}{"done": true, "logs": executionLogs})
@@ -4120,6 +4129,7 @@ func (a *App) callAgentSkill(skillContent string, callerInput string) string {
 func (a *App) executeCommand(
 	cLine string,
 	agent Agent,
+	sessionID string,
 	projIDs []string,
 	allowedSources, allowedRAGs, allowedPreferences, allowedDynamicTools map[string]bool,
 	helpPanel string,
@@ -4415,8 +4425,8 @@ func (a *App) executeCommand(
 		if p[3] == "true" {
 			repeat = 1
 		}
-		AsyncDBExec(a.ConfigDB, "INSERT INTO tasks (id, agent_id, regex, command, repeat) VALUES (?, ?, ?, ?, ?)",
-			"tsk_"+fmt.Sprint(time.Now().UnixNano()), agent.ID, p[1], p[2], repeat)
+		AsyncDBExec(a.ConfigDB, "INSERT INTO tasks (id, agent_id, session_id, regex, command, repeat) VALUES (?, ?, ?, ?, ?, ?)",
+			"tsk_"+fmt.Sprint(time.Now().UnixNano()), agent.ID, sessionID, p[1], p[2], repeat)
 		return "[TASK SYSTEM] Background Job Deployed. Monitoring pattern: " + p[1]
 
 	default:
@@ -4539,27 +4549,27 @@ func (a *App) executeCommand(
 					default:
 						tmpExt = ".go"
 					}
-				tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
-				if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
-					return "[SKILL ERROR] failed to write temp script"
-				}
-				defer os.Remove(tmp)
-				// Execute with a 30-second timeout to prevent infinite hangs.
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				switch sType {
-				case "Bash":
-					execCmd = exec.CommandContext(ctx, "sh", tmp)
-				case "JavaScript":
-					execCmd = exec.CommandContext(ctx, "node", tmp)
-				default:
-					execCmd = exec.CommandContext(ctx, "go", "run", tmp)
-				}
-				out, e := execCmd.CombinedOutput()
-				result = "[RESULT]\n" + string(out)
-				if e != nil {
-					result += "\nErr: " + e.Error()
-				}
+					tmp := filepath.Join(os.TempDir(), fmt.Sprintf("sk_%d%s", time.Now().UnixNano(), tmpExt))
+					if err := os.WriteFile(tmp, []byte(fCode), 0700); err != nil {
+						return "[SKILL ERROR] failed to write temp script"
+					}
+					defer os.Remove(tmp)
+					// Execute with a 30-second timeout to prevent infinite hangs.
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					switch sType {
+					case "Bash":
+						execCmd = exec.CommandContext(ctx, "sh", tmp)
+					case "JavaScript":
+						execCmd = exec.CommandContext(ctx, "node", tmp)
+					default:
+						execCmd = exec.CommandContext(ctx, "go", "run", tmp)
+					}
+					out, e := execCmd.CombinedOutput()
+					result = "[RESULT]\n" + string(out)
+					if e != nil {
+						result += "\nErr: " + e.Error()
+					}
 				}
 				return result
 			case "API":
@@ -4736,7 +4746,12 @@ func (a *App) handleGetChatHistory(w http.ResponseWriter, r *http.Request) {
 // handleClearChatHistory purges memory allocations assigned to a specific agent entity.
 func (a *App) handleClearChatHistory(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agent_id")
-	a.ConfigDB.Exec("DELETE FROM chat_history WHERE agent_id=?", agentID)
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID != "" {
+		a.ConfigDB.Exec("DELETE FROM chat_history WHERE agent_id=? AND session_id=?", agentID, sessionID)
+	} else {
+		a.ConfigDB.Exec("DELETE FROM chat_history WHERE agent_id=?", agentID)
+	}
 
 	paginationMu.Lock()
 	delete(paginationStore, agentID)
@@ -4758,11 +4773,18 @@ func (a *App) handleClearChatHistory(w http.ResponseWriter, r *http.Request) {
 // handleExportChatHistory exports conversation history as JSON or Markdown.
 func (a *App) handleExportChatHistory(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("agent_id")
+	sessionID := r.URL.Query().Get("session_id")
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		format = "json"
 	}
-	rows, err := a.ConfigDB.Query("SELECT role, content, timestamp FROM chat_history WHERE agent_id=? ORDER BY id ASC", agentID)
+	var rows *sql.Rows
+	var err error
+	if sessionID != "" {
+		rows, err = a.ConfigDB.Query("SELECT role, content, timestamp FROM chat_history WHERE agent_id=? AND session_id=? ORDER BY id ASC", agentID, sessionID)
+	} else {
+		rows, err = a.ConfigDB.Query("SELECT role, content, timestamp FROM chat_history WHERE agent_id=? AND (session_id='' OR session_id IS NULL) ORDER BY id ASC", agentID)
+	}
 	if err != nil {
 		http.Error(w, `{"error":"db error"}`, http.StatusInternalServerError)
 		return
@@ -4849,7 +4871,7 @@ func (a *App) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.ConfigDB.Query("SELECT id, agent_id, regex, command, COALESCE(repeat,0), COALESCE(active,1) FROM tasks ORDER BY id DESC")
+	rows, err := a.ConfigDB.Query("SELECT id, agent_id, COALESCE(session_id,''), regex, command, COALESCE(repeat,0), COALESCE(active,1) FROM tasks ORDER BY id DESC")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]Task{})
@@ -4860,7 +4882,7 @@ func (a *App) handleGetTasks(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Task
 		var repeat, active int
-		rows.Scan(&t.ID, &t.AgentID, &t.Regex, &t.Command, &repeat, &active)
+		rows.Scan(&t.ID, &t.AgentID, &t.SessionID, &t.Regex, &t.Command, &repeat, &active)
 		t.Repeat = repeat == 1
 		t.Active = active == 1
 		list = append(list, t)
@@ -4886,7 +4908,7 @@ func (a *App) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if !t.Active {
 		active = 0
 	}
-	a.ConfigDB.Exec("INSERT INTO tasks (id, agent_id, regex, command, repeat, active) VALUES (?, ?, ?, ?, ?, ?)", t.ID, t.AgentID, t.Regex, t.Command, repeat, active)
+	a.ConfigDB.Exec("INSERT INTO tasks (id, agent_id, session_id, regex, command, repeat, active) VALUES (?, ?, ?, ?, ?, ?, ?)", t.ID, t.AgentID, t.SessionID, t.Regex, t.Command, repeat, active)
 	a.appendSecurityEvent("task_create", r.URL.Path, "admin", fmt.Sprintf("created task %s for agent %s", t.ID, t.AgentID))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": t.ID})
@@ -4969,7 +4991,7 @@ func buildBackupData(app *App) map[string]interface{} {
 		backup[t] = rowsData
 	}
 	backup["_meta"] = map[string]interface{}{
-		"version":    CurrentVersion,
+		"version":     CurrentVersion,
 		"exported_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	return backup
@@ -5031,7 +5053,6 @@ func decryptBackup(data []byte, password string) ([]byte, error) {
 func deriveKey(password []byte, salt []byte) []byte {
 	return pbkdf2.Key(password, salt, 100000, 32, sha256.New)
 }
-
 
 // TOTP functions (RFC 6238)
 const totpPeriod = 30 // seconds
@@ -5309,7 +5330,7 @@ func (a *App) handleSourceUpdate(w http.ResponseWriter, r *http.Request) {
 			for _, m := range mounts {
 				if m["id"] == id && m["push_update"] == true {
 					msg := fmt.Sprintf("[Source Update %s]\n%s", name, string(body))
-					AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", aId, "system", msg)
+					AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aId, "", "system", msg)
 				}
 			}
 		}
@@ -5545,7 +5566,7 @@ func (a *App) notifySystemError(title, detail string) {
 
 // dispatchWebhookOutputs fires any Webhook-type outputs assigned to the agent, sending the
 // reply as a JSON POST payload to each configured URL. Runs in a background goroutine.
-func (a *App) dispatchWebhookOutputs(agent Agent, reply string) {
+func (a *App) dispatchWebhookOutputs(agent Agent, reply string, sessionID string) {
 	var assignedOutputs []string
 	if err := json.Unmarshal([]byte(agent.Outputs), &assignedOutputs); err != nil || len(assignedOutputs) == 0 {
 		return
@@ -5584,6 +5605,7 @@ func (a *App) dispatchWebhookOutputs(agent Agent, reply string) {
 		payload, _ := json.Marshal(map[string]interface{}{
 			"agent_id":   agent.ID,
 			"agent_name": agent.Name,
+			"session_id": sessionID,
 			"reply":      reply,
 			"output_id":  h.id,
 			"timestamp":  time.Now().UTC().Format(time.RFC3339),
@@ -6218,9 +6240,9 @@ func (a *App) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // modelPricing represents per-model token pricing (per 1M tokens).
 type modelPricing struct {
-	ModelID    string  `json:"model_id"`
-	Alias      string  `json:"alias"`
-	InputPrice float64 `json:"input_price"`
+	ModelID     string  `json:"model_id"`
+	Alias       string  `json:"alias"`
+	InputPrice  float64 `json:"input_price"`
 	OutputPrice float64 `json:"output_price"`
 }
 
@@ -6266,7 +6288,11 @@ func (a *App) runProjectPipeline(projectID string, callerAgentID string, input s
 // runProjectPipelineVerbose executes a full project pipeline with real agent LLM calls,
 // skill invocations, conditional branching, HTTP requests, and transform nodes.
 // It returns the final output text and an execution log slice.
-func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, input string) (string, []string) {
+func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, input string, sessionID ...string) (string, []string) {
+	var sessID string
+	if len(sessionID) > 0 {
+		sessID = sessionID[0]
+	}
 	var flowJson string
 	a.ConfigDB.QueryRow("SELECT flow_json FROM projects WHERE id=?", projectID).Scan(&flowJson)
 	if flowJson == "" {
@@ -6507,8 +6533,8 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			vars["agent_"+aID] = agentReply
 			tokensUsed := estimateTokens(string(payloadBytes)) + estimateTokens(agentReply)
 			AsyncDBExec(a.ConfigDB, "UPDATE agents SET token_usage = token_usage + ? WHERE id=?", tokensUsed, aID)
-			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", aID, "user", userMsg)
-			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, role, content) VALUES (?, ?, ?)", aID, "assistant", agentReply)
+			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aID, sessID, "user", userMsg)
+			AsyncDBExec(a.ConfigDB, "INSERT INTO chat_history (agent_id, session_id, role, content) VALUES (?, ?, ?, ?)", aID, sessID, "assistant", agentReply)
 			a.logAnalytics("agent", aID, tokensUsed, true)
 			logf("Agent %s replied (%d chars).", aID, len(agentReply))
 
@@ -6627,7 +6653,7 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 							apiR.Header.Set(k, v)
 						}
 					}
-			extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
+					extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
 					if e != nil {
 						lastResult = "[SKILL API ERROR] " + e.Error()
 					} else {
@@ -6722,7 +6748,7 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 					break
 				}
 				// Execute regex with 100ms timeout to prevent ReDoS.
-				type result struct { val bool }
+				type result struct{ val bool }
 				ch := make(chan result, 1)
 				go func() {
 					ch <- result{re.MatchString(lastResult)}
