@@ -1312,6 +1312,16 @@
 						<div
 							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
 							<div>
+								<span class="font-bold flex items-center gap-2"><i data-lucide="shield-alert"
+										class="w-4 h-4 text-red-500"></i> Allow Remote Setup</span>
+								<p class="text-xs text-gray-500 mt-1">Allow first-time admin password setup from non-localhost IPs. Default is off for security — only localhost can initialize the admin password by default.</p>
+							</div>
+							<input type="checkbox" id="toggle-remote-setup" onchange="saveSettings()"
+								class="w-4 h-4 cursor-pointer accent-red-500 shrink-0 ml-4">
+						</div>
+						<div
+							class="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors">
+							<div>
 								<span class="font-bold flex items-center gap-2"><i data-lucide="globe"
 										class="w-4 h-4 text-blue-500"></i> Interface Language</span>
 								<p class="text-xs text-gray-500 mt-1">Change OS display language (EN/ZH/DE).</p>
@@ -2305,7 +2315,12 @@
 					<img src="https://zuver.cc/6x6logo.png" alt="Zuver logo" class="w-8 h-8 object-cover dark:invert">
 				</div>
 				<h1 class="font-black text-2xl tracking-tight">Zuver</h1>
-				<p class="text-sm text-gray-500">Enter password to unlock.</p>
+				<p class="text-sm text-gray-500" id="login-hint">Enter password to unlock.</p>
+				<p class="text-sm text-green-600 dark:text-green-400 hidden" id="login-first-setup-msg">
+					<i data-lucide="check-circle" class="w-4 h-4 inline mr-1"></i>
+					First-time setup complete. Your generated password is shown below — save it safely!
+				</p>
+				<p class="text-xs text-gray-500 hidden mt-2" id="login-generated-password"></p>
 			</div>
 			<div
 				class="bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-800 rounded-xl p-6 space-y-4 shadow-sm">
@@ -2956,6 +2971,9 @@
 					if (ci) ci.value = set.cors_origins;
 					const ca = document.getElementById('cors-origins-area');
 					if (ca) { if (set.cors_enabled) ca.classList.remove('hidden'); else ca.classList.add('hidden'); }
+				}
+				if (set.remote_setup !== undefined) {
+					document.getElementById('toggle-remote-setup').checked = set.remote_setup;
 				}
 				if (set.docker_enabled !== undefined) {
 					document.getElementById('toggle-docker').checked = set.docker_enabled;
@@ -3684,11 +3702,6 @@
 								// --- Streaming delta: append with fade-in ---
 								if (parsed.delta) {
 									fullText += parsed.delta;
-									// Render the already-accumulated text as markdown, then append
-									// the newest chunk as a span with the fade-in class.
-									const prevHtml = marked.parse(fullText.slice(0, fullText.length - parsed.delta.length));
-									const chunkSpan = `<span class="stream-chunk">${escapeHTML(parsed.delta)}</span>`;
-									// Simple approach: re-render full markdown but animate the last segment.
 									aiBubble.innerHTML = renderMarkdownSafely(fullText);
 									// Flash the last text node briefly.
 									const walker = document.createTreeWalker(aiBubble, NodeFilter.SHOW_TEXT, null);
@@ -4973,6 +4986,7 @@
 				presidio_anonymizer: document.getElementById('presidio-anonymizer-url').value,
 				cors_enabled: document.getElementById('toggle-cors').checked,
 				cors_origins: document.getElementById('cors-origins')?.value || '*',
+				remote_setup: document.getElementById('toggle-remote-setup').checked,
 				docker_enabled: document.getElementById('toggle-docker').checked,
 				docker_host: document.getElementById('docker-host').value,
 				docker_image: document.getElementById('docker-image').value,
@@ -6090,6 +6104,20 @@
 					document.getElementById('login-pwd').value = '';
 					document.getElementById('login-totp').value = '';
 					document.getElementById('totp-login-field').classList.add('hidden');
+					// If first-time setup, display the generated password.
+					if (data.password_set === "true") {
+						if (data.password) {
+							// Auto-generated password — show it prominently
+							document.getElementById('login-first-setup-msg').classList.remove('hidden');
+							const pwDisplay = document.getElementById('login-generated-password');
+							pwDisplay.textContent = 'Password: ' + data.password;
+							pwDisplay.classList.remove('hidden');
+							showToast('First-time setup! Save your password: ' + data.password, 'success', 10000);
+						} else {
+							// User-provided password — just confirm success
+							showToast('Password set successfully. Welcome to Zuver!', 'success', 5000);
+						}
+					}
 					loadAllData();
 				} else {
 					if (data.totp_required) {

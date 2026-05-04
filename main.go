@@ -284,18 +284,23 @@ func isPrivateHost(rawURL string) bool {
 	h := strings.ToLower(parsed.Hostname())
 
 	// Check DNS A/AAAA records to prevent DNS rebinding attacks.
-	if ips, err := net.LookupIP(h); err == nil && len(ips) > 0 {
-		for _, ip := range ips {
-			if isPrivateIP(ip.String()) {
-				return true
-			}
+	ips, err := net.LookupIP(h)
+	if err != nil || len(ips) == 0 {
+		// DNS lookup failed or returned no IPs — treat as unsafe to prevent
+		// DNS rebinding attacks where attacker controls DNS resolution.
+		return true
+	}
+	// Check each resolved IP against private ranges.
+	for _, ip := range ips {
+		if isPrivateIP(ip.String()) {
+			return true
 		}
-		// Use first IPv4 for prefix matching below.
-		for _, ip := range ips {
-			if v4 := ip.To4(); v4 != nil {
-				h = v4.String()
-				break
-			}
+	}
+	// Use first IPv4 for prefix matching below.
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			h = v4.String()
+			break
 		}
 	}
 
@@ -470,6 +475,10 @@ type Config struct {
 	CORSEnabled  bool   `json:"cors_enabled"`
 	CORSOrigins  string `json:"cors_origins"` // comma-separated list of allowed origins, or "*" for all
 
+	// Remote Setup — when true, allows remote (non-localhost) first-time admin password setup.
+	// Default is false for security: fresh instances can only be claimed from localhost.
+	RemoteSetup bool `json:"remote_setup"`
+
 	// Presidio PII Shield
 	PresidioEnabled    bool   `json:"presidio_enabled"`
 	PresidioAnalyzer   string `json:"presidio_analyzer"`
@@ -522,8 +531,9 @@ func defaultConfig() Config {
 		Headless:     false,
 		LogLevel:     "info",
 
-		CORSEnabled: false,
-		CORSOrigins: "*",
+		CORSEnabled:  false,
+		CORSOrigins:  "*",
+		RemoteSetup:   false,
 
 		PresidioEnabled:    false,
 		PresidioAnalyzer:   "http://localhost:3000",
@@ -1361,30 +1371,36 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var dbHash string
 	a.ConfigDB.QueryRow("SELECT value FROM settings WHERE key='admin_password'").Scan(&dbHash)
 
-	// First boot: generate a random password automatically.
-	// Security: only allow bootstrap from a local loopback request so a remotely
-	// exposed fresh instance cannot be claimed by the first network caller.
+// First boot: generate a random password automatically.
+// Security: by default only allow bootstrap from a local loopback request.
+// If RemoteSetup is enabled in config, allow remote first-time setup.
 	if dbHash == "" {
-		if !isLoopbackRemoteAddr(getClientIP(r)) {
+		if !isLoopbackRemoteAddr(getClientIP(r)) && !readConfig().RemoteSetup {
 			a.appendSecurityEvent("remote_init_denied", r.URL.Path, ip, "remote first-time admin initialization blocked")
 			w.Header().Set("Content-Type", "application/json")
-			http.Error(w, `{"error": "Admin password has not been initialized yet. Complete first-time setup from localhost."}`, http.StatusForbidden)
+			http.Error(w, `{"error": "Admin password has not been initialized yet. Complete first-time setup from localhost, or enable remote setup in zuver.json (remote_setup: true)."}`, http.StatusForbidden)
 			return
 		}
-		// Generate random password for first boot.
-		generatedPassword, genErr := generateRandomPassword()
-		if genErr != nil {
-			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
-			return
+		// Use user-provided password if set, otherwise generate random password.
+		var newPassword string
+		if req.Password != "" {
+			newPassword = req.Password
+		} else {
+			var genErr error
+			newPassword, genErr = generateRandomPassword()
+			if genErr != nil {
+				http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
+				return
+			}
 		}
-		newHash, hashErr := bcryptHash(generatedPassword)
+		newHash, hashErr := bcryptHash(newPassword)
 		if hashErr != nil {
 			http.Error(w, `{"error": "Server error"}`, http.StatusInternalServerError)
 			return
 		}
 		SyncDBExec(a.ConfigDB, "INSERT INTO settings (key, value) VALUES ('admin_password', ?)", newHash)
 		dbHash = newHash
-		// Return the generated password so the user can see it.
+		// Return the password so the user can see it (if auto-generated).
 		loginAttempts[ip] = 0
 		b := make([]byte, 32)
 		if _, randErr := rand.Read(b); randErr != nil {
@@ -1396,13 +1412,16 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		newToken := "tok_" + hex.EncodeToString(b)
 		adminSessions[newToken] = time.Now().Add(getAdminTokenTTL())
 		adminTokenMu.Unlock()
-		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login - auto-generated password")
+		a.appendSecurityEvent("first_login", r.URL.Path, ip, "first-time admin login" + func() string { if req.Password != "" { return " - user-provided password" }; return " - auto-generated password" }())
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		response := map[string]string{
 			"token":        newToken,
-			"password":     generatedPassword,
 			"password_set": "true",
-		})
+		}
+		if req.Password == "" {
+			response["password"] = newPassword
+		}
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -1857,6 +1876,7 @@ func main() {
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(active)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_chat_history_agent_session ON chat_history(agent_id, session_id)")
 	db.Exec("CREATE INDEX IF NOT EXISTS idx_chat_history_agent ON chat_history(agent_id)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_api_keys_token_hash ON api_keys(token_hash)")
 
 	// Legacy settings previously stored in the DB are now in zuver.json (Config struct).
 	// Only security-critical settings remain in the DB.
@@ -2479,7 +2499,11 @@ func main() {
 			actor = "admin"
 		}
 		app.appendSecurityEvent("wipe_database", r.URL.Path, actor, "database wipe requested")
-		tableNames := []string{"agents", "skills", "sources", "source_logs", "projects", "rags", "outputs", "mcp_servers", "chat_history", "tasks", "response_cache"}
+		tableNames := []string{
+			"agents", "skills", "sources", "source_logs", "projects", "rags", "outputs",
+			"mcp_servers", "chat_history", "tasks", "response_cache", "chat_sessions",
+			"analytics_logs", "embedding_cache",
+		}
 		for _, t := range tableNames {
 			// Security: table names are hardcoded — safe from injection.
 			app.ConfigDB.Exec("DELETE FROM " + t) // Security: t is from hardcoded tableNames slice — safe from injection.
@@ -4995,15 +5019,15 @@ func autoMigrateColumn(db *sql.DB, table string, column string, colDef string) {
 		fmt.Printf("[DB Migration Error] Invalid table or column name: table=%q, column=%q\n", table, column)
 		return
 	}
-	// Validate column definition contains only safe characters (alphanumerics, spaces, quotes, parens, dots, commas)
-	colDefRe := regexp.MustCompile(`^[a-zA-Z0-9_'"(). ,\-]+$`)
-	if !colDefRe.MatchString(colDef) {
-		fmt.Printf("[DB Migration Error] Invalid column definition: %q\n", colDef)
-		return
-	}
 	var name string
 	err := db.QueryRow("SELECT name FROM pragma_table_info(?) WHERE name=?", table, column).Scan(&name)
 	if err != nil {
+		// Validate column definition only when actually adding the column
+		colDefRe := regexp.MustCompile(`^[a-zA-Z0-9_'"(). ,\-[\]{}]+$`)
+		if !colDefRe.MatchString(colDef) {
+			fmt.Printf("[DB Migration Error] Invalid column definition: %q\n", colDef)
+			return
+		}
 		// Table/column names are validated above — safe to interpolate into DDL.
 		if _, execErr := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef)); execErr == nil {
 			fmt.Printf("[DB Migration]: Upgraded table '%s' -> Added column '%s'\n", table, column)
@@ -6700,6 +6724,9 @@ func (a *App) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := getBool("response_cache_enabled"); ok {
 		config.ResponseCacheEnabled = v
+	}
+	if v, ok := getBool("remote_setup"); ok {
+		config.RemoteSetup = v
 	}
 
 	// String fields with URL validation.
