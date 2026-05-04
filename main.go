@@ -458,7 +458,7 @@ var (
 )
 
 // CurrentVersion is the running instance version — compared against GitHub releases.
-const CurrentVersion = "v1.5.0"
+const CurrentVersion = "v1.5.1"
 
 // Config holds all runtime configuration for the Zuver framework.
 type Config struct {
