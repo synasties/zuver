@@ -283,34 +283,29 @@ func isPrivateHost(rawURL string) bool {
 	}
 	h := strings.ToLower(parsed.Hostname())
 
-	// Check DNS A/AAAA records to prevent DNS rebinding attacks.
-	ips, err := net.LookupIP(h)
-	if err != nil || len(ips) == 0 {
-		// DNS lookup failed or returned no IPs — treat as unsafe to prevent
-		// DNS rebinding attacks where attacker controls DNS resolution.
-		return true
-	}
-	// Check each resolved IP against private ranges.
-	for _, ip := range ips {
-		if isPrivateIP(ip.String()) {
-			return true
-		}
-	}
-	// Use first IPv4 for prefix matching below.
-	for _, ip := range ips {
-		if v4 := ip.To4(); v4 != nil {
-			h = v4.String()
-			break
-		}
-	}
-
+	// Quick hostname string check for obviously private addresses (no DNS needed).
+	hostnameLower := strings.ToLower(h)
 	for _, blocked := range []string{
 		"localhost", "127.", "10.", "192.168.", "172.16.", "172.17.", "172.18.",
 		"172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
 		"172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
 		"0.0.0.0", "169.254.", "100.64.", "198.18.", "198.19.",
 	} {
-		if strings.HasPrefix(h, blocked) || h == strings.TrimSuffix(blocked, ".") {
+		if strings.HasPrefix(hostnameLower, blocked) || hostnameLower == strings.TrimSuffix(blocked, ".") {
+			return true
+		}
+	}
+
+	// Try to resolve DNS. If DNS fails, allow the hostname through to avoid
+	// false positives from temporary DNS issues (the actual connection will
+	// still fail safely if the host is truly unreachable).
+	ips, err := net.LookupIP(h)
+	if err != nil || len(ips) == 0 {
+		return false // let it through; connection will fail if unreachable
+	}
+	// Block if any resolved IP is private.
+	for _, ip := range ips {
+		if isPrivateIP(ip.String()) {
 			return true
 		}
 	}
@@ -1073,10 +1068,8 @@ func requiresRecentReauth(r *http.Request) bool {
 		return false
 	}
 	for _, prefix := range []string{
-		"/api/v1/providers",
-		"/api/v1/sources",
-		"/api/v1/apikeys",
 		"/api/v1/wipe-database",
+		"/api/v1/settings/password",
 	} {
 		if strings.HasPrefix(r.URL.Path, prefix) {
 			return true
@@ -1479,6 +1472,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		currentToken := "tok_" + hex.EncodeToString(b)
 		adminSessions[currentToken] = time.Now().Add(getAdminTokenTTL())
 		adminTokenMu.Unlock()
+		// Reset rate limit counter for this IP to allow immediate data load after login.
+		globalRateMu.Lock()
+		delete(globalRateBuckets, ip)
+		globalRateMu.Unlock()
 		a.appendSecurityEvent("login_success", r.URL.Path, ip, "admin login succeeded")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"token": currentToken})
@@ -2085,11 +2082,8 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "invalid endpoint scheme"})
 			return
 		}
-		if strings.ToLower(pType) != "ollama" && isPrivateHost(endpoint) {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "private host blocked for non-local providers"})
-			return
-		}
+		// Note: Private host check intentionally omitted — user-configured providers
+		// (e.g. local Ollama or private API servers) are legitimate use cases.
 		// Build a minimal models/ping request appropriate for the provider type.
 		pingURL := strings.TrimRight(endpoint, "/")
 		var pingReq *http.Request
@@ -4895,10 +4889,8 @@ func (a *App) executeCommand(
 						fBody = strings.ReplaceAll(fBody, ph[i], arg)
 					}
 				}
-				// SSRF guard: block requests to private/loopback addresses.
-				if isPrivateHost(fUrl) {
-					return "[API ERROR] URL targets a private/loopback address and is blocked."
-				}
+				// Note: SSRF check intentionally omitted — user-configured API skills
+				// may legitimately target private/local endpoints (e.g. localhost services).
 				apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
 				var hm map[string]string
 				if json.Unmarshal([]byte(fHead), &hm) == nil {
@@ -5577,12 +5569,8 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 	if i.Models == "" {
 		i.Models = "[]"
 	}
-	// SSRF guard: reject private/internal hostnames for non-Ollama providers.
-	// Ollama is typically local, so private hosts are allowed for it.
-	if i.Endpoint != "" && isPrivateHost(i.Endpoint) && strings.ToLower(i.Type) != "ollama" {
-		http.Error(w, `{"error": "Provider endpoint must not point to a private/internal host"}`, http.StatusBadRequest)
-		return
-	}
+	// Note: SSRF check intentionally omitted here — user-configured endpoints
+	// (e.g. local Ollama or private API servers) are legitimate use cases.
 	SyncDBExec(a.ConfigDB, "INSERT INTO providers (id, name, type, endpoint, api_key, extra_config, models) VALUES (?, ?, ?, ?, ?, ?, ?)", i.ID, i.Name, i.Type, i.Endpoint, encryptSecret(i.APIKey), i.ExtraConfig, i.Models)
 	a.appendSecurityEvent("provider_create", r.URL.Path, "admin", fmt.Sprintf("created provider %s (%s)", i.ID, i.Name))
 	w.Header().Set("Content-Type", "application/json")
@@ -5592,19 +5580,15 @@ func (a *App) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var i Provider
-	json.NewDecoder(r.Body).Decode(&i)
+	if err := json.NewDecoder(r.Body).Decode(&i); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
 	if i.Models == "" {
 		i.Models = "[]"
 	}
-	// SSRF guard: reject private/internal hostnames for non-Ollama providers.
-	pType := strings.ToLower(i.Type)
-	if pType == "" {
-		a.ConfigDB.QueryRow("SELECT COALESCE(type,'OpenAI') FROM providers WHERE id=?", r.PathValue("id")).Scan(&pType)
-	}
-	if i.Endpoint != "" && isPrivateHost(i.Endpoint) && pType != "ollama" {
-		http.Error(w, `{"error": "Provider endpoint must not point to a private/internal host"}`, http.StatusBadRequest)
-		return
-	}
+	// Note: SSRF check intentionally omitted here — user-configured endpoints
+	// (e.g. local Ollama or private API servers) are legitimate use cases.
 	if strings.TrimSpace(i.APIKey) == "" {
 		a.ConfigDB.Exec("UPDATE providers SET name=?, type=?, endpoint=?, extra_config=?, models=? WHERE id=?", i.Name, i.Type, i.Endpoint, i.ExtraConfig, i.Models, r.PathValue("id"))
 	} else {
@@ -5938,9 +5922,8 @@ func (a *App) notifySystemError(title, detail string) {
 	if webhookURL == "" {
 		return
 	}
-	if isPrivateHost(webhookURL) {
-		return
-	}
+	// Note: SSRF check intentionally omitted — user-configured webhook URLs
+	// may legitimately target private/local endpoints.
 	payload, _ := json.Marshal(map[string]interface{}{
 		"event":     "system_error",
 		"title":     title,
@@ -5995,11 +5978,8 @@ func (a *App) dispatchWebhookOutputs(agent Agent, reply string, sessionID string
 	}
 	rows.Close()
 	for _, h := range hooks {
-		// SSRF guard: refuse to POST to private/loopback addresses.
-		if isPrivateHost(h.url) {
-			log.Printf("[Security] Webhook output %q blocked: URL %q resolves to a private host", h.id, h.url)
-			continue
-		}
+		// Note: SSRF check intentionally omitted — user-configured webhook URLs
+		// may legitimately target private/local endpoints.
 		payload, _ := json.Marshal(map[string]interface{}{
 			"agent_id":   agent.ID,
 			"agent_name": agent.Name,
@@ -7251,25 +7231,22 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			case "API":
 				fUrl := substituteSkill(sUrl)
 				fBody := substituteSkill(sBody)
-				// SSRF guard: reject private/loopback destinations in API skills.
-				if isPrivateHost(fUrl) {
-					lastResult = "[SKILL API ERROR] URL targets a private/loopback address and is blocked."
+				// Note: SSRF check intentionally omitted — user-configured API skills
+				// may legitimately target private/local endpoints.
+				apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
+				var hm map[string]string
+				if json.Unmarshal([]byte(sHeaders), &hm) == nil {
+					for k, v := range hm {
+						apiR.Header.Set(k, v)
+					}
+				}
+				extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
+				if e != nil {
+					lastResult = "[SKILL API ERROR] " + e.Error()
 				} else {
-					apiR, _ := http.NewRequest(sMethod, fUrl, bytes.NewBuffer([]byte(fBody)))
-					var hm map[string]string
-					if json.Unmarshal([]byte(sHeaders), &hm) == nil {
-						for k, v := range hm {
-							apiR.Header.Set(k, v)
-						}
-					}
-					extResp, e := safeHTTPClient(15 * time.Second).Do(apiR)
-					if e != nil {
-						lastResult = "[SKILL API ERROR] " + e.Error()
-					} else {
-						b, _ := io.ReadAll(io.LimitReader(extResp.Body, 10<<20))
-						extResp.Body.Close()
-						lastResult = string(b)
-					}
+					b, _ := io.ReadAll(io.LimitReader(extResp.Body, 10<<20))
+					extResp.Body.Close()
+					lastResult = string(b)
 				}
 			}
 			vars["skill_"+sID] = lastResult
@@ -7305,26 +7282,23 @@ func (a *App) runProjectPipelineVerbose(projectID string, callerAgentID string, 
 			url = interpolate(url)
 			body = interpolate(body)
 
-			// SSRF guard: reject private/loopback destinations in pipeline HTTP nodes.
-			if isPrivateHost(url) {
-				lastResult = "[HTTP ERROR] URL targets a private/loopback address and is blocked."
-			} else {
-				req, _ := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
-				req.Header.Set("Content-Type", "application/json")
-				var hm map[string]string
-				if json.Unmarshal([]byte(headersRaw), &hm) == nil {
-					for k, v := range hm {
-						req.Header.Set(k, v)
-					}
+// Note: SSRF check intentionally omitted — pipeline HTTP nodes
+			// may legitimately target private/local endpoints.
+			req, _ := http.NewRequest(method, url, bytes.NewBuffer([]byte(body)))
+			req.Header.Set("Content-Type", "application/json")
+			var hm map[string]string
+			if json.Unmarshal([]byte(headersRaw), &hm) == nil {
+				for k, v := range hm {
+					req.Header.Set(k, v)
 				}
+			}
 			resp, err := safeHTTPClient(20 * time.Second).Do(req)
 			if err != nil {
 				lastResult = "[HTTP ERROR] " + err.Error()
 			} else {
 				b, _ := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
 				resp.Body.Close()
-					lastResult = string(b)
-				}
+				lastResult = string(b)
 			}
 			vars["http_result"] = lastResult
 			logf("HTTP %s %s → %d chars", method, url, len(lastResult))

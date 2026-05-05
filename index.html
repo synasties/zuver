@@ -2907,6 +2907,14 @@
 				showLoginPage();
 				throw new Error("Unauthorized Session");
 			}
+
+			// For non-2xx responses, parse error and throw with message
+			if (!r.ok) {
+				const payload = await r.json().catch(() => ({ error: `Request failed (${r.status})` }));
+				if (!skipLoading) hideLoading();
+				throw new Error(payload.error || `Request failed (${r.status})`);
+			}
+
 			if (!skipLoading) hideLoading();
 			return r.json();
 		}
@@ -2936,7 +2944,16 @@
 
 				// Fetch core resources and application state in parallel
 				const [ag, pr, sk, ra, pf, so, pv, mp, ou, ak, an, s] = await Promise.all([
-					api('/agents'), api('/projects'), api('/skills'), api('/rags'), api('/preferences'), api('/sources'), api('/providers'), api('/mcp').catch(() => []), api('/outputs').catch(() => []), api('/apikeys').catch(() => []),
+					api('/agents').catch(() => []),
+					api('/projects').catch(() => []),
+					api('/skills').catch(() => []),
+					api('/rags').catch(() => []),
+					api('/preferences').catch(() => []),
+					api('/sources').catch(() => []),
+					api('/providers').catch(() => []),
+					api('/mcp').catch(() => []),
+					api('/outputs').catch(() => []),
+					api('/apikeys').catch(() => []),
 					api('/analytics/summary').catch(() => ({ entities: {}, global_tokens_24h: 0 })),
 					api('/stats').catch(() => ({ agents: 0, skills: 0, preferences: 0, tokens: 0 }))
 				]);
@@ -4754,16 +4771,20 @@
 		window.submitProvider = async () => {
 			if (!(await promptReauthentication('saving a provider'))) return;
 			const id = document.getElementById('provider-id-input').value || 'prov_' + Date.now();
-			await api(document.getElementById('provider-id-input').value ? `/providers/${id}` : '/providers', document.getElementById('provider-id-input').value ? 'PUT' : 'POST', {
-				id,
-				name: document.getElementById('provider-name-input').value,
-				type: document.getElementById('provider-type-input').value,
-				endpoint: document.getElementById('provider-endpoint-input').value,
-				api_key: document.getElementById('provider-key-input').value.trim(),
-				extra_config: document.getElementById('provider-config-input').value,
-				models: JSON.stringify(window._providerModels || [])
-			});
-			closeModal('modal-provider'); loadAllData(); showToast('Provider saved.', 'success');
+			try {
+				await api(document.getElementById('provider-id-input').value ? `/providers/${id}` : '/providers', document.getElementById('provider-id-input').value ? 'PUT' : 'POST', {
+					id,
+					name: document.getElementById('provider-name-input').value,
+					type: document.getElementById('provider-type-input').value,
+					endpoint: document.getElementById('provider-endpoint-input').value,
+					api_key: document.getElementById('provider-key-input').value.trim(),
+					extra_config: document.getElementById('provider-config-input').value,
+					models: JSON.stringify(window._providerModels || [])
+				});
+				closeModal('modal-provider'); loadAllData(); showToast('Provider saved.', 'success');
+			} catch (e) {
+				showToast(e.message || 'Failed to save provider', 'error', 6000);
+			}
 		};
 		window.openPreferencesModal = (id = null) => { openModal('modal-preferences'); if (id) { const x = dataStore.preferences.find(i => i.id === id); if (x) { document.getElementById('preferences-id-input').value = x.id; document.getElementById('preferences-name-input').value = x.name; document.getElementById('preferences-desc-input').value = x.description; } } else { document.getElementById('preferences-id-input').value = ''; document.getElementById('preferences-name-input').value = ''; document.getElementById('preferences-desc-input').value = ''; } };
 		window.editPreferences = window.openPreferencesModal;
